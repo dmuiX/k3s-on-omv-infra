@@ -32,7 +32,7 @@ certificate:
   dnsName: "*.example.invalid"
   acmeEmail: replace-me@example.invalid
   secretName: wildcard-tls
-  cloudflareTokenRef: vault:kv/data/cloudflare-token#token
+  cloudflareTokenRef: vault:kv/data/cert-manager#cloudflare-token
 
 backup:
   endpoint: https://example.invalid
