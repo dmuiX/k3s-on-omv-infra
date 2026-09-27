@@ -1,0 +1,27 @@
+# yaml-language-server: $schema=../values-schemas/longhorn/values.schema.json
+defaultSettings:
+  defaultDataPath: /var/lib/longhorn
+  createDefaultDiskLabeledNodes: "false"
+  # UI-created volumes must also use one replica on the current single node.
+  defaultReplicaCount:
+    v1: "1"
+    v2: "1"
+  guaranteedInstanceManagerCPU: 12
+persistence:
+  # Keep K3s local-path as the only default; PVCs opt into Longhorn explicitly.
+  defaultClass: false
+  defaultClassReplicaCount: 1
+  reclaimPolicy: Retain
+service:
+  ui:
+    type: ClusterIP # Exposed only through the shared Traefik Gateway.
+metrics:
+  serviceMonitor:
+    enabled: true
+longhornManager:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 512Mi
