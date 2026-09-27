@@ -1,0 +1,38 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: grafana-route
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  destination:
+    name: in-cluster
+    namespace: kube-prometheus-stack
+  project: default
+  sources:
+    - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
+      targetRevision: main
+      path: charts/cluster-config
+      helm:
+        valueFiles:
+          - $values/clusters/omv/values.yml
+        parameters:
+          - name: component
+            value: grafana
+    - repoURL: https://github.com/dmuiX/k3s-on-omv-live.git
+      targetRevision: main
+      ref: values
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    retry:
+      limit: 12
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 5m
+    syncOptions:
+      - PruneLast=true
+      - ServerSideApply=true

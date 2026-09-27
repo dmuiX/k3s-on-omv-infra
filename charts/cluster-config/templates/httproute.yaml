@@ -1,0 +1,19 @@
+{{- if has .Values.component (list "argocd" "grafana" "longhorn" "openbao") }}
+{{- $route := index .Values.routes .Values.component }}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ .Values.component }}
+  namespace: {{ $route.namespace }}
+spec:
+  parentRefs:
+    - name: {{ .Values.gateway.name }}
+      namespace: {{ .Values.gateway.namespace }}
+      sectionName: {{ .Values.gateway.listener }}
+  hostnames:
+    - {{ required "route hostname is required" $route.hostname | quote }}
+  rules:
+    - backendRefs:
+        - name: {{ $route.service }}
+          port: {{ $route.port }}
+{{- end }}

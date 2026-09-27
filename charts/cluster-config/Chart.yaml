@@ -1,0 +1,4 @@
+apiVersion: v2
+name: cluster-config
+version: 0.1.0
+description: Reusable routes, wildcard DNS-01 certificate, and OpenBao backup resources
