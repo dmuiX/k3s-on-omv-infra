@@ -11,7 +11,8 @@ env:
   VAULT_ADDR: http://openbao-active.openbao.svc.cluster.local:8200
   VAULT_ADDR_ALLOWLIST: http://openbao-active.openbao.svc.cluster.local:8200
   VAULT_ALLOW_PRIVATE_ADDR: "false"
-  VAULT_AUTH_METHOD: jwt
+  # Matches OpenBao's native Kubernetes auth mount and its webhook role.
+  VAULT_AUTH_METHOD: kubernetes
   VAULT_PATH: kubernetes
   VAULT_ROLE: vault-secrets-webhook
 # Reject admission for selected Vault-backed Secrets if injection fails; never
