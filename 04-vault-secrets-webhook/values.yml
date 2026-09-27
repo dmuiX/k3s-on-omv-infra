@@ -1,0 +1,30 @@
+replicaCount: 2
+certificate:
+  useCertManager: true
+  generate: false
+metrics:
+  enabled: true
+  serviceMonitor:
+    enabled: true
+# Workloads reach OpenBao over the cluster network, never through the public Gateway.
+env:
+  VAULT_ADDR: http://openbao-active.openbao.svc.cluster.local:8200
+  VAULT_ADDR_ALLOWLIST: http://openbao-active.openbao.svc.cluster.local:8200
+  VAULT_ALLOW_PRIVATE_ADDR: "false"
+  VAULT_AUTH_METHOD: jwt
+  VAULT_PATH: kubernetes
+  VAULT_ROLE: vault-secrets-webhook
+# Reject admission for selected Vault-backed Secrets if injection fails; never
+# persist an unresolved vault: reference as an application credential.
+secretsFailurePolicy: Fail
+secrets:
+  objectSelector:
+    matchLabels:
+      vault-injection: enabled
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 200m
+    memory: 128Mi

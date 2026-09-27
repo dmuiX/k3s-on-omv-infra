@@ -1,0 +1,38 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: vault-secrets-webhook
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+spec:
+  destination:
+    name: in-cluster
+    namespace: vault-secrets-webhook
+  project: default
+  sources:
+    - repoURL: ghcr.io/bank-vaults/helm-charts
+      targetRevision: 1.23.1
+      chart: vault-secrets-webhook
+      helm:
+        valueFiles:
+          - $values/04-vault-secrets-webhook/values.yml
+    - repoURL: "https://github.com/dmuiX/k3s-on-omv-infra.git"
+      targetRevision: main
+      ref: values
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 5m
+    syncOptions:
+      - PruneLast=true
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - RespectIgnoreDifferences=true
