@@ -25,3 +25,5 @@ longhornManager:
       memory: 256Mi
     limits:
       memory: 512Mi
+preUpgradeChecker:
+     jobEnabled: false # necessary as its kind of a egg chicken problem: longhorn-pre-upgrade is a PreSync hook, but its pod needs longhorn-service-account, which will be created while its deploying
