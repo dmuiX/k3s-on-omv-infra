@@ -1,0 +1,18 @@
+# yaml-language-server: $schema=../values-schemas/k8up/values.schema.json
+k8up:
+  timezone: Europe/Berlin
+  enableLeaderElection: true
+  skipWithoutAnnotation: false
+  globalResources:
+    requests:
+      cpu: 20m
+      memory: 64Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+resources:
+  requests:
+    cpu: 20m
+    memory: 128Mi
+  limits:
+    memory: 256Mi
