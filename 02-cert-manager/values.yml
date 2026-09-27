@@ -1,0 +1,9 @@
+# yaml-language-server: $schema=../values-schemas/cert-manager/values.schema.json
+crds:
+  enabled: true
+prometheus:
+  enabled: true
+  podmonitor:
+    enabled: true
+extraArgs:
+  - --enable-gateway-api
