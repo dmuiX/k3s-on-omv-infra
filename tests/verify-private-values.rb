@@ -1,0 +1,102 @@
+#!/usr/bin/env ruby
+# Optional offline integration check. Requires the private values checkout + Helm.
+# Never prints rendered Secret data or private identifiers.
+require 'yaml'
+require 'open3'
+
+ROOT = File.expand_path('..', __dir__)
+PRIVATE = File.expand_path(ARGV.fetch(0, '../k3s-on-omv-live'), ROOT)
+BOOTSTRAP = File.expand_path(ARGV.fetch(1, '../k3s-on-omv-bootstrap/traefik/traefik-config.yml'), ROOT)
+VALUES = File.join(PRIVATE, 'clusters/omv/values.yml')
+CHART = File.join(ROOT, 'charts/cluster-config')
+
+def check(condition, message)
+  raise message unless condition
+end
+
+def wave(app)
+  Integer(app.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') || 0)
+end
+
+def render(component)
+  output, _stderr, status = Open3.capture3('helm', 'template', "check-#{component}", CHART,
+                                           '--set', "component=#{component}", '--values', VALUES)
+  check(status.success?, "Failed to render #{component} with private values; diagnostics suppressed")
+  YAML.load_stream(output).compact
+rescue Errno::ENOENT
+  abort 'Helm is required: ruby tests/verify-private-values.rb'
+end
+
+root = YAML.load_file(File.join(ROOT, 'infra.yml'))
+public_url = root.dig('spec', 'source', 'repoURL')
+pattern = root.dig('spec', 'source', 'directory', 'include')
+apps = Dir.glob(File.join(ROOT, '[0-9][0-9]-*', '*app.yml')).map do |path|
+  YAML.load_file(path) if File.fnmatch(pattern, path.delete_prefix(ROOT + '/'), File::FNM_EXTGLOB)
+end.compact.to_h { |app| [app.dig('metadata', 'name'), app] }
+check(apps.size == 13 && apps.values.map { |app| wave(app) }.uniq.sort == (1..6).to_a,
+      'One public root must own all components across waves 1–6')
+check(File.file?(VALUES), 'Private values file missing')
+private_values = YAML.load_file(VALUES)
+
+rendered = {}
+{ 'argocd-route' => ['argocd', 1, 'argocd-config', 'argocd-server', 80],
+  'grafana-route' => ['grafana', 1, 'kube-prometheus-stack', 'kube-prometheus-stack-grafana', 80],
+  'longhorn-route' => ['longhorn', 2, 'longhorn', 'longhorn-frontend', 80],
+  'openbao-route' => ['openbao', 3, 'openbao', 'openbao-ui', 8200],
+  'cert-manager-config' => ['certificates', 5, 'vault-secrets-webhook'],
+  'openbao-config' => ['backups', 6, 'k8up'] }.each do |name, (component, stage, dependency, service, port)|
+  app = apps.fetch(name)
+  check(wave(app) == stage && wave(apps.fetch(dependency)) <= stage,
+        "#{name} is scheduled before its backend/dependency")
+  chart_source, values_source = app.dig('spec', 'sources')
+  check(chart_source['repoURL'] == public_url && chart_source['path'] == 'charts/cluster-config' &&
+        chart_source.dig('helm', 'valueFiles') == ['$values/clusters/omv/values.yml'] &&
+        chart_source.dig('helm', 'parameters', 0) == { 'name' => 'component', 'value' => component } &&
+        values_source['ref'] == 'values' && !values_source.key?('path'),
+        "#{name} must obtain ONLY values from private Git")
+  docs = render(component)
+  check(!docs.empty?, "No rendered resource for #{component}")
+  docs.each do |doc|
+    key = [doc['apiVersion'], doc['kind'], doc.dig('metadata', 'namespace'), doc.dig('metadata', 'name')]
+    check(!rendered.key?(key), "Two Applications own #{key.last}")
+    rendered[key] = doc
+  end
+  next unless service
+  route = docs.fetch(0)
+  check(route['kind'] == 'HTTPRoute' && route.dig('spec', 'hostnames') == [private_values.dig('routes', component, 'hostname')] &&
+        route.dig('spec', 'rules', 0, 'backendRefs', 0) == { 'name' => service, 'port' => port },
+        "Private values did not produce the expected #{component} route")
+end
+
+certificate = rendered.fetch(['cert-manager.io/v1', 'Certificate', 'kube-system', 'wildcard-tls'])
+issuer = rendered.fetch(['cert-manager.io/v1', 'ClusterIssuer', nil, 'cluster-issuer-prod'])
+schedule = rendered.fetch(['k8up.io/v1', 'Schedule', 'openbao', 'openbao-k8up-schedule'])
+check(certificate.dig('spec', 'dnsNames') == [private_values.dig('certificate', 'dnsName')] &&
+      issuer.dig('spec', 'acme', 'email') == private_values.dig('certificate', 'acmeEmail') &&
+      wave(certificate) == 1, 'Private certificate values or child wave mismatch')
+check(schedule.dig('spec', 'backend', 's3', 'endpoint') == private_values.dig('backup', 'endpoint') &&
+      schedule.dig('spec', 'backend', 's3', 'bucket') == private_values.dig('backup', 'bucket'),
+      'Private backup values not rendered')
+check(render('restore').one? { |r| r['kind'] == 'Restore' } &&
+      apps.values.none? { |app| app.dig('spec', 'sources', 0, 'helm', 'parameters', 0, 'value') == 'restore' },
+      'Restore must be manual-only')
+check(render('none').empty?, 'Sample chart defaults must not deploy resources')
+
+check(File.file?(BOOTSTRAP), 'Pass the private host Gateway config as the second argument')
+host = YAML.safe_load(YAML.load_file(BOOTSTRAP).dig('spec', 'valuesContent'))
+listener = host.dig('gateway', 'listeners', 'websecure')
+check(listener.dig('certificateRefs', 0, 'name') == certificate.dig('spec', 'secretName') &&
+      listener['hostname'] == certificate.dig('spec', 'dnsNames', 0),
+      'Gateway listener and private wildcard certificate differ')
+
+identifiers = private_values.fetch('routes').values.map { |r| r.fetch('hostname') }
+identifiers += [private_values.dig('certificate', 'dnsName'), private_values.dig('certificate', 'acmeEmail'),
+                private_values.dig('backup', 'endpoint'), private_values.dig('backup', 'bucket')]
+files = Dir.glob(File.join(ROOT, '{[0-9][0-9]-*,charts,docs,tests}', '**', '*.{md,yml,yaml,rb,tpl}'), File::FNM_EXTGLOB)
+files += [File.join(ROOT, 'README.md'), File.join(ROOT, 'infra.yml')]
+files.uniq.each do |path|
+  next unless File.file?(path)
+  check(identifiers.none? { |value| File.read(path).include?(value) },
+        "Private identifier leaked into public file #{path.delete_prefix(ROOT + '/')}")
+end
+puts 'PASS: one public root, private values only, rendered routes/TLS/backups, no duplicate owners'
