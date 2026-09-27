@@ -29,9 +29,8 @@ server:
       mountPath: /openbao/secrets
       readOnly: true
   ha:
-    enabled: true
-    # Multiple replicas provide pod-level availability on the current bare-metal host.
-    replicas: 3
+    enabled: true # Raft storage; scale only after the three-node prerequisites pass.
+    replicas: 1 # One server pod on the initial single-node cluster.
     raft:
       enabled: true
       setNodeId: true

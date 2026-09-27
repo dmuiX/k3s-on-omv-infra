@@ -149,8 +149,11 @@ check(values.dig('persistence', 'reclaimPolicy') == 'Retain', 'Unexpected volume
 check(values.dig('persistence', 'defaultClass') == false, 'Do not silently add a second default StorageClass')
 check(values.dig('service', 'ui', 'type') == 'ClusterIP', 'Longhorn UI must use the shared Gateway')
 check(values.dig('metrics', 'serviceMonitor', 'enabled'), 'Longhorn monitoring missing')
+openbao_values = docs('03-openbao/values.yml').first
+check(openbao_values.dig('server', 'ha', 'enabled') && openbao_values.dig('server', 'ha', 'replicas') == 1,
+      'First-phase OpenBao Raft must use one server pod')
 %w[dataStorage auditStorage].each do |storage|
-  check(docs('03-openbao/values.yml').first.dig('server', storage, 'storageClass') == 'longhorn',
+  check(openbao_values.dig('server', storage, 'storageClass') == 'longhorn',
         'OpenBao must explicitly opt into Longhorn')
 end
 check(longhorn.dig('spec', 'sources').any? { |s| s['ref'] == 'values' && !s.key?('path') },

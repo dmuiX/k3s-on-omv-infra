@@ -55,7 +55,8 @@ Dir.mktmpdir('infra-helm-check-') do |dir|
           'HELM_DATA_HOME' => File.join(dir, 'data'), 'HELM_PLUGINS' => File.join(dir, 'plugins') }
   monitoring = render('kube-prometheus-stack', env)
   longhorn = render('longhorn', env)
-  %w[cert-manager k8up openbao vault-secrets-webhook].each { |name| render(name, env) }
+  openbao = render('openbao', env)
+  %w[cert-manager k8up vault-secrets-webhook].each { |name| render(name, env) }
 
   # Public cluster resources are complete templates, but their sample defaults
   # must never create live resources unless an explicit component is selected.
@@ -122,6 +123,10 @@ Dir.mktmpdir('infra-helm-check-') do |dir|
         'Longhorn monitor does not select its metrics Service')
   check(monitor.dig('spec', 'endpoints').all? { |e| backend.dig('spec', 'ports').any? { |p| p['name'] == e['port'] } },
         'Longhorn monitor refers to a missing metrics port')
+  openbao_server = find_resource(openbao, 'StatefulSet', 'openbao')
+  check(openbao_server.dig('spec', 'replicas') == 1, 'Single-node OpenBao must render one server pod')
+  check((openbao_server.dig('spec', 'volumeClaimTemplates') || []).length == 2,
+        'OpenBao must render separate data and audit PVC templates')
   manager = find_resource(longhorn, 'DaemonSet', 'longhorn-manager')
   container = manager.dig('spec', 'template', 'spec', 'containers').find { |c| c['name'] == 'longhorn-manager' }
   check(container.dig('resources', 'requests', 'memory') == '256Mi', 'Manager memory request was ignored')
