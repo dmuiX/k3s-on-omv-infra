@@ -1,0 +1,25 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: argocd-config
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  destination:
+    name: in-cluster
+    namespace: argocd
+  project: default
+  source:
+    path: 01-argocd-server-config
+    repoURL: "https://github.com/dmuiX/k3s-on-omv-infra.git"
+    targetRevision: main
+    directory:
+      include: "{LimitRange.yaml,argocd-server-svc.yaml,argocd-cmd-params-cm.yml}"
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - PruneLast=true
+      - ServerSideApply=true

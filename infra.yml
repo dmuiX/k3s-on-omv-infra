@@ -1,0 +1,28 @@
+# Single infra root: all Applications/templates are public; selected Helm
+# values come from the private repo. Seed read-only Git access before syncing.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: infra
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  destination:
+    name: in-cluster
+    namespace: argocd
+  project: default
+  source:
+    path: .
+    repoURL: "https://github.com/dmuiX/k3s-on-omv-infra.git"
+    targetRevision: main
+    directory:
+      recurse: true
+      include: "{01-argocd-bootstrap/application-health-config.yml,*/app.yml,*/config-app.yml}"
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - PruneLast=true
+      - ServerSideApply=true
