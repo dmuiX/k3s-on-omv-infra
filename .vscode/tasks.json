@@ -1,0 +1,15 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Validate pinned Helm values",
+      "type": "process",
+      "command": "ruby",
+      "args": ["tests/verify-charts.rb"],
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "problemMatcher": []
+    }
+  ]
+}

@@ -1,0 +1,24 @@
+# Local editor metadata and private multi-repo workspaces
+.DS_Store
+*.code-workspace
+
+# Secrets and environment files
+.env
+*.env
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx
+*.kubeconfig
+kubeconfig*
+
+# Generated output and state
+rendered/
+tmp/
+*.log
+*.tfstate
+*.tfstate.*
+*.backup
+*.dump
+*.sql
