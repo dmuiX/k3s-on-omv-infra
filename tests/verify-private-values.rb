@@ -39,15 +39,16 @@ check(File.file?(VALUES), 'Private values file missing')
 private_values = YAML.load_file(VALUES)
 
 rendered = {}
-{ 'argocd-route' => ['argocd', 1, 'argocd-config', 'argocd-server', 80],
-  'grafana-route' => ['grafana', 1, 'kube-prometheus-stack', 'kube-prometheus-stack-grafana', 80],
-  'longhorn-route' => ['longhorn', 2, 'longhorn', 'longhorn-frontend', 80],
-  'openbao-route' => ['openbao', 3, 'openbao', 'openbao-ui', 8200],
+{ 'argocd-route' => ['argocd', 6, 'argocd-config', 'argocd-server', 80],
+  'grafana-route' => ['grafana', 6, 'kube-prometheus-stack', 'kube-prometheus-stack-grafana', 80],
+  'longhorn-route' => ['longhorn', 6, 'longhorn', 'longhorn-frontend', 80],
+  'openbao-route' => ['openbao', 6, 'openbao', 'openbao-ui', 8200],
   'cert-manager-config' => ['certificates', 5, 'vault-secrets-webhook'],
   'openbao-config' => ['backups', 6, 'k8up'] }.each do |name, (component, stage, dependency, service, port)|
   app = apps.fetch(name)
-  check(wave(app) == stage && wave(apps.fetch(dependency)) <= stage,
-        "#{name} is scheduled before its backend/dependency")
+  check(wave(app) == stage && wave(apps.fetch(dependency)) <= stage &&
+        (!service || wave(apps.fetch('cert-manager-config')) < stage),
+        "#{name} is scheduled before its backend/certificate dependency")
   chart_source, values_source = app.dig('spec', 'sources')
   check(chart_source['repoURL'] == public_url && chart_source['path'] == 'charts/cluster-config' &&
         chart_source.dig('helm', 'valueFiles') == ['$values/clusters/omv/values.yml'] &&

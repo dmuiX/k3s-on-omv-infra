@@ -98,8 +98,8 @@ check(wave(apps.fetch('argocd-config')) == 1, 'Existing Argo CD server configura
 expected = %w[argocd-config argocd-route grafana-route kube-prometheus-stack cert-manager cert-manager-config
               k8up longhorn longhorn-route openbao openbao-config openbao-route vault-secrets-webhook]
 check(apps.keys.sort == expected.sort, 'One public root must own all child Applications')
-{ 'argocd-route' => ['argocd', 1], 'grafana-route' => ['grafana', 1],
-  'longhorn-route' => ['longhorn', 2], 'openbao-route' => ['openbao', 3],
+{ 'argocd-route' => ['argocd', 6], 'grafana-route' => ['grafana', 6],
+  'longhorn-route' => ['longhorn', 6], 'openbao-route' => ['openbao', 6],
   'cert-manager-config' => ['certificates', 5], 'openbao-config' => ['backups', 6] }.each do |name, (component, stage)|
   app = apps.fetch(name)
   chart, private_values = app.dig('spec', 'sources')
@@ -107,6 +107,10 @@ check(apps.keys.sort == expected.sort, 'One public root must own all child Appli
         chart.dig('helm', 'parameters', 0) == { 'name' => 'component', 'value' => component } &&
         chart.dig('helm', 'valueFiles') == ['$values/clusters/omv/values.yml'] &&
         private_values['ref'] == 'values', "Wrong private values wiring for #{name}")
+end
+%w[argocd-route grafana-route longhorn-route openbao-route].each do |name|
+  check(wave(apps.fetch('cert-manager-config')) < wave(apps.fetch(name)),
+        "Route #{name} must follow wildcard certificate configuration")
 end
 check(wave(apps.fetch('openbao')) < wave(apps.fetch('cert-manager-config')) &&
       wave(apps.fetch('vault-secrets-webhook')) < wave(apps.fetch('cert-manager-config')) &&

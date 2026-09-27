@@ -26,6 +26,9 @@ External-DNS. It uses Argo CD (already installed) for these pinned charts:
 02-longhorn/               single-node storage
 03-openbao/                secret store
 04-vault-secrets-webhook/   admission-time secret injection
+05-certificates/           wildcard certificate/issuers after secrets
+06-*-route/                UI routes after certificate configuration
+06-openbao-backups/        OpenBao backup schedule
 ```
 
 Prefixes are the first parent sync wave. Monitoring's CRDs precede the
@@ -39,17 +42,18 @@ controlled `argocd-server` restart; plan that before enabling its external route
 `infra.yml` is the **one** Argo CD root. All Applications and complete resource
 templates are in this repo. The route, certificate and backup Applications
 render `charts/cluster-config/` with the **same private values file**; the
-private Git source has `ref: values` and no manifest path. Routes run
-in their backends' first waves (1, 2 or 3), certificates after OpenBao/webhook
-(wave 5), and backups after K8up (wave 6). The private repo contains only
+private Git source has `ref: values` and no manifest path. Backends run in
+waves 1–3; certificate issuance follows OpenBao/webhook (wave 5), and all UI
+routes and backups are configured in wave 6. Routes cannot block the controllers
+needed to issue their TLS certificate. The private repo contains only
 non-secret values, not copies of Applications or resource manifests. The local
 `charts/cluster-config/` chart exists because Kubernetes needs concrete route
 hostnames, certificate DNS names, ACME email and backup destinations. Argo CD
 can pass the private `$values/...` file to Helm, but cannot substitute those
 values into plain YAML on its own. Helm renders the public templates; the chart
 installs no controller, and its default `component: none` renders nothing. An
-early route does not prove working HTTPS: check Certificate Ready and the K3s
-Gateway listener.
+a rendered route does not prove working HTTPS: check Certificate Ready and the
+K3s Gateway listener.
 
 Argo CD needs read-only private Git access **before** the first root sync.
 This cannot depend on OpenBao, which is installed by that sync: seed the Git

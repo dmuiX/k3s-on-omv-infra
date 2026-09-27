@@ -1,14 +1,14 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: argocd-route
+  name: openbao-route
   namespace: argocd
   annotations:
-    argocd.argoproj.io/sync-wave: "1"
+    argocd.argoproj.io/sync-wave: "6"
 spec:
   destination:
     name: in-cluster
-    namespace: argocd
+    namespace: openbao
   project: default
   sources:
     - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
@@ -19,7 +19,7 @@ spec:
           - $values/clusters/omv/values.yml
         parameters:
           - name: component
-            value: argocd
+            value: openbao
     - repoURL: https://github.com/dmuiX/k3s-on-omv-live.git
       targetRevision: main
       ref: values

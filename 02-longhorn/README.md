@@ -2,11 +2,12 @@
 
 ## Structure and ordering
 
-Folder prefix `02-` denotes the deployment wave. The infra repository owns
-both the Longhorn chart Application and a route Application rendering the public
-`charts/cluster-config/` template with the private hostname value. The namespace
-and release name remain `longhorn`. HTTPS only becomes usable once the wildcard
-certificate is ready.
+Folder prefix `02-` denotes Longhorn's controller deployment wave. Its UI
+route is a separate wave-6 Application rendering the public
+`charts/cluster-config/` template with the private hostname value; placing it
+after certificate configuration avoids blocking Longhorn on TLS readiness. The
+namespace and release name remain `longhorn`. HTTPS only becomes usable once
+the wildcard certificate is ready.
 
 - `app.yml`: pinned Longhorn Helm chart and reusable values from the public Git source.
 - `values.yml`: single-node storage settings; no embedded Flux HelmRelease.
@@ -19,10 +20,11 @@ are removed. Argo CD is the only deployment controller for Longhorn.
 | Wave | Dependency |
 | ---: | --- |
 | 1 | Child-Application health customization; monitoring chart, CRDs and operator |
-| 2 | Longhorn controller/CSI and ServiceMonitor; public UI route template rendered with private values; cert-manager/K8up can run alongside |
+| 2 | Longhorn controller/CSI and ServiceMonitor; cert-manager/K8up can run alongside |
 | 3 | OpenBao, whose data and audit PVCs explicitly select `longhorn` |
 | 4 | Vault Secrets Webhook |
 | 5 | Cloudflare credential, issuer, wildcard certificate |
+| 6 | Longhorn UI route rendered with the private hostname value |
 
 Monitoring runs before Longhorn rather than adding another CRD-only Application
 or deploying manually copied CRDs. Prometheus selects ServiceMonitors
