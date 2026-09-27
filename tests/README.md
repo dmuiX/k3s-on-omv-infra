@@ -16,6 +16,11 @@ an isolated temporary Helm cache. Chart-generated
 Secrets and diagnostics remain in memory and are not printed. Rendering does
 not prove installation, ingress TLS, storage health or backup recovery.
 
+The first-phase render checks OpenBao at one Raft server pod with two PVC
+templates and Longhorn at one storage replica. They do not prove a later
+three-node expansion, which must separately update existing volumes and verify
+placement and recovery.
+
 The **same public root** owns the complete rendered deployment; only the value
 set is private. With the private values checkout, run
 `ruby tests/verify-private-values.rb` here (also requires Helm and the host

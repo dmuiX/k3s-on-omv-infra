@@ -32,7 +32,9 @@ revisit of the order so it cannot depend on storage that has not been installed.
 
 ## Single-node settings
 
-- PVC/StorageClass replica count: **1**.
+- PVC/StorageClass replica count: **1** in the initial one-node phase.
+- OpenBao initially runs **one Raft server pod** with separate data and audit
+  PVCs; each Longhorn volume starts with one storage replica.
 - UI-created volume defaults: **1** for each data engine (does not enable V2).
 - Reclaim policy: **Retain**. Released volumes are not automatically reclaimed;
   cleanup/reuse needs deliberate review. This is not a backup.
@@ -45,10 +47,16 @@ revisit of the order so it cannot depend on storage that has not been installed.
   reservation remains 12% per configured setting; measure total CSI/engine/replica
   overhead rather than treating the manager's request as the whole storage budget.
 
-One node provides no node-failure tolerance. Revisit replica counts, disks, resource
-budgets, node placement and CSI availability before adding more nodes. The current
-`createDefaultDiskLabeledNodes: "false"` permits default disk creation on joining
-nodes; do not assume Pi/Wyse storage will remain excluded without changing that policy.
+One node provides no node-failure tolerance. After three suitable nodes and
+disks are ready, separately raise the Longhorn defaults to three for **new**
+volumes, increase replica counts on **existing** OpenBao volumes, and verify
+three healthy copies on distinct nodes. Scaling OpenBao from one Raft pod to
+three creates four additional PVCs (data and audit for each new pod); neither
+pod placement nor Raft quorum is proven just by changing a value. Revisit disk
+capacity, resource budgets and CSI availability as part of that staged change.
+The current `createDefaultDiskLabeledNodes: "false"` permits default disk
+creation on joining nodes; do not assume Pi/Wyse storage will remain excluded
+without changing that policy.
 
 ## Mandatory checks before deployment
 
