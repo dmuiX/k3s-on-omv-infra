@@ -12,7 +12,7 @@ spec:
   project: default
   sources:
     - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
-      targetRevision: main
+      targetRevision: 454e34967db12ff4dcd869b8ca1947078eadd19e
       path: charts/cluster-config
       helm:
         valueFiles:
@@ -21,7 +21,7 @@ spec:
           - name: component
             value: openbao
     - repoURL: https://github.com/dmuiX/k3s-on-omv-live.git
-      targetRevision: main
+      targetRevision: ce6ad756dd48ef28145f836e6825a65fcafe548f
       ref: values
   syncPolicy:
     automated:

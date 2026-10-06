@@ -18,12 +18,12 @@ spec:
         valueFiles:
           - $values/02-longhorn/values.yml
     - repoURL: "https://github.com/dmuiX/k3s-on-omv-infra.git"
-      targetRevision: main
+      targetRevision: 454e34967db12ff4dcd869b8ca1947078eadd19e
       ref: values
     # Longhorn has no Helm value for CSI encryption key references. This last
     # source intentionally overrides the chart's longhorn-storageclass ConfigMap.
     - repoURL: "https://github.com/dmuiX/k3s-on-omv-infra.git"
-      targetRevision: main
+      targetRevision: 454e34967db12ff4dcd869b8ca1947078eadd19e
       path: 02-longhorn
       directory:
         include: storageclass-configmap.yaml

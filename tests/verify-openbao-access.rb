@@ -8,7 +8,8 @@ root = File.expand_path('..', __dir__)
 app = YAML.load_file(File.join(root, '04-openbao-access-config', 'app.yml'))
 raise 'Wrong OpenBao config Application wave' unless app.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '4'
 raise 'Unexpected Argo Kustomize source' unless app.dig('spec', 'source') == {
-  'repoURL' => 'https://github.com/dmuiX/k3s-on-omv-infra.git', 'targetRevision' => 'main',
+  'repoURL' => 'https://github.com/dmuiX/k3s-on-omv-infra.git',
+  'targetRevision' => '454e34967db12ff4dcd869b8ca1947078eadd19e',
   'path' => '04-openbao-access-config/workload'
 }
 output, stderr, result = Open3.capture3('kubectl', 'kustomize', File.join(root, '04-openbao-access-config', 'workload'))

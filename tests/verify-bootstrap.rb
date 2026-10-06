@@ -4,6 +4,8 @@ require 'yaml'
 require 'json'
 
 ROOT = File.expand_path('..', __dir__)
+INFRA_REVISION = '454e34967db12ff4dcd869b8ca1947078eadd19e'
+LIVE_REVISION = 'ce6ad756dd48ef28145f836e6825a65fcafe548f'
 
 def docs(path)
   YAML.load_stream(File.read(File.join(ROOT, path))).compact
@@ -50,7 +52,7 @@ helm_apps.each do |name|
   check(chart && chart['targetRevision'].to_s.match?(/\Av?\d+\.\d+\.\d+(?:[-+][\w.-]+)?\z/),
         "#{name} chart version is not pinned")
   check(values_source && values_source['repoURL'] == source['repoURL'] &&
-        values_source['targetRevision'] == source['targetRevision'], "#{name} values source is not this Git repository")
+        values_source['targetRevision'] == INFRA_REVISION, "#{name} values source is not the pinned reviewed Git revision")
   chart.fetch('helm', {}).fetch('valueFiles', []).each do |path|
     check(path.start_with?('$values/') && File.file?(File.join(ROOT, path.delete_prefix('$values/'))),
           "#{name} references a missing Git values file")
@@ -82,6 +84,15 @@ check(apps.fetch('openbao-access-config').dig('spec', 'source', 'path') == '04-o
   check(schema['$schema'] && (schema['type'] == 'object' || schema['$ref']),
         "Editor schema invalid or not a values schema: #{chart}")
 end
+
+git_sources = applications.flat_map do |app|
+  spec = app.fetch('spec')
+  spec['sources'] || [spec['source']]
+end.compact.select { |candidate| candidate['repoURL']&.start_with?('https://github.com/dmuiX/') }
+check(git_sources.all? do |candidate|
+  expected = candidate['repoURL'].end_with?('k3s-on-omv-infra.git') ? INFRA_REVISION : LIVE_REVISION
+  candidate['targetRevision'] == expected
+end, 'Every owned Git child source must use its reviewed immutable revision')
 
 health_path = '01-argocd-bootstrap/application-health-config.yml'
 health = docs(health_path).first
