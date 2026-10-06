@@ -37,33 +37,42 @@ app_files.group_by { |path| File.dirname(path) }.each do |dir, paths|
   end
 end
 
-applications.each do |app|
+# Upstream controllers stay as Argo multi-source Helm Applications. Values are
+# reviewed in Git; generated chart output is deliberately not committed.
+helm_apps = %w[monitoring-crds kube-prometheus-stack cert-manager k8up longhorn openbao vault-secrets-webhook]
+helm_apps.each do |name|
+  app = apps.fetch(name)
   spec = app.fetch('spec')
-  sources = spec['sources'] || [spec.fetch('source')]
-  sources.each do |s|
-    if s['chart']
-      check(s.fetch('targetRevision').match?(/\Av?\d+\.\d+\.\d+(?:[-+][\w.-]+)?\z/),
-            "Unpinned chart in #{app.dig('metadata', 'name')}")
-      s.fetch('helm', {}).fetch('valueFiles', []).each do |path|
-        check(path.start_with?('$values/'), 'Helm values must use the Git values source')
-        check(File.file?(File.join(ROOT, path.delete_prefix('$values/'))), 'Referenced values file missing')
-        check(sources.count { |v| v['ref'] == 'values' } == 1, 'Missing/ambiguous values source')
-      end
-    elsif s['ref'] == 'values' && s['repoURL'] != source['repoURL']
-      check(s['repoURL'] == 'https://github.com/dmuiX/k3s-on-omv-live.git' && !s.key?('path'),
-            "Private values source must not render manifests: #{app.dig('metadata', 'name')}")
-    else
-      check(s['repoURL'] == source['repoURL'], "Git source mismatch: #{app.dig('metadata', 'name')}")
-      check(s['targetRevision'] == source['targetRevision'], "Git revision mismatch: #{app.dig('metadata', 'name')}")
-    end
+  check(spec.key?('sources') && !spec.key?('source'), "#{name} must remain a multi-source Helm Application")
+  sources = spec.fetch('sources')
+  chart = sources.find { |candidate| candidate['chart'] }
+  values_source = sources.find { |candidate| candidate['ref'] == 'values' }
+  check(chart && chart['targetRevision'].to_s.match?(/\Av?\d+\.\d+\.\d+(?:[-+][\w.-]+)?\z/),
+        "#{name} chart version is not pinned")
+  check(values_source && values_source['repoURL'] == source['repoURL'] &&
+        values_source['targetRevision'] == source['targetRevision'], "#{name} values source is not this Git repository")
+  chart.fetch('helm', {}).fetch('valueFiles', []).each do |path|
+    check(path.start_with?('$values/') && File.file?(File.join(ROOT, path.delete_prefix('$values/'))),
+          "#{name} references a missing Git values file")
   end
 end
+upstream_dirs = %w[01-monitoring-crds 02-cert-manager 02-k8up 02-longhorn
+                   03-kube-prometheus-stack 03-openbao 04-vault-secrets-webhook]
+check(upstream_dirs.none? { |dir| File.directory?(File.join(ROOT, dir, 'manifests')) },
+      'Rendered upstream Helm manifest directories must not be committed')
+k8up_sources = apps.fetch('k8up').dig('spec', 'sources')
+check(k8up_sources.last['path'] == '02-k8up' && k8up_sources.last.dig('directory', 'include') == 'pdb.yaml',
+      'K8up authored PDB must be the final Argo source')
+
+# Authored resources may use native Git/Kustomize sources.
+check(apps.fetch('openbao-access-config').dig('spec', 'source', 'path') == '04-openbao-access-config/workload',
+      'OpenBao access configuration must render its authored Kustomize source')
 
 # VS Code YAML language server uses per-file, relative schemas in both single-root
 # and multi-root workspaces; only active chart values schemas are checked in.
-%w[01-kube-prometheus-stack 02-cert-manager 02-k8up 02-longhorn 03-openbao].each do |dir|
+%w[01-monitoring-crds 02-cert-manager 02-k8up 02-longhorn 03-kube-prometheus-stack 03-openbao].each do |dir|
   values_path = File.join(ROOT, dir, 'values.yml')
-  chart = dir.sub(/\A\d{2}-/, '')
+  chart = dir == '01-monitoring-crds' ? 'kube-prometheus-stack' : dir.sub(/\A\d{2}-/, '')
   relative_schema = "../values-schemas/#{chart}/values.schema.json"
   check(File.readlines(values_path).first&.chomp == "# yaml-language-server: $schema=#{relative_schema}",
         "Missing/mismatched editor schema association: #{dir}/values.yml")
@@ -83,20 +92,35 @@ check(([wave(health)] + applications.map { |app| wave(app) }).uniq.sort == (1..6
       'Infra waves must be consecutive from 1 through 6')
 check(wave(health) <= applications.map { |app| wave(app) }.min,
       'Child health customization must not follow the first child Application')
-# Both the health ConfigMap and monitoring Application are wave 1. The custom
+# Both the health ConfigMap and CRD Application are wave 1. The custom
 # health check must be seeded in Argo CD before the first root sync; wave 1
 # alone does not order resources within the wave.
 check(health.fetch('data').key?('resource.customizations.health.argoproj.io_Application'),
       'Root cannot wait for child Application health')
+crd_app = apps.fetch('monitoring-crds')
 monitoring = apps.fetch('kube-prometheus-stack')
-%w[longhorn cert-manager openbao vault-secrets-webhook].each do |name|
-  check(wave(monitoring) < wave(apps.fetch(name)), "Monitoring CRDs must precede #{name}")
+%w[longhorn cert-manager kube-prometheus-stack openbao vault-secrets-webhook].each do |name|
+  check(wave(crd_app) < wave(apps.fetch(name)), "Monitoring CRDs must precede #{name}")
 end
+check(wave(apps.fetch('longhorn')) < wave(monitoring), 'Longhorn must precede monitoring PVCs')
 check(wave(apps.fetch('longhorn')) < wave(apps.fetch('openbao')), 'Longhorn must precede OpenBao PVCs')
+check(crd_app.dig('spec', 'sources', 0, 'chart') == 'kube-prometheus-stack' &&
+      monitoring.dig('spec', 'sources', 0, 'chart') == 'kube-prometheus-stack' &&
+      crd_app.dig('spec', 'sources', 0, 'helm', 'valueFiles') == ['$values/01-monitoring-crds/values.yml'] &&
+      monitoring.dig('spec', 'sources', 0, 'helm', 'valueFiles') == ['$values/03-kube-prometheus-stack/values.yml'],
+      'Monitoring phases must render the pinned chart with their separate Git values')
+[crd_app, monitoring].each do |app|
+  check(app.dig('spec', 'syncPolicy', 'automated', 'prune') == false,
+        'CRD ownership handoff must not delete monitoring CRDs')
+end
 check(wave(apps.fetch('openbao')) < wave(apps.fetch('vault-secrets-webhook')), 'OpenBao must precede its consumer')
+check(wave(apps.fetch('openbao')) < wave(apps.fetch('openbao-access-config')) &&
+      wave(apps.fetch('openbao-access-config')) < wave(apps.fetch('cert-manager-config')) &&
+      wave(apps.fetch('openbao-access-config')) < wave(apps.fetch('openbao-config')),
+      'OpenBao ACL reconciliation must precede webhook-backed Secrets')
 check(wave(apps.fetch('argocd-config')) == 1, 'Existing Argo CD server configuration must be wave 1')
-expected = %w[argocd-config argocd-route grafana-route kube-prometheus-stack cert-manager cert-manager-config
-              k8up longhorn longhorn-route openbao openbao-config openbao-route vault-secrets-webhook]
+expected = %w[argocd-config argocd-route grafana-route kube-prometheus-stack monitoring-crds cert-manager cert-manager-config
+              k8up longhorn longhorn-route openbao openbao-access-config openbao-config openbao-route vault-secrets-webhook]
 check(apps.keys.sort == expected.sort, 'One public root must own all child Applications')
 { 'argocd-route' => ['argocd', 6], 'grafana-route' => ['grafana', 6],
   'longhorn-route' => ['longhorn', 6], 'openbao-route' => ['openbao', 6],
@@ -106,7 +130,8 @@ check(apps.keys.sort == expected.sort, 'One public root must own all child Appli
   check(wave(app) == stage && chart['path'] == 'charts/cluster-config' &&
         chart.dig('helm', 'parameters', 0) == { 'name' => 'component', 'value' => component } &&
         chart.dig('helm', 'valueFiles') == ['$values/clusters/omv/values.yml'] &&
-        private_values['ref'] == 'values', "Wrong private values wiring for #{name}")
+        private_values['repoURL'] == 'https://github.com/dmuiX/k3s-on-omv-live.git' &&
+        private_values['ref'] == 'values', "Wrong private Helm values wiring for #{name}")
 end
 %w[argocd-route grafana-route longhorn-route openbao-route].each do |name|
   check(wave(apps.fetch('cert-manager-config')) < wave(apps.fetch(name)),
@@ -117,13 +142,28 @@ check(wave(apps.fetch('openbao')) < wave(apps.fetch('cert-manager-config')) &&
       wave(apps.fetch('k8up')) < wave(apps.fetch('openbao-config')),
       'Issuer and backup configuration must follow their controllers and the webhook')
 
-monitor_values = docs('01-kube-prometheus-stack/values.yml').first
-check(monitor_values.dig('crds', 'enabled'), 'Monitoring CRDs disabled')
-check(monitor_values.dig('grafana', 'persistence', 'enabled') == false, 'Early Grafana cannot depend on storage')
-check(monitor_values.dig('prometheus', 'prometheusSpec', 'storageSpec') == {}, 'Early Prometheus cannot depend on storage')
-check(monitor_values.dig('alertmanager', 'alertmanagerSpec', 'storage') == {}, 'Early Alertmanager cannot depend on storage')
+crd_values = docs('01-monitoring-crds/values.yml').first
+check(crd_values.dig('crds', 'enabled'), 'Bootstrap monitoring CRDs disabled')
+%w[alertmanager grafana prometheus prometheusOperator kubeStateMetrics nodeExporter].each do |component|
+  check(crd_values.dig(component, 'enabled') == false, "Bootstrap must not deploy #{component}")
+end
+monitor_values = docs('03-kube-prometheus-stack/values.yml').first
+check(monitor_values.dig('crds', 'enabled') == false, 'Full monitoring stack must not own CRDs')
+check(monitor_values.dig('grafana', 'persistence', 'enabled') == true &&
+      monitor_values.dig('grafana', 'persistence', 'storageClassName') == 'longhorn',
+      'Grafana must persist on Longhorn')
+check(monitor_values.dig('grafana', 'admin') == {
+        'existingSecret' => 'kube-prometheus-stack-grafana',
+        'userKey' => 'admin-user', 'passwordKey' => 'admin-password' },
+      'Grafana must use the operator-seeded Secret instead of generating a password')
+%w[prometheus alertmanager].each do |component|
+  spec = component == 'prometheus' ? 'prometheusSpec' : 'alertmanagerSpec'
+  field = component == 'prometheus' ? 'storageSpec' : 'storage'
+  check(monitor_values.dig(component, spec, field, 'volumeClaimTemplate', 'spec', 'storageClassName') == 'longhorn',
+        "#{component} must persist on Longhorn")
+end
 check(monitor_values.dig('prometheusOperator', 'admissionWebhooks', 'certManager', 'enabled') == false,
-      'Early monitoring cannot depend on cert-manager')
+      'Monitoring must not depend on cert-manager')
 %w[serviceMonitor podMonitor].each do |kind|
   check(monitor_values.dig('prometheus', 'prometheusSpec', "#{kind}SelectorNilUsesHelmValues") == false,
         "Prometheus would ignore monitors from other releases: #{kind}")
@@ -141,26 +181,29 @@ check(longhorn.dig('spec', 'syncPolicy', 'syncOptions').include?('CreateNamespac
 end
 check(!longhorn.fetch('spec').key?('labels'), 'Misplaced Application labels')
 longhorn_files = Dir.glob(File.join(ROOT, '02-longhorn', '*.{yml,yaml}'))
-check(longhorn_files.map { |f| File.basename(f) }.sort == %w[app.yml values.yml],
-      'Reusable Longhorn controller must not contain real route manifests')
+check(longhorn_files.map { |f| File.basename(f) }.sort == %w[app.yml storageclass-configmap.yaml values.yml],
+      'Longhorn folder must contain only its Application, values and encrypted default-class ConfigMap')
 check(longhorn_files.none? do |f|
   YAML.load_stream(File.read(f)).compact.any? { |d| %w[HelmRelease HelmRepository].include?(d['kind']) }
 end, 'Flux leftovers remain')
 values = docs('02-longhorn/values.yml').first
-check(values.dig('persistence', 'defaultClassReplicaCount') == 1, 'Single-node PVC replica count must be 1')
-check(values.dig('defaultSettings', 'defaultReplicaCount') == { 'v1' => '1', 'v2' => '1' }, 'UI volume replica defaults differ')
+check(values.dig('persistence', 'defaultClassReplicaCount') == 3, 'New PVCs must use three Longhorn replicas')
+check(values.dig('defaultSettings', 'defaultReplicaCount') == { 'v1' => '3', 'v2' => '3' }, 'UI volume replica defaults differ')
 check(values.dig('persistence', 'reclaimPolicy') == 'Retain', 'Unexpected volume deletion policy')
 check(values.dig('persistence', 'defaultClass') == false, 'Do not silently add a second default StorageClass')
 check(values.dig('service', 'ui', 'type') == 'ClusterIP', 'Longhorn UI must use the shared Gateway')
 check(values.dig('metrics', 'serviceMonitor', 'enabled'), 'Longhorn monitoring missing')
 openbao_values = docs('03-openbao/values.yml').first
-check(openbao_values.dig('server', 'ha', 'enabled') && openbao_values.dig('server', 'ha', 'replicas') == 1,
-      'First-phase OpenBao Raft must use one server pod')
+check(openbao_values.dig('server', 'ha', 'enabled') && openbao_values.dig('server', 'ha', 'replicas') == 3,
+      'OpenBao Raft must use three server pods')
 %w[dataStorage auditStorage].each do |storage|
   check(openbao_values.dig('server', storage, 'storageClass') == 'longhorn',
         'OpenBao must explicitly opt into Longhorn')
 end
-check(longhorn.dig('spec', 'sources').any? { |s| s['ref'] == 'values' && !s.key?('path') },
-      'Public chart Application must not render a cluster-specific route')
-puts 'PASS: one public root, private values wiring, wave order, editor schemas, and single-node Longhorn'
+longhorn_sources = longhorn.dig('spec', 'sources')
+check(longhorn_sources.any? { |entry| entry['chart'] == 'longhorn' } &&
+      longhorn_sources.any? { |entry| entry['ref'] == 'values' } &&
+      longhorn_sources.any? { |entry| entry['path'] == '02-longhorn' && entry.dig('directory', 'include') == 'storageclass-configmap.yaml' },
+      'Longhorn must combine its pinned chart, Git values and encrypted StorageClass override')
+puts 'PASS: one public root, multi-source Helm, CRD/storage wave order, three-node Longhorn and OpenBao'
 puts applications.sort_by { |app| [wave(app), app.dig('metadata', 'name')] }.map { |app| "  #{wave(app)}: #{app.dig('metadata', 'name')}" }

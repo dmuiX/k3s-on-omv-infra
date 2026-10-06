@@ -1,0 +1,40 @@
+# yaml-language-server: $schema=../values-schemas/kube-prometheus-stack/values.schema.json
+# Bootstrap only the CRDs; the full stack starts in wave 3 after Longhorn.
+crds:
+  enabled: true
+  upgradeJob:
+    enabled: false
+defaultRules:
+  create: false
+alertmanager:
+  enabled: false
+grafana:
+  enabled: false
+kubernetesServiceMonitors:
+  enabled: false
+kubeApiServer:
+  enabled: false
+kubelet:
+  enabled: false
+kubeControllerManager:
+  enabled: false
+coreDns:
+  enabled: false
+kubeDns:
+  enabled: false
+kubeEtcd:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeProxy:
+  enabled: false
+kubeStateMetrics:
+  enabled: false
+nodeExporter:
+  enabled: false
+prometheusOperator:
+  enabled: false
+prometheus:
+  enabled: false
+thanosRuler:
+  enabled: false

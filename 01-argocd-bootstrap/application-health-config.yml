@@ -9,17 +9,44 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "1"
 data:
-  # Required for app-of-apps sync waves to wait for child Applications.
+  # Gate app-of-apps waves on both child health and successful sync.
   resource.customizations.health.argoproj.io_Application: |
-    hs = {}
-    hs.status = "Progressing"
-    hs.message = ""
-    if obj.status ~= nil then
-      if obj.status.health ~= nil then
-        hs.status = obj.status.health.status
-        if obj.status.health.message ~= nil then
-          hs.message = obj.status.health.message
-        end
-      end
+    local hs = {status = "Progressing", message = "Waiting for child Application status"}
+    if obj.status == nil then
+      return hs
+    end
+
+    local status = obj.status
+    if obj.operation ~= nil or (status.operationState ~= nil and
+       (status.operationState.phase == "Running" or status.operationState.phase == "Terminating")) then
+      hs.message = "Waiting for child Application operation to finish"
+      return hs
+    end
+
+    if status.operationState ~= nil and
+       (status.operationState.phase == "Failed" or status.operationState.phase == "Error") then
+      hs.status = "Degraded"
+      hs.message = "Child Application sync " .. status.operationState.phase
+      return hs
+    end
+
+    if status.health ~= nil and
+       (status.health.status == "Degraded" or status.health.status == "Missing") then
+      hs.status = status.health.status
+      hs.message = status.health.message or "Child Application health " .. hs.status
+      return hs
+    end
+
+    if status.sync == nil or status.sync.status ~= "Synced" then
+      hs.message = "Waiting for child Application sync: " ..
+        (status.sync and status.sync.status or "Unknown")
+      return hs
+    end
+
+    if status.health ~= nil and status.health.status ~= nil then
+      hs.status = status.health.status
+      hs.message = status.health.message or ""
+    else
+      hs.message = "Waiting for child Application health"
     end
     return hs

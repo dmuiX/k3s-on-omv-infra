@@ -1,16 +1,20 @@
-# Longhorn: single-node bootstrap
+# Longhorn: bootstrap settings and encrypted volumes
 
 ## Structure and ordering
 
 Folder prefix `02-` denotes Longhorn's controller deployment wave. Its UI
-route is a separate wave-6 Application rendering the public
-`charts/cluster-config/` template with the private hostname value; placing it
+route is a separate wave-6 Application rendering `charts/cluster-config/` with
+private Git values; placing it
 after certificate configuration avoids blocking Longhorn on TLS readiness. The
 namespace and release name remain `longhorn`. HTTPS only becomes usable once
 the wildcard certificate is ready.
 
-- `app.yml`: pinned Longhorn Helm chart and reusable values from the public Git source.
-- `values.yml`: single-node storage settings; no embedded Flux HelmRelease.
+- `app.yml`: pinned Longhorn Helm chart, Git values and final StorageClass ConfigMap override.
+- `values.yml`: three-replica storage defaults; no embedded Flux HelmRelease.
+- `storageclass-configmap.yaml`: reviewed final Argo source overriding the chart's
+  `longhorn-storageclass` ConfigMap; the normal `longhorn` class encrypts new
+  volumes by default. No passphrase
+  or Kubernetes Secret is committed here.
 - The public route template selects `longhorn-frontend:80` through the K3s
   Gateway; only the real hostname value comes from private Git.
 
@@ -19,25 +23,66 @@ are removed. Argo CD is the only deployment controller for Longhorn.
 
 | Wave | Dependency |
 | ---: | --- |
-| 1 | Child-Application health customization; monitoring chart, CRDs and operator |
-| 2 | Longhorn controller/CSI and ServiceMonitor; cert-manager/K8up can run alongside |
-| 3 | OpenBao, whose data and audit PVCs explicitly select `longhorn` |
+| 1 | Child-Application health customization; monitoring CRDs only |
+| 2 | Longhorn controller/CSI, encrypted `longhorn` class template and ServiceMonitor |
+| 3 | Persistent monitoring and OpenBao; their PVCs select `longhorn` |
 | 4 | Vault Secrets Webhook |
 | 5 | Cloudflare credential, issuer, wildcard certificate |
 | 6 | Longhorn UI route rendered with the private hostname value |
 
-Monitoring runs before Longhorn rather than adding another CRD-only Application
-or deploying manually copied CRDs. Prometheus selects ServiceMonitors
-and PodMonitors across namespaces/releases, including Longhorn's metrics Service.
-Its data is ephemeral during bootstrap; persistent monitoring needs an explicit
-revisit of the order so it cannot depend on storage that has not been installed.
+The CRD-only Application renders the same pinned monitoring chart as the full
+stack, with all workloads disabled. Longhorn can create its ServiceMonitor
+in wave 2; the Prometheus operator and storage-backed Prometheus start in wave 3.
+Prometheus selects ServiceMonitors and PodMonitors across namespaces/releases,
+including Longhorn's metrics Service. See
+[`03-kube-prometheus-stack/README.md`](../03-kube-prometheus-stack/README.md)
+for the handoff from existing ephemeral monitoring.
 
-## Single-node settings
+## The normal `longhorn` class encrypts new volumes
 
-- PVC/StorageClass replica count: **1** in the initial one-node phase.
-- OpenBao initially runs **one Raft server pod** with separate data and audit
-  PVCs; each Longhorn volume starts with one storage replica.
-- UI-created volume defaults: **1** for each data engine (does not enable V2).
+New dynamically provisioned PVCs using **`storageClassName: longhorn`** get V1
+LUKS/dm-crypt encryption, ext4, expansion, three replicas and `Retain`. There is no
+second encrypted class. **`local-path` remains the cluster default** for PVCs
+without a class; manually created UI volumes are outside this StorageClass rule.
+Existing volumes are **not** converted, even though their class name is unchanged.
+
+Longhorn 1.11.1 does not expose encryption/CSI key references in its Helm values.
+The Application therefore uses `storageclass-configmap.yaml` as its final Argo
+source, intentionally overriding the chart's ConfigMap. Argo may report a
+`RepeatedResourceWarning`; the last source is the desired owner. Do not deploy
+with a standalone `helm upgrade -f values.yml`, because that omits the encrypted
+override. `verify-longhorn-encryption.rb` checks the source order and template.
+Update both values and override when changing replica count, filesystem or retention.
+
+**Rollout changes an existing class.** Longhorn's ConfigMap controller detects the
+changed template and **deletes/recreates `StorageClass/longhorn` itself**; direct
+Kubernetes parameter patching would fail because the fields are immutable. Do not
+manually race this controller with another StorageClass owner. Freeze new PVC
+creation during the approved transition. Existing PVs/PVCs and their data remain
+in place. The ConfigMap has `Prune=false`; no destructive Argo sync hook or
+`Force/Replace` sync option is used.
+
+**Before publishing/syncing**, create and independently back up
+`longhorn/longhorn-volume-encryption`. All four CSI Secret references (including
+node expansion) use namespace `longhorn`. The operator runbook is
+[bootstrap volume-encryption guide](../../k3s-on-omv-bootstrap/2%20longhorn/volume-encryption.md); it includes key custody,
+target checks and an isolated encrypted-volume test. The key is not retrieved
+from OpenBao: OpenBao must not be needed to unlock its own storage. Healthy K3s
+Secret encryption is a prerequisite. Keep the key while any volume or backup
+requires it.
+
+Encryption alone does not provide storage HA. The three-replica setting requires
+adequate disk capacity and healthy schedulable storage on all three nodes. Migrating the existing OpenBao data and audit
+PVCs is a separate, downtime-requiring change; see
+[OpenBao PVC migration plan](../../k3s-on-omv-bootstrap/5%20k3s/migrations/openbao-encrypted-pvcs.md). Do not initialize a new
+OpenBao cluster merely to change the underlying storage encryption.
+
+## Three-node replica settings
+
+- PVC/StorageClass replica count: **3** for newly provisioned volumes.
+- OpenBao runs **three Raft server pods** with separate data and audit PVCs;
+  each newly created Longhorn volume starts with three storage replicas.
+- UI-created volume defaults: **3** for each data engine (does not enable V2).
 - Reclaim policy: **Retain**. Released volumes are not automatically reclaimed;
   cleanup/reuse needs deliberate review. This is not a backup.
 - StorageClass `longhorn` is **not default**. Existing K3s `local-path` remains the
@@ -49,13 +94,12 @@ revisit of the order so it cannot depend on storage that has not been installed.
   reservation remains 12% per configured setting; measure total CSI/engine/replica
   overhead rather than treating the manager's request as the whole storage budget.
 
-One node provides no node-failure tolerance. After three suitable nodes and
-disks are ready, separately raise the Longhorn defaults to three for **new**
-volumes, increase replica counts on **existing** OpenBao volumes, and verify
-three healthy copies on distinct nodes. Scaling OpenBao from one Raft pod to
-three creates four additional PVCs (data and audit for each new pod); neither
-pod placement nor Raft quorum is proven just by changing a value. Revisit disk
-capacity, resource budgets and CSI availability as part of that staged change.
+Three nodes provide useful failure tolerance only when all volume replicas are
+healthy on distinct nodes. Increase replica counts on **existing** volumes
+separately; changing defaults affects only new volumes. Scaling OpenBao from one
+Raft pod to three creates four additional PVCs (data and audit for each new pod);
+neither pod placement nor Raft quorum is proven just by changing a value. Verify
+disk capacity, resource budgets, CSI availability and Raft membership during rollout.
 The current `createDefaultDiskLabeledNodes: "false"` permits default disk
 creation on joining nodes; do not assume Pi/Wyse storage will remain excluded
 without changing that policy.
@@ -72,10 +116,11 @@ local configuration checks:
    disk pressure thresholds and backup location. The value in Git is not approval
    to start writing storage data onto the OMV host.
 3. Review the rendered namespace/privileged workloads, manager resource settings,
-   and Argo auto-prune/self-heal flags. There are no live Longhorn PVCs to migrate
-   in the currently inspected cluster; recheck before any deployment.
-4. Sync in a separately approved batch and verify controllers/CSI are ready and
-   the `longhorn` StorageClass exists with one replica and `Retain`.
+   and Argo auto-prune/self-heal flags. Inventory existing Longhorn PVCs before
+   any deployment; changing a StorageClass does not migrate existing consumers.
+4. Provision/back up the independent key before the separately approved sync.
+   Verify controllers/CSI and the reconciled `longhorn` StorageClass: three replicas,
+   `Retain`, `encrypted: "true"` and all four CSI key-reference pairs.
 
 Read-only checks after installation:
 
@@ -92,7 +137,7 @@ using Longhorn, mount it, write a known test payload, flush it, recreate the tes
 consumer against the same claim and verify its checksum. Check the replica count
 and volume health. Review cleanup separately because `Retain` leaves data behind.
 Do not use real OpenBao data as the first storage test. Backup/restore testing is
-a separate gate and node failover cannot be proven on this one-node setup.
+a separate gate; three replicas still require verified placement and rebuild behavior.
 
 Longhorn's chart renders the StorageClass specification inside a ConfigMap for
 its components to create. Seeing that ConfigMap or an Argo `Healthy` status does

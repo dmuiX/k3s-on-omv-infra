@@ -1,0 +1,59 @@
+# yaml-language-server: $schema=../values-schemas/kube-prometheus-stack/values.schema.json
+fullnameOverride: kube-prometheus-stack
+namespaceOverride: kube-prometheus-stack
+# Wave 1 owns the CRDs separately. Never let two Applications manage them.
+crds:
+  enabled: false
+prometheusOperator:
+  admissionWebhooks:
+    certManager:
+      enabled: false # Avoid a cert-manager dependency for monitoring's admission webhook.
+grafana:
+  # Never commit Helm's randomly generated administrator password. Seed this
+  # Opaque Secret off-Git with exactly admin-user/admin-password before root.
+  admin:
+    existingSecret: kube-prometheus-stack-grafana
+    userKey: admin-user
+    passwordKey: admin-password
+  # Stop the old writer before reattaching the RWO volume during upgrades.
+  deploymentStrategy:
+    type: Recreate
+  persistence:
+    enabled: true
+    type: pvc
+    storageClassName: longhorn
+    accessModes: [ReadWriteOnce]
+    size: 10Gi
+  service:
+    type: ClusterIP
+prometheus:
+  service:
+    type: ClusterIP
+  prometheusSpec:
+    retention: 15d
+    retentionSize: 18GB # Below the 20Gi claim; leave room for WAL and compaction.
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: longhorn
+          accessModes: [ReadWriteOnce]
+          resources:
+            requests:
+              storage: 20Gi
+    # Include monitors emitted by other infra charts, not just this Helm release.
+    serviceMonitorSelectorNilUsesHelmValues: false
+    serviceMonitorSelector: {}
+    serviceMonitorNamespaceSelector: {}
+    podMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelector: {}
+    podMonitorNamespaceSelector: {}
+alertmanager:
+  alertmanagerSpec:
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: longhorn
+          accessModes: [ReadWriteOnce]
+          resources:
+            requests:
+              storage: 5Gi

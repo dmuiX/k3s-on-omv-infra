@@ -1,0 +1,11 @@
+{
+  "kv_mount": "kv",
+  "human_auth_mount": "userpass",
+  "webhook_role": {
+    "name": "vault-secrets-webhook",
+    "service_account": "vault-secrets-webhook",
+    "namespace": "vault-secrets-webhook",
+    "policies": ["vault-secrets-webhook-read"],
+    "token_ttl": "1h"
+  }
+}

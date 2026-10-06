@@ -25,19 +25,19 @@ root = YAML.load_file(File.join(ROOT, 'infra.yml'))
 source = root.fetch('spec').fetch('source')
 check(source.fetch('path') == '.' && source.dig('directory', 'recurse'), 'Public root must discover reusable Applications')
 pattern = source.dig('directory', 'include')
-%w[01-argocd-bootstrap/application-health-config.yml 01-kube-prometheus-stack/app.yml
-   02-longhorn/app.yml 03-openbao/app.yml].each do |path|
+%w[01-argocd-bootstrap/application-health-config.yml 01-monitoring-crds/app.yml
+   02-longhorn/app.yml 03-kube-prometheus-stack/app.yml 03-openbao/app.yml].each do |path|
   check(File.fnmatch(pattern, path, File::FNM_EXTGLOB), "Public root excludes #{path}")
 end
 
 apps = documents.select { |doc| doc['kind'] == 'Application' }
 apps.each do |app|
   sources = app.dig('spec', 'sources') || [app.dig('spec', 'source')]
-  sources.each do |s|
-    next if s['chart'] || (s['ref'] == 'values' && s['repoURL'] != source['repoURL'])
-    check(s['repoURL'] == source['repoURL'] && s['targetRevision'] == source['targetRevision'],
+  sources.compact.each do |child|
+    next if child['chart'] || (child['ref'] == 'values' && child['repoURL'] != source['repoURL'])
+    check(child['repoURL'] == source['repoURL'] && child['targetRevision'] == source['targetRevision'],
           "Git source differs from public base: #{app.dig('metadata', 'name')}")
-    check(!s['path'] || !s['path'].start_with?('clusters/'),
+    check(!child['path'] || !child['path'].start_with?('clusters/'),
           "Public Application selects private manifests: #{app.dig('metadata', 'name')}")
   end
 end
@@ -49,7 +49,7 @@ check(server.dig('data', 'server.insecure') == 'true', 'Traefik HTTP backend set
 end
 
 # Check publishable prose/manifests, not vendored chart schemas or CRDs.
-text_files = Dir.glob(File.join(ROOT, '{[0-9][0-9]-*,charts,docs,tests}', '**', '*.{md,yml,yaml,rb,tpl}'), File::FNM_EXTGLOB)
+text_files = Dir.glob(File.join(ROOT, '{[0-9][0-9]-*,charts,docs,tests}', '**', '*.{md,yml,yaml,rb,tpl,py,json,hcl}'), File::FNM_EXTGLOB)
 text_files += [File.join(ROOT, 'README.md'), File.join(ROOT, 'infra.yml')]
 text_files.uniq.each do |path|
   next unless File.file?(path)

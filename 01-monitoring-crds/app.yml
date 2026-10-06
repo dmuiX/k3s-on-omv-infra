@@ -1,33 +1,30 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: k8up
+  name: monitoring-crds
   namespace: argocd
   annotations:
-    argocd.argoproj.io/sync-wave: "2"
+    # Longhorn and cert-manager emit ServiceMonitors in wave 2.
+    argocd.argoproj.io/sync-wave: "1"
 spec:
   destination:
     name: in-cluster
-    namespace: k8up
+    namespace: kube-prometheus-stack
   project: default
   sources:
-    - repoURL: https://k8up-io.github.io/k8up
-      targetRevision: 4.10.0
-      chart: k8up
+    - repoURL: https://prometheus-community.github.io/helm-charts
+      targetRevision: 91.4.1
+      chart: kube-prometheus-stack
       helm:
+        releaseName: monitoring-crds
         valueFiles:
-          - $values/02-k8up/values.yml
-    - repoURL: "https://github.com/dmuiX/k3s-on-omv-infra.git"
+          - $values/01-monitoring-crds/values.yml
+    - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
       targetRevision: main
       ref: values
-    - repoURL: "https://github.com/dmuiX/k3s-on-omv-infra.git"
-      targetRevision: main
-      path: 02-k8up
-      directory:
-        include: pdb.yaml
   syncPolicy:
     automated:
-      prune: true
+      prune: false # Never delete monitoring CRDs (and their instances) during migration.
       selfHeal: true
       allowEmpty: false
     retry:
@@ -35,14 +32,14 @@ spec:
       backoff:
         duration: 5s
         factor: 2
-        maxDuration: 3m
+        maxDuration: 5m
     syncOptions:
       - PruneLast=true
       - CreateNamespace=true
       - ServerSideApply=true
-      - RespectIgnoreDifferences=true
   ignoreDifferences:
     - group: apiextensions.k8s.io
       kind: CustomResourceDefinition
       jsonPointers:
         - /status
+        - /spec/preserveUnknownFields

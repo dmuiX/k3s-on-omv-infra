@@ -9,6 +9,7 @@ metadata:
   annotations:
     vault.security.banzaicloud.io/vault-role: vault-secrets-webhook
     vault.security.banzaicloud.io/vault-path: kubernetes
+    argocd.argoproj.io/sync-wave: "-1"
 type: Opaque
 data:
   password: {{ required "Backup password Vault reference is required" .Values.backup.repoPasswordRef | b64enc | quote }}
@@ -23,6 +24,7 @@ metadata:
   annotations:
     vault.security.banzaicloud.io/vault-role: vault-secrets-webhook
     vault.security.banzaicloud.io/vault-path: kubernetes
+    argocd.argoproj.io/sync-wave: "-1"
 type: Opaque
 data:
   access-key-id: {{ required "Access key Vault reference is required" .Values.backup.accessKeyIdRef | b64enc | quote }}
@@ -33,6 +35,8 @@ kind: Schedule
 metadata:
   name: openbao-k8up-schedule
   namespace: openbao
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
 spec:
   failedJobsHistoryLimit: 2
   successfulJobsHistoryLimit: 2

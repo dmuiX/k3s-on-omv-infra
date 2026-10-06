@@ -1,4 +1,23 @@
-replicaCount: 2
+# Admission remains available when one of the three nodes is unavailable.
+replicaCount: 3
+affinity:
+  podAntiAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      - labelSelector:
+          matchLabels:
+            app.kubernetes.io/name: vault-secrets-webhook
+        topologyKey: kubernetes.io/hostname
+deployment:
+  # Required anti-affinity needs an old pod removed before its replacement can
+  # occupy that node during a three-node rolling update.
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 2
 certificate:
   useCertManager: true
   generate: false

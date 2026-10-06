@@ -1,0 +1,18 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "backup": {
+      "type": "object",
+      "required": ["restoreOrdinal"],
+      "properties": {
+        "restoreOrdinal": {
+          "description": "OpenBao StatefulSet ordinal to restore; never coerce invalid input to ordinal zero.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 2147483647
+        }
+      }
+    }
+  }
+}

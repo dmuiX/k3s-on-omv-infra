@@ -1,0 +1,47 @@
+# Last source of the longhorn Application: intentionally overrides the chart's
+# ConfigMap, because Longhorn 1.11.1 has no Helm values for CSI encryption keys.
+# Longhorn reconciles this template by replacing StorageClass/longhorn when it
+# changes. Review the rollout first; existing PVs are NOT re-encrypted.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: longhorn-storageclass
+  namespace: longhorn
+  labels:
+    app.kubernetes.io/name: longhorn
+    app.kubernetes.io/instance: longhorn
+  annotations:
+    argocd.argoproj.io/sync-options: Prune=false
+    argocd.argoproj.io/sync-wave: "-1"
+data:
+  storageclass.yaml: |
+    apiVersion: storage.k8s.io/v1
+    kind: StorageClass
+    metadata:
+      name: longhorn
+      annotations:
+        storageclass.kubernetes.io/is-default-class: "false"
+    provisioner: driver.longhorn.io
+    allowVolumeExpansion: true
+    reclaimPolicy: Retain
+    volumeBindingMode: Immediate
+    parameters:
+      numberOfReplicas: "3"
+      staleReplicaTimeout: "30"
+      fromBackup: ""
+      fsType: ext4
+      dataLocality: disabled
+      unmapMarkSnapChainRemoved: ignored
+      disableRevisionCounter: "true"
+      dataEngine: v1
+      backupTargetName: default
+      encrypted: "true"
+      # Independent local Secret; never fetch OpenBao's volume key from OpenBao.
+      csi.storage.k8s.io/provisioner-secret-name: longhorn-volume-encryption
+      csi.storage.k8s.io/provisioner-secret-namespace: longhorn
+      csi.storage.k8s.io/node-publish-secret-name: longhorn-volume-encryption
+      csi.storage.k8s.io/node-publish-secret-namespace: longhorn
+      csi.storage.k8s.io/node-stage-secret-name: longhorn-volume-encryption
+      csi.storage.k8s.io/node-stage-secret-namespace: longhorn
+      csi.storage.k8s.io/node-expand-secret-name: longhorn-volume-encryption
+      csi.storage.k8s.io/node-expand-secret-namespace: longhorn

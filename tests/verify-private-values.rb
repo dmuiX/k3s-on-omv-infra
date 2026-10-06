@@ -3,6 +3,7 @@
 # Never prints rendered Secret data or private identifiers.
 require 'yaml'
 require 'open3'
+require 'uri'
 
 ROOT = File.expand_path('..', __dir__)
 PRIVATE = File.expand_path(ARGV.fetch(0, '../k3s-on-omv-live'), ROOT)
@@ -19,8 +20,8 @@ def wave(app)
 end
 
 def render(component)
-  output, _stderr, status = Open3.capture3('helm', 'template', "check-#{component}", CHART,
-                                           '--set', "component=#{component}", '--values', VALUES)
+  output, status = Open3.capture2('helm', 'template', "check-#{component}", CHART,
+                                  '--set', "component=#{component}", '--values', VALUES, err: File::NULL)
   check(status.success?, "Failed to render #{component} with private values; diagnostics suppressed")
   YAML.load_stream(output).compact
 rescue Errno::ENOENT
@@ -33,10 +34,16 @@ pattern = root.dig('spec', 'source', 'directory', 'include')
 apps = Dir.glob(File.join(ROOT, '[0-9][0-9]-*', '*app.yml')).map do |path|
   YAML.load_file(path) if File.fnmatch(pattern, path.delete_prefix(ROOT + '/'), File::FNM_EXTGLOB)
 end.compact.to_h { |app| [app.dig('metadata', 'name'), app] }
-check(apps.size == 13 && apps.values.map { |app| wave(app) }.uniq.sort == (1..6).to_a,
+expected_apps = %w[argocd-config argocd-route grafana-route kube-prometheus-stack monitoring-crds
+                   cert-manager cert-manager-config k8up longhorn longhorn-route openbao
+                   openbao-access-config openbao-config openbao-route vault-secrets-webhook]
+check(apps.keys.sort == expected_apps.sort && apps.values.map { |app| wave(app) }.uniq.sort == (1..6).to_a,
       'One public root must own all components across waves 1–6')
 check(File.file?(VALUES), 'Private values file missing')
 private_values = YAML.load_file(VALUES)
+backup_endpoint = URI.parse(private_values.dig('backup', 'endpoint'))
+check(backup_endpoint.is_a?(URI::HTTPS) && ['', '/'].include?(backup_endpoint.path),
+      'Backup endpoint must not repeat the separately configured bucket path')
 
 rendered = {}
 { 'argocd-route' => ['argocd', 6, 'argocd-config', 'argocd-server', 80],
@@ -53,8 +60,9 @@ rendered = {}
   check(chart_source['repoURL'] == public_url && chart_source['path'] == 'charts/cluster-config' &&
         chart_source.dig('helm', 'valueFiles') == ['$values/clusters/omv/values.yml'] &&
         chart_source.dig('helm', 'parameters', 0) == { 'name' => 'component', 'value' => component } &&
+        values_source['repoURL'] == 'https://github.com/dmuiX/k3s-on-omv-live.git' &&
         values_source['ref'] == 'values' && !values_source.key?('path'),
-        "#{name} must obtain ONLY values from private Git")
+        "#{name} must render the public chart with private Git values")
   docs = render(component)
   check(!docs.empty?, "No rendered resource for #{component}")
   docs.each do |doc|
@@ -65,7 +73,8 @@ rendered = {}
   next unless service
   route = docs.fetch(0)
   check(route['kind'] == 'HTTPRoute' && route.dig('spec', 'hostnames') == [private_values.dig('routes', component, 'hostname')] &&
-        route.dig('spec', 'rules', 0, 'backendRefs', 0) == { 'name' => service, 'port' => port },
+        route.dig('spec', 'rules', 0, 'backendRefs', 0) ==
+          { 'group' => '', 'kind' => 'Service', 'name' => service, 'port' => port, 'weight' => 1 },
         "Private values did not produce the expected #{component} route")
 end
 
@@ -93,11 +102,11 @@ check(listener.dig('certificateRefs', 0, 'name') == certificate.dig('spec', 'sec
 identifiers = private_values.fetch('routes').values.map { |r| r.fetch('hostname') }
 identifiers += [private_values.dig('certificate', 'dnsName'), private_values.dig('certificate', 'acmeEmail'),
                 private_values.dig('backup', 'endpoint'), private_values.dig('backup', 'bucket')]
-files = Dir.glob(File.join(ROOT, '{[0-9][0-9]-*,charts,docs,tests}', '**', '*.{md,yml,yaml,rb,tpl}'), File::FNM_EXTGLOB)
+files = Dir.glob(File.join(ROOT, '{[0-9][0-9]-*,charts,docs,tests}', '**', '*.{md,yml,yaml,rb,tpl,py,json,hcl}'), File::FNM_EXTGLOB)
 files += [File.join(ROOT, 'README.md'), File.join(ROOT, 'infra.yml')]
 files.uniq.each do |path|
   next unless File.file?(path)
   check(identifiers.none? { |value| File.read(path).include?(value) },
         "Private identifier leaked into public file #{path.delete_prefix(ROOT + '/')}")
 end
-puts 'PASS: one public root, private values only, rendered routes/TLS/backups, no duplicate owners'
+puts 'PASS: one public root, private Helm values, rendered routes/TLS/backups, no duplicate owners'

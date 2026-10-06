@@ -4,8 +4,8 @@ metadata:
   name: kube-prometheus-stack
   namespace: argocd
   annotations:
-    # Install monitoring CRDs before wave-2 charts emit ServiceMonitors.
-    argocd.argoproj.io/sync-wave: "1"
+    # Deploy persistent monitoring only after Longhorn is healthy.
+    argocd.argoproj.io/sync-wave: "3"
 spec:
   destination:
     name: in-cluster
@@ -17,13 +17,13 @@ spec:
       chart: kube-prometheus-stack
       helm:
         valueFiles:
-          - $values/01-kube-prometheus-stack/values.yml
-    - repoURL: "https://github.com/dmuiX/k3s-on-omv-infra.git"
+          - $values/03-kube-prometheus-stack/values.yml
+    - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
       targetRevision: main
       ref: values
   syncPolicy:
     automated:
-      prune: true
+      prune: false # CRDs move to monitoring-crds; do not prune them during handoff.
       selfHeal: true
       allowEmpty: false
     retry:
