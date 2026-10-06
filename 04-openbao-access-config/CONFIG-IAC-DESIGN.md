@@ -38,8 +38,10 @@ sind hier maßgeblich; bei Bedarf später auf einen eigenen KV-Mount umstellen.
 
 ## Einmaliger, versionierter Bootstrap — ohne UI-Zwang
 
-`04-openbao-access-config/bootstrap/bootstrap.py` ist ein **separates**, vom
-Operator nach Review ausgeführtes Skript. Es verbindet sich ausschließlich
+Das einmalige `bootstrap.py` und seine privilegierte Writer-Policy liegen im
+separaten Repository `k3s-on-omv-bootstrap` unter
+`ansible/roles/k3s_cluster/files/openbao-access/`. Das vom Operator nach Review
+ausgeführte Skript verbindet sich ausschließlich
 über einen lokal gebundenen OpenBao-Port-Forward (`127.0.0.1:18200`), fragt
 einen vorhandenen Admin-Token verdeckt ab und überträgt ihn nur an localhost.
 Kein Token kommt in Git, CLI-Argumente, eine ConfigMap oder ein langlebiges
@@ -52,7 +54,7 @@ Nach gesonderter Freigabe, von einem vertrauenswürdigen Arbeitsplatz:
 ```sh
 kubectl -n openbao port-forward --address 127.0.0.1 svc/openbao-ui 18200:8200
 # In einem zweiten Terminal, vom Infra-Repo aus:
-python3 -B 04-openbao-access-config/bootstrap/bootstrap.py
+python3 -B ../k3s-on-omv-bootstrap/ansible/roles/k3s_cluster/files/openbao-access/bootstrap.py
 ```
 
 Es erstellt `kv/` als KV v2, **falls** der Mount noch fehlt, belässt einen
