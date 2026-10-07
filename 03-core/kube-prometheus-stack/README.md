@@ -10,7 +10,7 @@ exist before the operator starts; it will be picked up in wave 3.
 | Consumer | Claim | Storage |
 | --- | --- | --- |
 | Grafana | `kube-prometheus-stack-grafana` | 2Gi, RWO, `longhorn` |
-| Prometheus | operator-created claim from `spec.storage.volumeClaimTemplate` | 5Gi, RWO, `longhorn`; retention 7d / 4GB |
+| Prometheus | operator-created claim from `spec.storage.volumeClaimTemplate` | 20Gi, RWO, `longhorn`; retention 15d / 18GB |
 | Alertmanager | operator-created claim from `spec.storage.volumeClaimTemplate` | 1Gi, RWO, `longhorn` |
 
 The `longhorn` class uses three replicas, is non-default and encrypts **new** volumes
@@ -29,10 +29,10 @@ persistent data claims.
 
 The Pi's nominal 128 GB device is the limiting storage budget. Capacity review
 must use Longhorn's effective allocatable bytes after the OS, K3s, filesystem
-and minimum-free-space reservation. These three monitoring claims place 8Gi of
+and minimum-free-space reservation. These three monitoring claims place 23Gi of
 requested data on every eligible node because `longhorn` uses three replicas.
-Together with OpenBao's six 1Gi replicas, the initial normal-class reservation
-on the Pi is approximately 14Gi. PostgreSQL and future consumers require
+Together with OpenBao's six 1Gi replicas, the normal-class reservation on the
+Pi is approximately 29Gi. PostgreSQL and future consumers require
 separate budgets.
 
 `PlatformPVCUsageWarning` fires at 70% and `PlatformPVCUsageCritical` at 85% for

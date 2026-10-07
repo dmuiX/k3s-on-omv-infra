@@ -192,7 +192,7 @@ three replicas. Verify replica placement, Raft quorum and recovery. Host storage
 prerequisites, a disposable PVC write/read/reattach test, OpenBao
 unseal/recovery and an independent backup restore must pass before relying on
 it. Monitoring uses right-sized encrypted three-replica Longhorn claims (Grafana
-2Gi, Prometheus 5Gi with 7d/4GB retention, Alertmanager 1Gi). OpenBao explicitly
+2Gi, Prometheus 20Gi with 15d/18GB retention, Alertmanager 1Gi). OpenBao explicitly
 uses 1Gi each for every Raft data and audit claim. The Pi's 128 GB device is the
 limiting node, so capacity decisions use its effective Longhorn-allocatable
 space rather than nominal disk size. Replication is not HA or a backup. Before changing a running wave-1 monitoring deployment, see

@@ -260,16 +260,16 @@ check(grafana_volume_ignore && grafana_volume_ignore['jsonPointers'] == ['/spec/
 check(grafana_secret_ignore && grafana_secret_ignore['jsonPointers'].sort ==
       ['/data/admin-password', '/data/admin-user'],
       'Argo must ignore only the chart-generated Grafana administrator data fields')
-{ 'prometheus' => '5Gi', 'alertmanager' => '1Gi' }.each do |component, size|
+{ 'prometheus' => '20Gi', 'alertmanager' => '1Gi' }.each do |component, size|
   spec = component == 'prometheus' ? 'prometheusSpec' : 'alertmanagerSpec'
   field = component == 'prometheus' ? 'storageSpec' : 'storage'
   claim = monitor_values.dig(component, spec, field, 'volumeClaimTemplate', 'spec')
   check(claim['storageClassName'] == 'longhorn' && claim.dig('resources', 'requests', 'storage') == size,
         "#{component} must use its right-sized Longhorn claim")
 end
-check(monitor_values.dig('prometheus', 'prometheusSpec', 'retention') == '7d' &&
-      monitor_values.dig('prometheus', 'prometheusSpec', 'retentionSize') == '4GB',
-      'Prometheus retention must fit inside its 5Gi claim')
+check(monitor_values.dig('prometheus', 'prometheusSpec', 'retention') == '15d' &&
+      monitor_values.dig('prometheus', 'prometheusSpec', 'retentionSize') == '18GB',
+      'Prometheus retention must fit inside its 20Gi claim')
 capacity_alerts = monitor_values.dig('additionalPrometheusRulesMap', 'persistent-volume-capacity', 'groups', 0, 'rules')
 check(capacity_alerts&.map { |rule| rule['alert'] } == %w[PlatformPVCUsageWarning PlatformPVCUsageCritical],
       'Platform PVC capacity alerts are missing')
