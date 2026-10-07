@@ -9,9 +9,9 @@ exist before the operator starts; it will be picked up in wave 3.
 
 | Consumer | Claim | Storage |
 | --- | --- | --- |
-| Grafana | `kube-prometheus-stack-grafana` | 10Gi, RWO, `longhorn` |
-| Prometheus | operator-created claim from `spec.storage.volumeClaimTemplate` | 20Gi, RWO, `longhorn`; retention 15d / 18GB |
-| Alertmanager | operator-created claim from `spec.storage.volumeClaimTemplate` | 5Gi, RWO, `longhorn` |
+| Grafana | `kube-prometheus-stack-grafana` | 2Gi, RWO, `longhorn` |
+| Prometheus | operator-created claim from `spec.storage.volumeClaimTemplate` | 5Gi, RWO, `longhorn`; retention 7d / 4GB |
+| Alertmanager | operator-created claim from `spec.storage.volumeClaimTemplate` | 1Gi, RWO, `longhorn` |
 
 The `longhorn` class uses three replicas, is non-default and encrypts **new** volumes
 with a separately managed key. `Retain` is not a backup: reserve disk space and
@@ -26,6 +26,28 @@ ignores only that Secret's generated administrator data fields to prevent
 render-time randomness from rotating the credential; no administrator value is
 committed or logged. Other exporters, rules and operator components do not need
 persistent data claims.
+
+The Pi's nominal 128 GB device is the limiting storage budget. Capacity review
+must use Longhorn's effective allocatable bytes after the OS, K3s, filesystem
+and minimum-free-space reservation. These three monitoring claims place 8Gi of
+requested data on every eligible node because `longhorn` uses three replicas.
+Together with OpenBao's six 1Gi replicas, the initial normal-class reservation
+on the Pi is approximately 14Gi. PostgreSQL and future consumers require
+separate budgets.
+
+`PlatformPVCUsageWarning` fires at 70% and `PlatformPVCUsageCritical` at 85% for
+monitoring and OpenBao claims. At warning level, identify the claim and its
+recent growth, confirm that metrics are present, and plan a declarative PVC
+expansion while free Longhorn capacity remains. At critical level, stop
+nonessential data growth and expansion-dependent rollouts. Never delete a PVC,
+PV, Longhorn volume, or encryption material as a capacity workaround.
+
+PVC expansion is supported, but PVC shrinking is not. A reduced Git declaration
+does not shrink an already-bound claim and may produce drift or an invalid
+update. Moving retained data to a smaller claim requires a separately approved
+backup/restore or replacement migration; preserve the original volume and its
+backup until the replacement is independently verified. Disposable monitoring
+history may only be recreated after explicit approval.
 
 ## Controlled transition from an installed wave-1 chart
 

@@ -17,10 +17,12 @@ server:
   auditStorage:
     enabled: true
     accessMode: ReadWriteOnce
+    size: 1Gi
     storageClass: longhorn
   dataStorage:
     enabled: true
     accessMode: ReadWriteOnce
+    size: 1Gi
     storageClass: longhorn
   volumes:
     - name: unseal-key-volume
