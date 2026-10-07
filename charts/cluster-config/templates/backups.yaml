@@ -31,6 +31,22 @@ data:
   secret-access-key: {{ required "Secret key Vault reference is required" .Values.backup.secretAccessKeyRef | b64enc | quote }}
 ---
 apiVersion: k8up.io/v1
+kind: PodConfig
+metadata:
+  name: openbao-k8up-pod-config
+  namespace: openbao
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  template:
+    spec:
+      tolerations:
+        - key: workload-placement
+          operator: Equal
+          value: restricted
+          effect: NoSchedule
+---
+apiVersion: k8up.io/v1
 kind: Schedule
 metadata:
   name: openbao-k8up-schedule
@@ -38,6 +54,8 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "0"
 spec:
+  podConfigRef:
+    name: openbao-k8up-pod-config
   failedJobsHistoryLimit: 2
   successfulJobsHistoryLimit: 2
   backend:

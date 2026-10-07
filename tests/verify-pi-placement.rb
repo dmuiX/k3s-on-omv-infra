@@ -31,8 +31,11 @@ check(permits_pi?(cert_manager.dig('startupapicheck', 'tolerations')), 'cert-man
 k8up = yaml('02-controllers/k8up/values.yml')
 check(permits_pi?(k8up['tolerations']), 'K8up controller cannot use raspi4')
 check(permits_pi?(k8up.dig('cleanup', 'tolerations')), 'K8up cleanup cannot use raspi4')
-check(permits_pi?(yaml('02-controllers/longhorn/values.yml').dig('global', 'tolerations')),
+longhorn = yaml('02-controllers/longhorn/values.yml')
+check(permits_pi?(longhorn.dig('global', 'tolerations')),
       'Longhorn system workloads cannot use raspi4')
+check(longhorn.dig('defaultSettings', 'taintToleration') == 'workload-placement=restricted:NoSchedule',
+      'Longhorn-created instance managers cannot use raspi4')
 check(permits_pi?(yaml('03-core/openbao/values.yml').dig('server', 'tolerations')),
       'OpenBao cannot place its third voter on raspi4')
 check(permits_pi?(yaml('04-secrets/vault-secrets-webhook/values.yml')['tolerations']),

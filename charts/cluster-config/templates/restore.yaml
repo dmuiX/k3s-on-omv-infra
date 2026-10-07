@@ -1,11 +1,27 @@
 {{- if eq .Values.component "restore" }}
 {{- $n := int .Values.backup.restoreOrdinal }}
 apiVersion: k8up.io/v1
+kind: PodConfig
+metadata:
+  name: openbao-k8up-restore-pod-config
+  namespace: openbao
+spec:
+  template:
+    spec:
+      tolerations:
+        - key: workload-placement
+          operator: Equal
+          value: restricted
+          effect: NoSchedule
+---
+apiVersion: k8up.io/v1
 kind: Restore
 metadata:
   name: openbao-{{ $n }}-k8up-restore
   namespace: openbao
 spec:
+  podConfigRef:
+    name: openbao-k8up-restore-pod-config
   backend:
     repoPasswordSecretRef:
       name: k8up-repo-password

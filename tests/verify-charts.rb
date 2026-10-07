@@ -120,6 +120,10 @@ Dir.mktmpdir('infra-helm-check-') do |dir|
           'Public certificate template incomplete') if component == 'certificates'
     if component == 'backups'
       schedule = find_resource(resources, 'Schedule', 'openbao-k8up-schedule')
+      pod_config = find_resource(resources, 'PodConfig', 'openbao-k8up-pod-config')
+      check(schedule.dig('spec', 'podConfigRef', 'name') == pod_config.dig('metadata', 'name') &&
+            Array(pod_config.dig('spec', 'template', 'spec', 'tolerations')).include?(PI_TOLERATION),
+            'K8up Schedule jobs cannot use raspi4')
       %w[k8up-repo-password r2-credentials].each do |name|
         secret = find_resource(resources, 'Secret', name)
         check(secret.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '-1',
@@ -134,7 +138,14 @@ Dir.mktmpdir('infra-helm-check-') do |dir|
             find_resource(resources, 'Secret', 'postgresql-r2-credentials'),
             'PostgreSQL Barman configuration is incomplete')
     end
-    check(resources.one? { |r| r['kind'] == 'Restore' }, 'Manual restore template missing') if component == 'restore'
+    if component == 'restore'
+      restore = resources.find { |resource| resource['kind'] == 'Restore' }
+      check(restore, 'Manual restore template missing')
+      pod_config = find_resource(resources, 'PodConfig', 'openbao-k8up-restore-pod-config')
+      check(restore.dig('spec', 'podConfigRef', 'name') == pod_config.dig('metadata', 'name') &&
+            Array(pod_config.dig('spec', 'template', 'spec', 'tolerations')).include?(PI_TOLERATION),
+            'K8up Restore job cannot use raspi4')
+    end
   end
 
   # Schema validation rejects invalid input; normalization keeps valid numeric
