@@ -6,9 +6,9 @@ clusterResourceNamespace: cert-manager
 # Leader-elected controllers stay available while one node is unavailable.
 replicaCount: 2
 tolerations:
-  - key: workload-placement
+  - key: CriticalAddonsOnly
     operator: Equal
-    value: restricted
+    value: "true"
     effect: NoSchedule
 podDisruptionBudget:
   enabled: true
@@ -23,9 +23,9 @@ affinity:
 webhook:
   replicaCount: 2
   tolerations:
-    - key: workload-placement
+    - key: CriticalAddonsOnly
       operator: Equal
-      value: restricted
+      value: "true"
       effect: NoSchedule
   podDisruptionBudget:
     enabled: true
@@ -40,9 +40,9 @@ webhook:
 cainjector:
   replicaCount: 2
   tolerations:
-    - key: workload-placement
+    - key: CriticalAddonsOnly
       operator: Equal
-      value: restricted
+      value: "true"
       effect: NoSchedule
   podDisruptionBudget:
     enabled: true
@@ -56,9 +56,9 @@ cainjector:
           topologyKey: kubernetes.io/hostname
 startupapicheck:
   tolerations:
-    - key: workload-placement
+    - key: CriticalAddonsOnly
       operator: Equal
-      value: restricted
+      value: "true"
       effect: NoSchedule
 prometheus:
   enabled: true

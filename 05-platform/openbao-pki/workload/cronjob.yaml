@@ -28,9 +28,9 @@ spec:
           automountServiceAccountToken: false
           restartPolicy: Never
           tolerations:
-            - key: workload-placement
+            - key: CriticalAddonsOnly
               operator: Equal
-              value: restricted
+              value: "true"
               effect: NoSchedule
           securityContext:
             runAsNonRoot: true

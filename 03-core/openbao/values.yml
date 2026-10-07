@@ -10,9 +10,9 @@ serverTelemetry:
     enabled: true
 server:
   tolerations:
-    - key: workload-placement
+    - key: CriticalAddonsOnly
       operator: Equal
-      value: restricted
+      value: "true"
       effect: NoSchedule
   auditStorage:
     enabled: true

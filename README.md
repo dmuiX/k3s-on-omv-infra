@@ -98,7 +98,7 @@ subsequent Helm renders do not rotate them. The values are never committed or
 logged; inspect or rotate them only through an explicitly approved secret-access
 procedure.
 
-The `raspi4` node carries `workload-placement=restricted:NoSchedule`. Infra
+The `raspi4` node carries `CriticalAddonsOnly=true:NoSchedule`. Infra
 controllers, OpenBao reconciliation and PostgreSQL explicitly tolerate that
 taint. `kube-prometheus-stack` is the deliberate exception; even its node
 exporter excludes `raspi4` to reserve the Pi's limited capacity.

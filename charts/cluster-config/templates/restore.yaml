@@ -12,9 +12,9 @@ spec:
       containers:
         - name: k8up
       tolerations:
-        - key: workload-placement
+        - key: CriticalAddonsOnly
           operator: Equal
-          value: restricted
+          value: "true"
           effect: NoSchedule
 ---
 apiVersion: k8up.io/v1

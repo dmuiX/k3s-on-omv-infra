@@ -22,8 +22,8 @@ def find_resource(resources, kind, name)
     raise("Rendered #{kind}/#{name} not found")
 end
 
-PI_TOLERATION = {'key' => 'workload-placement', 'operator' => 'Equal',
-                 'value' => 'restricted', 'effect' => 'NoSchedule'}.freeze
+PI_TOLERATION = {'key' => 'CriticalAddonsOnly', 'operator' => 'Equal',
+                 'value' => 'true', 'effect' => 'NoSchedule'}.freeze
 
 def pod_spec(resource)
   case resource['kind']

@@ -1,9 +1,9 @@
 # yaml-language-server: $schema=../../values-schemas/plugin-barman-cloud/values.schema.json
 replicaCount: 2
 tolerations:
-  - key: workload-placement
+  - key: CriticalAddonsOnly
     operator: Equal
-    value: restricted
+    value: "true"
     effect: NoSchedule
 image:
   registry: ghcr.io

@@ -1,12 +1,12 @@
 #!/usr/bin/env ruby
-# Offline contract for the restricted Raspberry Pi workload-placement taint.
+# Offline contract for the restricted Raspberry Pi CriticalAddonsOnly taint.
 require 'yaml'
 
 ROOT = File.expand_path('..', __dir__)
 EXPECTED = {
-  'key' => 'workload-placement',
+  'key' => 'CriticalAddonsOnly',
   'operator' => 'Equal',
-  'value' => 'restricted',
+  'value' => 'true',
   'effect' => 'NoSchedule'
 }.freeze
 
@@ -34,7 +34,7 @@ check(permits_pi?(k8up.dig('cleanup', 'tolerations')), 'K8up cleanup cannot use 
 longhorn = yaml('02-controllers/longhorn/values.yml')
 check(permits_pi?(longhorn.dig('global', 'tolerations')),
       'Longhorn system workloads cannot use raspi4')
-check(longhorn.dig('defaultSettings', 'taintToleration') == 'workload-placement=restricted:NoSchedule',
+check(longhorn.dig('defaultSettings', 'taintToleration') == 'CriticalAddonsOnly=true:NoSchedule',
       'Longhorn-created instance managers cannot use raspi4')
 check(permits_pi?(yaml('03-core/openbao/values.yml').dig('server', 'tolerations')),
       'OpenBao cannot place its third voter on raspi4')

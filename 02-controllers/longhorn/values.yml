@@ -1,15 +1,15 @@
 # yaml-language-server: $schema=../../values-schemas/longhorn/values.schema.json
 global:
   tolerations:
-    - key: workload-placement
+    - key: CriticalAddonsOnly
       operator: Equal
-      value: restricted
+      value: "true"
       effect: NoSchedule
 defaultSettings:
   defaultDataPath: /var/lib/longhorn
   # Longhorn-created instance-manager pods are not rendered by Helm and need
   # the same explicit permission as chart-managed system workloads.
-  taintToleration: workload-placement=restricted:NoSchedule
+  taintToleration: CriticalAddonsOnly=true:NoSchedule
   createDefaultDiskLabeledNodes: "false"
   # New volumes use one replica per cluster node. Existing volumes must be
   # expanded to three replicas separately and verified before relying on HA.

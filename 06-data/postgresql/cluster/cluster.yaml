@@ -36,9 +36,9 @@ spec:
   affinity:
     enablePodAntiAffinity: true
     tolerations:
-      - key: workload-placement
+      - key: CriticalAddonsOnly
         operator: Equal
-        value: restricted
+        value: "true"
         effect: NoSchedule
     podAntiAffinityType: required
     topologyKey: kubernetes.io/hostname
