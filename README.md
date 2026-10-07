@@ -39,7 +39,7 @@ External-DNS. It uses Argo CD (already installed) for these applications:
 └── openbao/                early UI routes, usable when wildcard TLS becomes ready
 06-data/
 ├── openbao-backups/        OpenBao backup schedule
-├── postgresql/             staged central CloudNativePG HA platform
+├── postgresql/             staged central Crunchy PGO HA platform
 └── redis/                  dormant Redis operator preparation (`application.yml`)
 ```
 

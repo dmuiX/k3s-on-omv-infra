@@ -50,7 +50,8 @@ def render(name, env, chart_name = nil)
   repo = source.fetch('repoURL')
   chart = source.fetch('chart')
   release = source.dig('helm', 'releaseName') || name
-  chart_ref = repo.start_with?('ghcr.io/') ? "oci://#{repo}/#{chart}" : chart
+  chart_ref = (repo.start_with?('ghcr.io/') || repo.start_with?('registry.developers.crunchydata.com/')) ?
+    "oci://#{repo}/#{chart}" : chart
   args = [HELM, 'template', release, chart_ref]
   args.concat(['--repo', repo]) unless chart_ref.start_with?('oci://')
   args.concat(['--version', source.fetch('targetRevision'), '--namespace', app.dig('spec', 'destination', 'namespace'),
@@ -83,16 +84,15 @@ Dir.mktmpdir('infra-helm-check-') do |dir|
   cert_manager = render('cert-manager', env)
   k8up = render('k8up', env)
   secrets_webhook = render('vault-secrets-webhook', env)
-  cnpg = render('postgresql', env, 'cloudnative-pg')
-  barman = render('postgresql', env, 'plugin-barman-cloud')
-  auxiliary = k8up + secrets_webhook + cnpg + barman
+  pgo = render('postgresql', env, 'pgo')
+  auxiliary = k8up + secrets_webhook + pgo
   check((crds + monitoring + longhorn + openbao + cert_manager + auxiliary).none? do |resource|
     %w[Application ApplicationSet].include?(resource['kind'])
   end, 'A Helm chart unexpectedly rendered a nested Argo resource')
 
   {'cert-manager' => cert_manager, 'k8up' => k8up, 'longhorn' => longhorn,
    'openbao' => openbao, 'vault-secrets-webhook' => secrets_webhook,
-   'cloudnative-pg' => cnpg, 'plugin-barman-cloud' => barman}.each do |component, resources|
+   'pgo' => pgo}.each do |component, resources|
     workloads = resources.select { |resource| pod_spec(resource) }
     check(!workloads.empty?, "#{component} rendered no workload to validate")
     check(workloads.all? { |resource| permits_pi?(resource) },
@@ -134,10 +134,11 @@ Dir.mktmpdir('infra-helm-check-') do |dir|
             'Backup Schedule must sync after its Secrets')
     end
     if component == 'postgresql'
-      object_store = find_resource(resources, 'ObjectStore', 'platform-postgres-backups')
-      check(object_store.dig('spec', 'retentionPolicy') == '30d' &&
-            find_resource(resources, 'Secret', 'postgresql-r2-credentials'),
-            'PostgreSQL Barman configuration is incomplete')
+      postgres = find_resource(resources, 'PostgresCluster', 'platform-postgres')
+      check(postgres.dig('spec', 'users').map { |user| user['name'] } == %w[grafana radar] &&
+            postgres.dig('spec', 'backups', 'pgbackrest', 'repos', 0, 'name') == 'repo1' &&
+            find_resource(resources, 'Secret', 'platform-postgres-pgbackrest'),
+            'Crunchy PostgreSQL users or pgBackRest configuration is incomplete')
     end
     if component == 'restore'
       restore = resources.find { |resource| resource['kind'] == 'Restore' }
@@ -210,18 +211,17 @@ Dir.mktmpdir('infra-helm-check-') do |dir|
   check(webhook_pdb.dig('spec', 'minAvailable') == 2,
         'Vault Secrets Webhook PDB must retain two admission replicas')
 
-  cnpg_operator = find_resource(cnpg, 'Deployment', 'cloudnative-pg')
-  barman_operator = find_resource(barman, 'Deployment', 'plugin-barman-cloud')
-  [cnpg_operator, barman_operator].each do |deployment|
-    check(deployment.dig('spec', 'replicas') == 2 &&
-          deployment.dig('spec', 'template', 'spec', 'affinity', 'podAntiAffinity',
+  pgo_operator = find_resource(pgo, 'Deployment', 'pgo')
+  check(pgo_operator.dig('spec', 'replicas') == 3 &&
+        pgo_operator.dig('spec', 'template', 'spec', 'affinity', 'podAntiAffinity',
                          'requiredDuringSchedulingIgnoredDuringExecution'),
-          "#{deployment.dig('metadata', 'name')} must have two distributed replicas")
-    check(deployment.dig('spec', 'template', 'spec', 'containers', 0, 'image').match?(/@sha256:[0-9a-f]{64}\z/),
-          "#{deployment.dig('metadata', 'name')} image must be digest pinned")
-  end
-  check(find_resource(barman, 'ConfigMap', 'plugin-barman-cloud-config').dig('data', 'SIDECAR_IMAGE')
-          .match?(/@sha256:[0-9a-f]{64}\z/), 'Barman sidecar image must be digest pinned')
+        'PGO must have three distributed leader-elected replicas')
+  check(pgo_operator.dig('spec', 'template', 'spec', 'containers', 0, 'image')
+          .match?(/@sha256:[0-9a-f]{64}\z/), 'PGO operator image must be digest pinned')
+  related_images = pgo_operator.dig('spec', 'template', 'spec', 'containers', 0, 'env')
+                               .select { |entry| entry['name'].start_with?('RELATED_IMAGE_') }
+  check(related_images.all? { |entry| entry['value'].match?(/@sha256:[0-9a-f]{64}\z/) },
+        'PGO related images must be digest pinned')
 
   retained_crds = cert_manager.select { |r| r['kind'] == 'CustomResourceDefinition' }
   check(!retained_crds.empty? && retained_crds.all? { |r|

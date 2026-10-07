@@ -1,8 +1,9 @@
 {{- if eq .Values.component "postgresql" }}
+{{- $backup := .Values.postgresqlBackup -}}
 apiVersion: v1
 kind: Secret
 metadata:
-  name: postgresql-r2-credentials
+  name: platform-postgres-pgbackrest
   namespace: postgresql
   labels:
     vault-injection: enabled
@@ -11,68 +12,138 @@ metadata:
     vault.security.banzaicloud.io/vault-path: kubernetes
     argocd.argoproj.io/sync-wave: "0"
 type: Opaque
-data:
-  ACCESS_KEY_ID: {{ required "PostgreSQL R2 access-key Vault reference is required" .Values.postgresqlBackup.accessKeyIdRef | b64enc | quote }}
-  ACCESS_SECRET_KEY: {{ required "PostgreSQL R2 secret-key Vault reference is required" .Values.postgresqlBackup.secretAccessKeyRef | b64enc | quote }}
+stringData:
+  s3.conf: |
+    [global]
+    repo1-s3-key={{ printf "${%s}" (required "PostgreSQL R2 access-key Vault reference is required" $backup.accessKeyIdRef) }}
+    repo1-s3-key-secret={{ printf "${%s}" (required "PostgreSQL R2 secret-key Vault reference is required" $backup.secretAccessKeyRef) }}
 ---
-apiVersion: barmancloud.cnpg.io/v1
-kind: ObjectStore
+apiVersion: postgres-operator.crunchydata.com/v1
+kind: PostgresCluster
 metadata:
-  name: platform-postgres-backups
+  name: platform-postgres
   namespace: postgresql
   annotations:
-    argocd.argoproj.io/sync-wave: "1"
+    argocd.argoproj.io/sync-wave: "2"
 spec:
-  configuration:
-    destinationPath: {{ printf "s3://%s/" (required "PostgreSQL backup bucket is required" .Values.postgresqlBackup.bucket) | quote }}
-    endpointURL: {{ required "PostgreSQL backup endpoint is required" .Values.postgresqlBackup.endpoint | trimSuffix "/" | quote }}
-    s3Credentials:
-      accessKeyId:
-        name: postgresql-r2-credentials
-        key: ACCESS_KEY_ID
-      secretAccessKey:
-        name: postgresql-r2-credentials
-        key: ACCESS_SECRET_KEY
-    data:
-      compression: gzip
-      encryption: AES256
-      jobs: 2
-      immediateCheckpoint: false
-    wal:
-      compression: gzip
-      encryption: AES256
-      maxParallel: 2
-  retentionPolicy: 30d
-  instanceSidecarConfiguration:
-    logLevel: info
-    retentionPolicyIntervalSeconds: 1800
-    resources:
-      requests:
-        cpu: 50m
-        memory: 64Mi
-      limits:
-        cpu: 250m
-        memory: 256Mi
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-k3s-api-to-cloudnative-pg-webhook
-  namespace: postgresql
-  annotations:
-    argocd.argoproj.io/sync-wave: "0"
-spec:
-  podSelector:
-    matchLabels:
-      app.kubernetes.io/name: cloudnative-pg
-  policyTypes: [Ingress]
-  ingress:
-    - from:
-{{- range required "K3s API server source CIDRs are required" .Values.postgresqlNetwork.apiServerSourceCIDRs }}
-        - ipBlock:
-            cidr: {{ . | quote }}
-{{- end }}
-      ports:
-        - protocol: TCP
-          port: 9443
+  postgresVersion: 18
+  image: registry.developers.crunchydata.com/crunchydata/crunchy-postgres:ubi9-18.6-2633@sha256:eb80bdfcb4d995f6a591b16deaa56932802d5b9f984c4c8e558ff11da3187ec3
+  users:
+    - name: grafana
+      databases: [grafana]
+      options: CONNECTION LIMIT 25
+      password:
+        type: AlphaNumeric
+    - name: radar
+      databases: [radar]
+      options: CONNECTION LIMIT 12
+      password:
+        type: AlphaNumeric
+  instances:
+    - name: ha
+      replicas: 3
+      minAvailable: 2
+      metadata:
+        labels:
+          app.kubernetes.io/name: platform-postgres
+        annotations:
+          k8up.io/backup: "false"
+      dataVolumeClaimSpec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: longhorn-postgres
+        resources:
+          requests:
+            storage: 5Gi
+      resources:
+        requests:
+          cpu: 250m
+          memory: 512Mi
+        limits:
+          cpu: "1"
+          memory: 1Gi
+      tolerations:
+        - key: CriticalAddonsOnly
+          operator: Equal
+          value: "true"
+          effect: NoSchedule
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: kubernetes.io/hostname
+                    operator: In
+                    values: [omv, wyse5070, raspi4]
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchLabels:
+                  postgres-operator.crunchydata.com/cluster: platform-postgres
+              topologyKey: kubernetes.io/hostname
+  config:
+    parameters:
+      max_connections: "100"
+      shared_buffers: 128MB
+      password_encryption: scram-sha-256
+      archive_timeout: 5min
+      ssl_min_protocol_version: TLSv1.2
+  patroni:
+    dynamicConfiguration:
+      synchronous_mode: true
+      synchronous_mode_strict: false
+      synchronous_node_count: 1
+  authentication:
+    rules:
+      - {connection: hostnossl, method: reject}
+      - {connection: hostssl, databases: [grafana], users: [grafana], method: scram-sha-256}
+      - {connection: hostssl, users: [grafana], method: reject}
+      - {connection: hostssl, databases: [radar], users: [radar], method: scram-sha-256}
+      - {connection: hostssl, users: [radar], method: reject}
+      - {connection: hostssl, method: scram-sha-256}
+  backups:
+    pgbackrest:
+      image: registry.developers.crunchydata.com/crunchydata/crunchy-pgbackrest:ubi9-2.59.0-2633@sha256:59ff9aacdb2038484e77b027b861227793ce52be78f9ec7abda9e4d75415176c
+      manual:
+        repoName: repo1
+        options: ["--type=full"]
+      configuration:
+        - secret:
+            name: platform-postgres-pgbackrest
+      global:
+        repo1-path: /pgbackrest/platform-postgres/repo1
+        repo1-retention-full: "30"
+        repo1-retention-full-type: count
+        repo1-s3-uri-style: path
+        archive-async: "y"
+        process-max: "2"
+      jobs:
+        resources:
+          requests: {cpu: 50m, memory: 64Mi}
+          limits: {cpu: 500m, memory: 512Mi}
+        tolerations:
+          - {key: CriticalAddonsOnly, operator: Equal, value: "true", effect: NoSchedule}
+      sidecars:
+        pgbackrest:
+          resources:
+            requests: {cpu: 50m, memory: 64Mi}
+            limits: {cpu: 500m, memory: 256Mi}
+        pgbackrestConfig:
+          resources:
+            requests: {cpu: 10m, memory: 32Mi}
+            limits: {cpu: 200m, memory: 128Mi}
+      repos:
+        - name: repo1
+          s3:
+            bucket: {{ required "PostgreSQL backup bucket is required" $backup.bucket | quote }}
+            endpoint: {{ required "PostgreSQL backup endpoint is required" $backup.endpoint | trimPrefix "https://" | trimSuffix "/" | quote }}
+            region: {{ required "PostgreSQL backup region is required" $backup.region | quote }}
+          schedules:
+            full: "30 3 * * *"
+  monitoring:
+    pgmonitor:
+      exporter:
+        image: registry.developers.crunchydata.com/crunchydata/crunchy-postgres-exporter:ubi9-0.19.1-2633@sha256:5f096c282851a6878783a3de7d7e7146f6b606b6dda8e228b3b8781f51b0329b
+        resources:
+          requests: {cpu: 25m, memory: 32Mi}
+          limits: {cpu: 150m, memory: 128Mi}
 {{- end }}
