@@ -50,6 +50,9 @@ prometheus:
     podMonitorSelectorNilUsesHelmValues: false
     podMonitorSelector: {}
     podMonitorNamespaceSelector: {}
+    ruleSelectorNilUsesHelmValues: false
+    ruleSelector: {}
+    ruleNamespaceSelector: {}
 alertmanager:
   alertmanagerSpec:
     storage:

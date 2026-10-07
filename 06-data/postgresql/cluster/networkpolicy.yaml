@@ -3,7 +3,7 @@ kind: NetworkPolicy
 metadata:
   name: default-deny
   annotations:
-    argocd.argoproj.io/sync-wave: "4"
+    argocd.argoproj.io/sync-wave: "0"
 spec:
   podSelector: {}
   policyTypes: [Ingress, Egress]
@@ -13,7 +13,7 @@ kind: NetworkPolicy
 metadata:
   name: allow-dns
   annotations:
-    argocd.argoproj.io/sync-wave: "4"
+    argocd.argoproj.io/sync-wave: "0"
 spec:
   podSelector: {}
   policyTypes: [Egress]
@@ -34,7 +34,7 @@ kind: NetworkPolicy
 metadata:
   name: allow-postgres
   annotations:
-    argocd.argoproj.io/sync-wave: "4"
+    argocd.argoproj.io/sync-wave: "0"
 spec:
   podSelector:
     matchLabels:
@@ -103,7 +103,7 @@ kind: NetworkPolicy
 metadata:
   name: allow-cloudnative-pg-operator
   annotations:
-    argocd.argoproj.io/sync-wave: "4"
+    argocd.argoproj.io/sync-wave: "0"
 spec:
   podSelector:
     matchLabels:
@@ -145,7 +145,7 @@ kind: NetworkPolicy
 metadata:
   name: allow-barman-plugin
   annotations:
-    argocd.argoproj.io/sync-wave: "4"
+    argocd.argoproj.io/sync-wave: "0"
 spec:
   podSelector:
     matchLabels:

@@ -75,6 +75,7 @@ spec:
     # These ordered rules fail closed for the two registered login roles and
     # prevent either role from authenticating to the other's database.
     pg_hba:
+      - hostnossl all all all reject
       - hostssl grafana grafana all scram-sha-256
       - hostssl radar radar all scram-sha-256
       - hostssl all grafana all reject

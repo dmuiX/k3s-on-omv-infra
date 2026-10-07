@@ -4,7 +4,7 @@ namespace: postgresql
 resources:
   - cluster/storageclass.yaml
   - cluster/certificates.yaml
-  - cluster/credentials.yaml
+  - cluster/credential-references.yaml
   - cluster/cluster.yaml
   - cluster/backup.yaml
   - cluster/networkpolicy.yaml
