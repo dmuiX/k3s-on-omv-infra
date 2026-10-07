@@ -59,39 +59,48 @@ fixtures.each do |input, expected|
   raise "Expected #{expected}, got #{stdout} for #{input.inspect}" unless stdout == expected
 end
 
-platform_fixtures = {
-  'resource.customizations.health.postgresql.cnpg.io_Cluster' =>
-    {'status' => {'phase' => 'Cluster in healthy state'}},
-  'resource.customizations.health.postgresql.cnpg.io_DatabaseRole' =>
-    {'metadata' => {'generation' => '1'}, 'status' => {'observedGeneration' => '1', 'applied' => 'true'}},
-  'resource.customizations.health.postgresql.cnpg.io_Database' =>
-    {'metadata' => {'generation' => '1'}, 'status' => {'observedGeneration' => '1', 'applied' => 'true'}},
-  'resource.customizations.health.postgresql.cnpg.io_ScheduledBackup' =>
-    {'status' => {'lastScheduleTime' => 'present'}},
-  'resource.customizations.health.postgresql.cnpg.io_Backup' =>
-    {'status' => {'phase' => 'completed'}},
-  'resource.customizations.health.barmancloud.cnpg.io_ObjectStore' =>
-    {'status' => {'serverRecoveryWindow' => {'platform-postgres' => {'lastSuccessfulBackupTime' => 'present'}}}}
+postgres_key = 'resource.customizations.health.postgres-operator.crunchydata.com_PostgresCluster'
+healthy_postgres = {
+  'metadata' => {'generation' => 7},
+  'status' => {
+    'observedGeneration' => 7,
+    'instances' => [{'replicas' => 3, 'readyReplicas' => 3}],
+    'pgbackrest' => {'repos' => [{'name' => 'repo1', 'stanzaCreated' => true}]},
+    'patroni' => {'systemIdentifier' => 'present'},
+    'databaseRevision' => 'present', 'usersRevision' => 'present'
+  }
 }
+platform_fixtures = [
+  [healthy_postgres, 'Healthy'],
+  [healthy_postgres.merge('status' => healthy_postgres['status'].merge('observedGeneration' => 6)), 'Progressing'],
+  [healthy_postgres.merge('status' => healthy_postgres['status'].merge(
+    'instances' => [{'replicas' => 3, 'readyReplicas' => 2}])), 'Progressing'],
+  [healthy_postgres.merge('status' => healthy_postgres['status'].merge(
+    'conditions' => [{'observedGeneration' => 7, 'status' => 'False',
+                      'reason' => 'Invalid', 'message' => 'invalid spec'}])), 'Degraded']
+]
 
 def lua_literal_with_scalars(value)
   case value
   when Hash
     '{' + value.map { |key, child| "[#{key.dump}]=#{lua_literal_with_scalars(child)}" }.join(', ') + '}'
-  when String
-    return 'true' if value == 'true'
-    value.dump
+  when Array
+    '{' + value.map { |child| lua_literal_with_scalars(child) }.join(', ') + '}'
+  when String then value.dump
+  when Integer then value.to_s
+  when TrueClass then 'true'
+  when FalseClass then 'false'
   else
     raise "Unexpected platform fixture type: #{value.class}"
   end
 end
 
-platform_fixtures.each do |key, input|
-  script = config.fetch('data').fetch(key)
+script = config.fetch('data').fetch(postgres_key)
+platform_fixtures.each do |input, expected|
   program = "local function evaluate(obj)\n#{script}\nend\n" \
             "local result = evaluate(#{lua_literal_with_scalars(input)})\nio.write(result.status)\n"
   stdout, stderr, status = Open3.capture3(lua_bin, '-e', program)
-  raise "Lua platform health test failed for #{key}: #{stderr}" unless status.success?
-  raise "Expected Healthy, got #{stdout} for #{key}" unless stdout == 'Healthy'
+  raise "Lua platform health test failed for #{postgres_key}: #{stderr}" unless status.success?
+  raise "Expected #{expected}, got #{stdout} for #{postgres_key}" unless stdout == expected
 end
-puts "PASS: Argo health Lua (#{fixtures.length} Application + #{platform_fixtures.length} platform cases)"
+puts "PASS: Argo health Lua (#{fixtures.length} Application + #{platform_fixtures.length} PostgresCluster cases)"

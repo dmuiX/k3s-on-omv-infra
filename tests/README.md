@@ -7,7 +7,7 @@ ruby tests/verify-bootstrap.rb   # multi-source Helm, waves, values, storage con
 ruby tests/verify-application-health.rb # child sync/health gating (requires Lua)
 ruby tests/verify-openbao-access.rb # dedicated SA, Git-managed ACL, job/loop render
 ruby tests/verify-openbao-pki.rb # mandatory staged gate, PKI identities/RBAC/issuers render
-ruby tests/verify-postgresql.rb # CNPG HA/storage/backup/policy and pinned chart renders
+ruby tests/verify-postgresql.rb # Crunchy PGO HA/storage/backup/policy and pinned chart renders
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p 'test_openbao_*.py'
 ruby tests/verify-ingress.rb     # no live-specific resources selected by the public root
 ruby tests/verify-longhorn-encryption.rb # Helm override and complete key references
