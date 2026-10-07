@@ -18,7 +18,7 @@ spec:
         valueFiles:
           - $values/02-controllers/cert-manager/values.yml
     - repoURL: "https://github.com/dmuiX/k3s-on-omv-infra.git"
-      targetRevision: ea09c0829860af0ceff9ae21f3d37f0a319b3196
+      targetRevision: a88b95d54326ccad6d94de2e1c8f76b457e32f76
       ref: values
   syncPolicy:
     automated:
