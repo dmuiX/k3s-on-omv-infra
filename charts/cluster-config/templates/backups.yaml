@@ -40,6 +40,9 @@ metadata:
 spec:
   template:
     spec:
+      # K8up merges scheduling fields into its generated container named k8up.
+      containers:
+        - name: k8up
       tolerations:
         - key: workload-placement
           operator: Equal

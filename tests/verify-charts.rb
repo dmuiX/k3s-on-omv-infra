@@ -122,6 +122,7 @@ Dir.mktmpdir('infra-helm-check-') do |dir|
       schedule = find_resource(resources, 'Schedule', 'openbao-k8up-schedule')
       pod_config = find_resource(resources, 'PodConfig', 'openbao-k8up-pod-config')
       check(schedule.dig('spec', 'podConfigRef', 'name') == pod_config.dig('metadata', 'name') &&
+            pod_config.dig('spec', 'template', 'spec', 'containers') == [{'name' => 'k8up'}] &&
             Array(pod_config.dig('spec', 'template', 'spec', 'tolerations')).include?(PI_TOLERATION),
             'K8up Schedule jobs cannot use raspi4')
       %w[k8up-repo-password r2-credentials].each do |name|
@@ -143,6 +144,7 @@ Dir.mktmpdir('infra-helm-check-') do |dir|
       check(restore, 'Manual restore template missing')
       pod_config = find_resource(resources, 'PodConfig', 'openbao-k8up-restore-pod-config')
       check(restore.dig('spec', 'podConfigRef', 'name') == pod_config.dig('metadata', 'name') &&
+            pod_config.dig('spec', 'template', 'spec', 'containers') == [{'name' => 'k8up'}] &&
             Array(pod_config.dig('spec', 'template', 'spec', 'tolerations')).include?(PI_TOLERATION),
             'K8up Restore job cannot use raspi4')
     end
