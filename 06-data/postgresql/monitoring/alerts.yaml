@@ -1,0 +1,93 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: platform-postgres
+  labels:
+    prometheus: kube-prometheus-stack
+  annotations:
+    argocd.argoproj.io/sync-wave: "4"
+spec:
+  groups:
+    - name: platform-postgres.availability
+      rules:
+        - alert: PostgreSQLCollectorDown
+          expr: cnpg_collector_up{namespace="postgresql",cluster="platform-postgres"} == 0
+          for: 5m
+          labels: {severity: critical}
+          annotations:
+            summary: CloudNativePG metrics collection is failing
+            runbook_url: docs/postgresql-maintenance.md
+        - alert: PostgreSQLPrimaryCountInvalid
+          expr: sum(cnpg_pg_replication_in_recovery{namespace="postgresql",cluster="platform-postgres"} == 0) != 1
+          for: 2m
+          labels: {severity: critical}
+          annotations:
+            summary: The PostgreSQL cluster does not expose exactly one primary
+            runbook_url: docs/postgresql-maintenance.md
+        - alert: PostgreSQLSynchronousStandbyUnavailable
+          expr: max(cnpg_pg_replication_streaming_replicas{namespace="postgresql",cluster="platform-postgres"}) < 1
+          for: 2m
+          labels: {severity: critical}
+          annotations:
+            summary: No standby can acknowledge synchronous commits; RPO 0 is suspended
+            runbook_url: docs/postgresql-maintenance.md
+        - alert: PostgreSQLReplicationLagHigh
+          expr: max(cnpg_pg_stat_replication_replay_lag_seconds{namespace="postgresql",cluster="platform-postgres"}) > 30
+          for: 10m
+          labels: {severity: warning}
+          annotations:
+            summary: PostgreSQL replay lag exceeds 30 seconds
+            runbook_url: docs/postgresql-maintenance.md
+        - alert: PostgreSQLConnectionsHigh
+          expr: sum(cnpg_backends_total{namespace="postgresql",cluster="platform-postgres"}) / max(cnpg_pg_settings_setting{namespace="postgresql",cluster="platform-postgres",name="max_connections"}) > 0.8
+          for: 10m
+          labels: {severity: warning}
+          annotations:
+            summary: PostgreSQL uses more than 80 percent of its connection budget
+            runbook_url: docs/postgresql-maintenance.md
+    - name: platform-postgres.backup
+      rules:
+        - alert: PostgreSQLBaseBackupTooOld
+          expr: time() - max(cnpg_collector_last_available_backup_timestamp{namespace="postgresql",cluster="platform-postgres"}) > 93600
+          for: 15m
+          labels: {severity: critical}
+          annotations:
+            summary: No successful PostgreSQL base backup is newer than 26 hours
+            runbook_url: docs/postgresql-maintenance.md
+        - alert: PostgreSQLBackupMetricMissing
+          expr: absent(cnpg_collector_last_available_backup_timestamp{namespace="postgresql",cluster="platform-postgres"})
+          for: 30m
+          labels: {severity: critical}
+          annotations:
+            summary: PostgreSQL backup freshness is unknown
+            runbook_url: docs/postgresql-maintenance.md
+        - alert: PostgreSQLWALArchivingStalled
+          expr: max(cnpg_pg_stat_archiver_seconds_since_last_archival{namespace="postgresql",cluster="platform-postgres"}) > 600
+          for: 5m
+          labels: {severity: critical}
+          annotations:
+            summary: PostgreSQL has not archived WAL for more than ten minutes
+            runbook_url: docs/postgresql-maintenance.md
+        - alert: PostgreSQLLocalWALGrowing
+          expr: increase(cnpg_collector_pg_wal{namespace="postgresql",cluster="platform-postgres"}[30m]) > 1073741824
+          for: 15m
+          labels: {severity: warning}
+          annotations:
+            summary: Local PostgreSQL WAL grew by more than 1 GiB in 30 minutes
+            runbook_url: docs/postgresql-maintenance.md
+    - name: platform-postgres.storage
+      rules:
+        - alert: PostgreSQLPVCUsageWarning
+          expr: kubelet_volume_stats_used_bytes{namespace="postgresql",persistentvolumeclaim=~"platform-postgres-.*"} / kubelet_volume_stats_capacity_bytes{namespace="postgresql",persistentvolumeclaim=~"platform-postgres-.*"} > 0.70
+          for: 15m
+          labels: {severity: warning}
+          annotations:
+            summary: A PostgreSQL PVC is more than 70 percent full
+            runbook_url: docs/postgresql-maintenance.md
+        - alert: PostgreSQLPVCUsageCritical
+          expr: kubelet_volume_stats_used_bytes{namespace="postgresql",persistentvolumeclaim=~"platform-postgres-.*"} / kubelet_volume_stats_capacity_bytes{namespace="postgresql",persistentvolumeclaim=~"platform-postgres-.*"} > 0.85
+          for: 5m
+          labels: {severity: critical}
+          annotations:
+            summary: A PostgreSQL PVC is more than 85 percent full
+            runbook_url: docs/postgresql-maintenance.md

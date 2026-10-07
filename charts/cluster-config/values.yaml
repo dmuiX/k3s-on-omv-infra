@@ -1,5 +1,5 @@
 # Safe sample values. The live cluster loads a private values.yml instead.
-component: none # argocd, grafana, longhorn, openbao, certificates, backups, or restore
+component: none # argocd, grafana, longhorn, openbao, certificates, backups, postgresql, or restore
 
 gateway:
   name: traefik-gateway
@@ -41,3 +41,9 @@ backup:
   accessKeyIdRef: vault:kv/data/r2-credentials#access-key-id
   secretAccessKeyRef: vault:kv/data/r2-credentials#secret-access-key
   restoreOrdinal: 0 # Schema-validated nonnegative integer; selects data-openbao-<ordinal>.
+
+postgresqlBackup:
+  endpoint: https://example.invalid
+  bucket: replace-me-postgresql
+  accessKeyIdRef: vault:kv/data/postgresql/r2-credentials#access-key-id
+  secretAccessKeyRef: vault:kv/data/postgresql/r2-credentials#secret-access-key

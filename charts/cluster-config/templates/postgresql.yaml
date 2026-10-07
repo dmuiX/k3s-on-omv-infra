@@ -1,0 +1,56 @@
+{{- if eq .Values.component "postgresql" }}
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgresql-r2-credentials
+  namespace: postgresql
+  labels:
+    vault-injection: enabled
+  annotations:
+    vault.security.banzaicloud.io/vault-role: vault-secrets-webhook
+    vault.security.banzaicloud.io/vault-path: kubernetes
+    argocd.argoproj.io/sync-wave: "0"
+type: Opaque
+data:
+  ACCESS_KEY_ID: {{ required "PostgreSQL R2 access-key Vault reference is required" .Values.postgresqlBackup.accessKeyIdRef | b64enc | quote }}
+  ACCESS_SECRET_KEY: {{ required "PostgreSQL R2 secret-key Vault reference is required" .Values.postgresqlBackup.secretAccessKeyRef | b64enc | quote }}
+---
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  name: platform-postgres-backups
+  namespace: postgresql
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  configuration:
+    destinationPath: {{ printf "s3://%s/" (required "PostgreSQL backup bucket is required" .Values.postgresqlBackup.bucket) | quote }}
+    endpointURL: {{ required "PostgreSQL backup endpoint is required" .Values.postgresqlBackup.endpoint | trimSuffix "/" | quote }}
+    s3Credentials:
+      accessKeyId:
+        name: postgresql-r2-credentials
+        key: ACCESS_KEY_ID
+      secretAccessKey:
+        name: postgresql-r2-credentials
+        key: ACCESS_SECRET_KEY
+    data:
+      compression: gzip
+      encryption: AES256
+      jobs: 2
+      immediateCheckpoint: false
+    wal:
+      compression: gzip
+      encryption: AES256
+      maxParallel: 2
+  retentionPolicy: 30d
+  instanceSidecarConfiguration:
+    logLevel: info
+    retentionPolicyIntervalSeconds: 1800
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 250m
+        memory: 256Mi
+{{- end }}

@@ -1,0 +1,30 @@
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: longhorn-postgres
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "false"
+    argocd.argoproj.io/sync-wave: "0"
+provisioner: driver.longhorn.io
+allowVolumeExpansion: true
+reclaimPolicy: Retain
+volumeBindingMode: WaitForFirstConsumer
+parameters:
+  numberOfReplicas: "1"
+  staleReplicaTimeout: "30"
+  fromBackup: ""
+  fsType: ext4
+  dataLocality: strict-local
+  unmapMarkSnapChainRemoved: ignored
+  disableRevisionCounter: "true"
+  dataEngine: v1
+  backupTargetName: default
+  encrypted: "true"
+  csi.storage.k8s.io/provisioner-secret-name: longhorn-volume-encryption
+  csi.storage.k8s.io/provisioner-secret-namespace: longhorn
+  csi.storage.k8s.io/node-publish-secret-name: longhorn-volume-encryption
+  csi.storage.k8s.io/node-publish-secret-namespace: longhorn
+  csi.storage.k8s.io/node-stage-secret-name: longhorn-volume-encryption
+  csi.storage.k8s.io/node-stage-secret-namespace: longhorn
+  csi.storage.k8s.io/node-expand-secret-name: longhorn-volume-encryption
+  csi.storage.k8s.io/node-expand-secret-namespace: longhorn

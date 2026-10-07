@@ -26,6 +26,9 @@ grafana:
     size: 10Gi
   service:
     type: ClusterIP
+  sidecar:
+    dashboards:
+      searchNamespace: ALL
 prometheus:
   service:
     type: ClusterIP

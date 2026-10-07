@@ -1,7 +1,12 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "type": "object",
+  "required": ["component"],
   "properties": {
+    "component": {
+      "type": "string",
+      "enum": ["none", "argocd", "grafana", "longhorn", "openbao", "certificates", "backups", "postgresql", "restore"]
+    },
     "backup": {
       "type": "object",
       "required": ["restoreOrdinal"],
@@ -13,6 +18,27 @@
           "maximum": 2147483647
         }
       }
+    },
+    "postgresqlBackup": {
+      "type": "object",
+      "properties": {
+        "endpoint": {"type": "string", "minLength": 1},
+        "bucket": {"type": "string", "minLength": 1},
+        "accessKeyIdRef": {"type": "string", "pattern": "^vault:"},
+        "secretAccessKeyRef": {"type": "string", "pattern": "^vault:"}
+      }
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"component": {"const": "postgresql"}}},
+      "then": {
+        "properties": {
+          "postgresqlBackup": {
+            "required": ["endpoint", "bucket", "accessKeyIdRef", "secretAccessKeyRef"]
+          }
+        }
+      }
+    }
+  ]
 }
