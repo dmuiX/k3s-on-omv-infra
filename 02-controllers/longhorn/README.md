@@ -13,8 +13,10 @@ the wildcard certificate is ready.
 - `values.yml`: three-replica storage defaults; no embedded Flux HelmRelease.
 - `storageclass-configmap.yaml`: reviewed final Argo source overriding the chart's
   `longhorn-storageclass` ConfigMap; the normal `longhorn` class encrypts new
-  volumes by default. No passphrase
-  or Kubernetes Secret is committed here.
+  volumes by default. No passphrase or Kubernetes Secret is committed here.
+- `monitoring-storage.yaml`: encrypted two-replica Prometheus class plus the
+  `monitoring-storage` Longhorn node tag on OMV and Wyse. Its partial Node
+  resources use client-side apply so controller-owned disk fields remain intact.
 - The public route template selects `longhorn-frontend:80` through the K3s
   Gateway; only the real hostname value comes from private Git.
 
@@ -87,6 +89,9 @@ OpenBao cluster merely to change the underlying storage encryption.
   cleanup/reuse needs deliberate review. This is not a backup.
 - StorageClass `longhorn` is **not default**. Existing K3s `local-path` remains the
   default; consumers opt into Longhorn with `storageClassName: longhorn`.
+- StorageClass `longhorn-monitoring` is also non-default. It uses two replicas
+  selected onto the Git-managed `monitoring-storage` Longhorn tags on OMV and
+  Wyse, excluding the Pi from Prometheus metrics storage.
 - UI Service: **ClusterIP**, because the shared Gateway provides LAN/VPN access.
 - Pod Security `privileged` labels target the Longhorn namespace through Argo's
   `managedNamespaceMetadata` and `CreateNamespace=true`, not Application `spec.labels`.

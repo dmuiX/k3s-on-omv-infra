@@ -44,7 +44,9 @@ prometheus:
     storageSpec:
       volumeClaimTemplate:
         spec:
-          storageClassName: longhorn
+          # Keep metrics replicas on OMV and Wyse; the Pi is not a monitoring
+          # compute or storage target.
+          storageClassName: longhorn-monitoring
           accessModes: [ReadWriteOnce]
           resources:
             requests:
