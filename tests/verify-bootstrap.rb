@@ -5,7 +5,7 @@ require 'json'
 require 'pathname'
 
 ROOT = File.expand_path('..', __dir__)
-INFRA_REVISION = '454e34967db12ff4dcd869b8ca1947078eadd19e'
+INFRA_REVISION = '1c8e6032db1ba5d170230e87d971019b50600fd5'
 LIVE_REVISION = 'ce6ad756dd48ef28145f836e6825a65fcafe548f'
 
 def docs(path)
