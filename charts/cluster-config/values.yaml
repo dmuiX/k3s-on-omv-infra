@@ -47,3 +47,8 @@ postgresqlBackup:
   bucket: replace-me-postgresql
   accessKeyIdRef: vault:kv/data/postgresql/r2-credentials#access-key-id
   secretAccessKeyRef: vault:kv/data/postgresql/r2-credentials#secret-access-key
+
+postgresqlNetwork:
+  # Safe documentation-only address. Live values list each K3s server as /32.
+  apiServerSourceCIDRs:
+    - 192.0.2.1/32
