@@ -110,8 +110,11 @@ spec:
       app.kubernetes.io/name: cloudnative-pg
   policyTypes: [Ingress, Egress]
   ingress:
+    # The K3s API server is a host process and has no namespace/pod identity.
+    # The webhook is still reachable only through its internal ClusterIP Service.
     - from:
-        - namespaceSelector: {}
+        - ipBlock:
+            cidr: 0.0.0.0/0
       ports:
         - {protocol: TCP, port: 9443}
     - from:
