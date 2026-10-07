@@ -31,7 +31,8 @@ External-DNS. It uses Argo CD (already installed) for these applications:
 ├── openbao-access-config/  Git-managed webhook ACL, initial Job and recurring CronJob
 └── vault-secrets-webhook/  admission-time secret injection
 05-pki/
-└── public-certificates/    wildcard certificate/issuers after secrets
+├── public-certificates/    wildcard certificate/issuers after secrets
+└── openbao-pki/            optional, explicitly registered internal PKI integration
 06-data/
 └── openbao-backups/        OpenBao backup schedule
 08-routes/
@@ -55,7 +56,11 @@ shares wave 1 with other Applications: **seed and verify it separately before a
 first root sync**. Changing the existing Argo CD backend to HTTP also requires a
 controlled `argocd-server` restart; plan that before enabling its external route.
 
-`infra.yml` is the **one** Argo CD root. Upstream controllers are Argo
+`infra.yml` is the **one** Argo CD root for the regular application inventory.
+The optional [`05-pki/openbao-pki/`](05-pki/openbao-pki/workload/README.md) component is a deliberate
+exception: its `application.yml` filename is not selected by the root include and
+it must be pinned to an immutable commit before independent, explicit registration.
+It adds no Certificate consumers. Upstream controllers are Argo
 multi-source Applications: one version-pinned Helm/OCI chart plus values from
 this Git repository. Route, certificate and backup Applications render the local
 `charts/cluster-config` chart with private values from the live repository.
@@ -135,6 +140,7 @@ ruby tests/verify-bootstrap.rb
 ruby tests/verify-application-health.rb # requires Lua
 ruby tests/verify-longhorn-encryption.rb
 ruby tests/verify-openbao-access.rb
+ruby tests/verify-openbao-pki.rb # optional app exclusion + offline Kustomize checks
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p 'test_openbao_*.py'
 ruby tests/verify-ingress.rb
 ruby tests/verify-charts.rb # Helm + network access to pinned chart repositories

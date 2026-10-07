@@ -6,6 +6,7 @@ Run from the infra repository:
 ruby tests/verify-bootstrap.rb   # multi-source Helm, waves, values, storage constraints
 ruby tests/verify-application-health.rb # child sync/health gating (requires Lua)
 ruby tests/verify-openbao-access.rb # dedicated SA, Git-managed ACL, job/loop render
+ruby tests/verify-openbao-pki.rb # optional app exclusion, PKI identities/RBAC/issuers render
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p 'test_openbao_*.py'
 ruby tests/verify-ingress.rb     # no live-specific resources selected by the public root
 ruby tests/verify-longhorn-encryption.rb # Helm override and complete key references
@@ -31,9 +32,11 @@ post-Longhorn monitoring claim/templates, OpenBao at three Raft server pods with
 two PVC templates each, and three replicas for new Longhorn volumes. They do not
 change existing volume replica counts or prove placement and recovery.
 
-The **same public root** owns all child Applications. Controller charts and public
-values remain here; route/certificate/backup identifiers remain in the private
-values repository. With that checkout, run `ruby tests/verify-private-values.rb`
+The same public root owns all regular child Applications. The optional OpenBao
+PKI `application.yml` is intentionally excluded and must be pinned then registered
+independently; its test proves the root include does not select it. Controller charts
+and public values remain here; route/certificate/backup identifiers remain in the
+private values repository. With that checkout, run `ruby tests/verify-private-values.rb`
 (also requires Helm and the host Traefik configuration). It renders the local
 chart with the real values without printing private identifiers or Secret data.
 

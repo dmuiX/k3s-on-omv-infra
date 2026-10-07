@@ -1,0 +1,28 @@
+# OPTIONAL COMPONENT: this Application is intentionally not discovered by infra.yml.
+# Its immutable targetRevision is advanced only after reviewing a workload commit.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: openbao-pki
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "5"
+    gitops.openbao.org/registration: "explicit-only-pinned-revision"
+spec:
+  destination:
+    name: in-cluster
+    namespace: openbao
+  project: default
+  source:
+    repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
+    # Reviewed workload commit; update explicitly when promoting PKI changes.
+    targetRevision: 4a1f9c198beada03cccd459cd517389a5897c819
+    path: 05-pki/openbao-pki/workload
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - PruneLast=true
+      - ServerSideApply=true
