@@ -38,6 +38,13 @@ spec:
       - ServerSideApply=true
       - RespectIgnoreDifferences=true
   ignoreDifferences:
+    # Migration and Retain recovery prebind an existing PV. The binder-owned
+    # volumeName is immutable and intentionally absent from the Helm template.
+    - group: ""
+      kind: PersistentVolumeClaim
+      name: kube-prometheus-stack-grafana
+      jsonPointers:
+        - /spec/volumeName
     - group: apps
       kind: Deployment
       jsonPointers:

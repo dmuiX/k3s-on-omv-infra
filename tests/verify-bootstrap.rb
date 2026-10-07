@@ -251,6 +251,12 @@ check(monitor_values.dig('grafana', 'admin').nil?,
 grafana_secret_ignore = monitoring.fetch('spec').fetch('ignoreDifferences').find do |entry|
   entry['group'] == '' && entry['kind'] == 'Secret' && entry['name'] == 'kube-prometheus-stack-grafana'
 end
+grafana_volume_ignore = monitoring.fetch('spec').fetch('ignoreDifferences').find do |entry|
+  entry['group'] == '' && entry['kind'] == 'PersistentVolumeClaim' &&
+    entry['name'] == 'kube-prometheus-stack-grafana'
+end
+check(grafana_volume_ignore && grafana_volume_ignore['jsonPointers'] == ['/spec/volumeName'],
+      'Grafana retained-PV prebinding must ignore only the immutable volumeName')
 check(grafana_secret_ignore && grafana_secret_ignore['jsonPointers'].sort ==
       ['/data/admin-password', '/data/admin-user'],
       'Argo must ignore only the chart-generated Grafana administrator data fields')
