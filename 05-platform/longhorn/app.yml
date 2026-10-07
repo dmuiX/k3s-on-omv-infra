@@ -12,7 +12,7 @@ spec:
   project: default
   sources:
     - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
-      targetRevision: 0f4a4cc82d0cb04892ca5335425b25456daddb8d
+      targetRevision: 093646c172259a826396df092fdda7839695f533
       path: charts/cluster-config
       helm:
         valueFiles:
