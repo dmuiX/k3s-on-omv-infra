@@ -1,6 +1,8 @@
 # yaml-language-server: $schema=../../values-schemas/cert-manager/values.schema.json
 crds:
   enabled: true
+# ClusterIssuer token/Secret references intentionally resolve in this namespace.
+clusterResourceNamespace: cert-manager
 # Leader-elected controllers stay available while one node is unavailable.
 replicaCount: 2
 podDisruptionBudget:

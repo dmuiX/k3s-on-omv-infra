@@ -1,0 +1,29 @@
+{
+  "login_role": "openbao-pki-reconciler",
+  "mounts": [
+    {
+      "mount": "pki-services",
+      "policy": "cert-manager-pki-services-sign",
+      "pki_role": "services",
+      "auth_role": "cert-manager-pki-services",
+      "service_account": "openbao-pki-services",
+      "namespace": "cert-manager",
+      "audience": "vault://openbao-pki-services",
+      "allowed_domains": ["svc", "svc.cluster.local"],
+      "server": true,
+      "client": false
+    },
+    {
+      "mount": "pki-clients",
+      "policy": "cert-manager-pki-clients-sign",
+      "pki_role": "clients",
+      "auth_role": "cert-manager-pki-clients",
+      "service_account": "openbao-pki-clients",
+      "namespace": "cert-manager",
+      "audience": "vault://openbao-pki-clients",
+      "allowed_domains": ["clients.cluster.local"],
+      "server": false,
+      "client": true
+    }
+  ]
+}
