@@ -1,12 +1,13 @@
-# Optional OpenBao PKI integration
+# Mandatory staged OpenBao PKI integration
 
-This component is intentionally **outside the root Application inventory**.
-`application.yml` is deliberately not named `app.yml` or `config-app.yml`, so
-`infra.yml` does not discover it. Register this Application independently only
-after the prerequisites below have been reviewed. **Before registration, replace
-`targetRevision: main` with the immutable commit SHA containing the complete
-component.** Keeping `main` is only a staging placeholder when no future commit
-hash exists yet.
+This component is a mandatory platform phase, but it is intentionally inactive
+in the default root configuration. `infra.yml` explicitly includes
+`application.yml` and also excludes it, so exclusion wins until the
+external-root ceremony and guarded installation have passed. The Application's
+workload source is pinned to an immutable reviewed commit. After the gates pass,
+the GitOps bootstrap promotes the root configuration to activate this pinned
+Application; do not register it independently, switch it to a branch, or remove
+the exclusion ad hoc.
 
 The component does not contain a `Certificate`. It provides two future issuer
 profiles:
@@ -68,7 +69,7 @@ OpenBao server pods as its subject.
 
 The URLs are HTTP because the existing OpenBao listener is internal HTTP.
 NetworkPolicy limits reachability but does not encrypt node/CNI traffic; do not
-register this optional component where that network is untrusted. A future
+activate this component where that network is untrusted. A future
 listener migration must switch both workload and ClusterIssuer URLs to HTTPS
 and add the corresponding CA bundle in the same reviewed change.
 
@@ -83,14 +84,14 @@ The loop owns only these objects inside OpenBao:
   `cert-manager-pki-clients`, including exact ServiceAccount, namespace, policy,
   one-hour token lifetime and audience.
 
-Disable or remove the independently registered Argo Application to stop
-reconciliation. Because pruning can remove Kubernetes identities and
+Use the reviewed GitOps bootstrap rollback to disable the Argo Application and
+stop reconciliation. Because pruning can remove Kubernetes identities and
 ClusterIssuers, confirm there are still no Certificate consumers before doing
 so. OpenBao mounts, issuers, keys and CA chains remain untouched; removing the
 six managed OpenBao policy/role objects, if desired, is a separate reviewed
 administrative action.
 
-Validate offline before registration:
+Validate offline before bootstrap activation:
 
 ```sh
 ruby tests/verify-openbao-pki.rb

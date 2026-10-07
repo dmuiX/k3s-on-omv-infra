@@ -1,4 +1,5 @@
-# OPTIONAL COMPONENT: this Application is intentionally not discovered by infra.yml.
+# MANDATORY PLATFORM PHASE: infra.yml discovers this Application but excludes it
+# until the external-root ceremony and guarded Ansible installation have passed.
 # Its immutable targetRevision is advanced only after reviewing a workload commit.
 apiVersion: argoproj.io/v1alpha1
 kind: Application

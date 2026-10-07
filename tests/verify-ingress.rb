@@ -24,24 +24,36 @@ check(!Dir.exist?(File.join(ROOT, 'external-dns')), 'External-DNS must not be de
 root = YAML.load_file(File.join(ROOT, 'infra.yml'))
 source = root.fetch('spec').fetch('source')
 check(source.fetch('path') == '.' && source.dig('directory', 'recurse'), 'Public root must discover reusable Applications')
-pattern = source.dig('directory', 'include')
+include_pattern = source.dig('directory', 'include')
+exclude_pattern = source.dig('directory', 'exclude')
+root_selects = lambda do |path|
+  File.fnmatch(include_pattern, path, File::FNM_EXTGLOB) &&
+    !File.fnmatch(exclude_pattern, path, File::FNM_EXTGLOB)
+end
 %w[01-bootstrap/argocd-bootstrap/application-health-config.yml 01-bootstrap/monitoring-crds/app.yml
    02-controllers/longhorn/app.yml 03-core/kube-prometheus-stack/app.yml 03-core/openbao/app.yml].each do |path|
-  check(File.fnmatch(pattern, path, File::FNM_EXTGLOB), "Public root excludes #{path}")
+  check(root_selects.call(path), "Public root excludes #{path}")
 end
+staged_pki_path = '05-pki/openbao-pki/application.yml'
+staged_postgresql_path = '06-data/postgresql/app.yml'
+check(File.fnmatch(include_pattern, staged_pki_path, File::FNM_EXTGLOB) &&
+      File.fnmatch(exclude_pattern, staged_pki_path, File::FNM_EXTGLOB) &&
+      !root_selects.call(staged_pki_path),
+      'Mandatory PKI phase must be explicitly staged but inactive by default')
+check(File.fnmatch(include_pattern, staged_postgresql_path, File::FNM_EXTGLOB) &&
+      File.fnmatch(exclude_pattern, staged_postgresql_path, File::FNM_EXTGLOB) &&
+      !root_selects.call(staged_postgresql_path),
+      'Future PostgreSQL phase must remain inactive until guarded activation')
 
 apps = documents.select { |doc| doc['kind'] == 'Application' }
 apps.each do |app|
   sources = app.dig('spec', 'sources') || [app.dig('spec', 'source')]
   sources.compact.each do |child|
-    next if child['chart'] || (child['ref'] == 'values' && child['repoURL'] != source['repoURL'])
+    next if child['chart'] || (child['ref'] && !child['path'])
     if app.dig('metadata', 'name') == 'openbao-pki'
-      optional_path = '05-pki/openbao-pki/application.yml'
-      check(!File.fnmatch(pattern, optional_path, File::FNM_EXTGLOB), 'Optional PKI Application became root-discovered')
       revision = child['targetRevision'].to_s
-      check(revision.match?(/\A[0-9a-f]{40}\z/) ||
-            (revision == 'main' && File.read(File.join(ROOT, optional_path)).include?('MUST PIN BEFORE REGISTRATION')),
-            'Optional PKI revision must be pinned or retain its staging registration gate')
+      check(revision.match?(/\A[0-9a-f]{40}\z/),
+            'Mandatory staged PKI Application must remain immutably pinned')
     else
       check(child['repoURL'] == source['repoURL'] && child['targetRevision'].to_s.match?(/\A[0-9a-f]{40}\z/),
             "Public Git source is not immutably pinned: #{app.dig('metadata', 'name')}")

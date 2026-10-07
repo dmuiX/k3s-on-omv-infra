@@ -30,15 +30,20 @@ end
 
 root = YAML.load_file(File.join(ROOT, 'infra.yml'))
 public_url = root.dig('spec', 'source', 'repoURL')
-pattern = root.dig('spec', 'source', 'directory', 'include')
-apps = Dir.glob(File.join(ROOT, '[0-9][0-9]-*', '*', '*app.yml')).map do |path|
-  YAML.load_file(path) if File.fnmatch(pattern, path.delete_prefix(ROOT + '/'), File::FNM_EXTGLOB)
+directory = root.dig('spec', 'source', 'directory')
+include_pattern = directory.fetch('include')
+exclude_pattern = directory.fetch('exclude')
+apps = Dir.glob(File.join(ROOT, '[0-9][0-9]-*', '*', '{*app.yml,application.yml}'), File::FNM_EXTGLOB).map do |path|
+  relative = path.delete_prefix(ROOT + '/')
+  selected = File.fnmatch(include_pattern, relative, File::FNM_EXTGLOB) &&
+    !File.fnmatch(exclude_pattern, relative, File::FNM_EXTGLOB)
+  YAML.load_file(path) if selected
 end.compact.to_h { |app| [app.dig('metadata', 'name'), app] }
 expected_apps = %w[argocd-config argocd-route grafana-route kube-prometheus-stack monitoring-crds
                    cert-manager cert-manager-config k8up longhorn longhorn-route openbao
                    openbao-access-config openbao-config openbao-route vault-secrets-webhook]
 check(apps.keys.sort == expected_apps.sort && apps.values.map { |app| wave(app) }.uniq.sort == [1, 2, 3, 4, 5, 6, 8],
-      'One public root must own all implemented components in their wave folders')
+      'Default public root must own regular components and keep staged phases inactive')
 check(File.file?(VALUES), 'Private values file missing')
 private_values = YAML.load_file(VALUES)
 backup_endpoint = URI.parse(private_values.dig('backup', 'endpoint'))

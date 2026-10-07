@@ -1,5 +1,5 @@
 #!/usr/bin/env ruby
-# Offline render and optional-registration checks; never contacts a cluster.
+# Offline render and mandatory staged-activation checks; never contacts a cluster.
 require 'yaml'
 require 'json'
 require 'open3'
@@ -11,24 +11,32 @@ end
 
 application_path = '05-pki/openbao-pki/application.yml'
 app = YAML.load_file(File.join(ROOT, application_path))
-check(File.basename(application_path) == 'application.yml', 'Optional Application filename changed')
-check(app.dig('metadata', 'name') == 'openbao-pki', 'Wrong optional Application identity')
+check(File.basename(application_path) == 'application.yml', 'Staged Application filename changed')
+check(app.dig('metadata', 'name') == 'openbao-pki', 'Wrong mandatory PKI Application identity')
 check(app.dig('spec', 'source', 'path') == '05-pki/openbao-pki/workload', 'Wrong workload source')
 revision = app.dig('spec', 'source', 'targetRevision').to_s
-check(revision == 'main' || revision.match?(/\A[0-9a-f]{40}\z/), 'Revision must be the staging branch or an immutable commit')
-source_text = File.read(File.join(ROOT, application_path))
-check(revision != 'main' || source_text.include?('MUST PIN BEFORE REGISTRATION'), 'Missing prominent revision pin gate')
+check(revision.match?(/\A[0-9a-f]{40}\z/), 'Mandatory PKI workload revision must remain immutable')
 cert_manager_values = YAML.load_file(File.join(ROOT, '02-controllers/cert-manager/values.yml'))
 check(cert_manager_values['clusterResourceNamespace'] == 'cert-manager',
       'ClusterIssuer ServiceAccount references must resolve in cert-manager')
 
 root = YAML.load_file(File.join(ROOT, 'infra.yml'))
-include_pattern = root.dig('spec', 'source', 'directory', 'include')
-check(!File.fnmatch(include_pattern, application_path, File::FNM_EXTGLOB),
-      'Optional PKI Application must not be root-discovered')
-discovered = Dir.glob(File.join(ROOT, '*', '*', '*app.yml')).map { |p| p.delete_prefix(ROOT + '/') }
-  .select { |p| File.fnmatch(include_pattern, p, File::FNM_EXTGLOB) }
-check(!discovered.include?(application_path), 'Optional PKI Application entered regular app inventory')
+directory = root.dig('spec', 'source', 'directory')
+include_pattern = directory.fetch('include')
+exclude_pattern = directory.fetch('exclude')
+check(File.fnmatch(include_pattern, application_path, File::FNM_EXTGLOB),
+      'Mandatory PKI Application must be explicitly included for bootstrap activation')
+check(File.fnmatch(exclude_pattern, application_path, File::FNM_EXTGLOB),
+      'Mandatory PKI Application must remain excluded before the ceremony')
+discovered = Dir.glob(File.join(ROOT, '*', '*', '{*app.yml,application.yml}'), File::FNM_EXTGLOB)
+  .map { |p| p.delete_prefix(ROOT + '/') }
+  .select do |path|
+    File.fnmatch(include_pattern, path, File::FNM_EXTGLOB) &&
+      !File.fnmatch(exclude_pattern, path, File::FNM_EXTGLOB)
+  end
+check(!discovered.include?(application_path), 'Staged PKI Application became active before bootstrap promotion')
+check(File.fnmatch(exclude_pattern, '06-data/postgresql/app.yml', File::FNM_EXTGLOB),
+      'Future PostgreSQL Application must remain excluded by default')
 
 output, stderr, result = Open3.capture3('kubectl', 'kustomize', File.join(ROOT, '05-pki/openbao-pki/workload'))
 raise "Kustomize failed: #{stderr}" unless result.success?
@@ -121,4 +129,4 @@ check(controller_ports == [53, 53, 443, 8200],
         'Reconciler container is not hardened')
 end
 
-puts 'PASS: optional OpenBao PKI app stays outside root inventory; constrained issuers, identities and reconciler render'
+puts 'PASS: mandatory OpenBao PKI app is pinned and staged inactive; constrained issuers, identities and reconciler render'

@@ -1,4 +1,4 @@
-"""Offline unit tests for the optional OpenBao PKI reconciler."""
+"""Offline unit tests for the mandatory staged OpenBao PKI reconciler."""
 import importlib.util
 import io
 import os
