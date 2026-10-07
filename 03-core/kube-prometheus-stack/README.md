@@ -20,10 +20,12 @@ Prometheus/Alertmanager StatefulSets and their PVCs; the Helm values define the
 corresponding CR storage templates. Grafana renders a PVC directly and uses
 `Recreate` upgrades: the old pod stops before the replacement mounts its RWO
 volume, avoiding concurrent SQLite writers and cross-node multi-attach stalls.
-Grafana upgrades therefore include downtime. Its administrator credential is an
-operator-seeded immutable Opaque Secret named `kube-prometheus-stack-grafana`;
-the generator refuses to commit a random password. Other exporters, rules and
-operator components do not need persistent data claims.
+Grafana upgrades therefore include downtime. Its subchart creates the initial
+random administrator Secret `kube-prometheus-stack-grafana` in-cluster. Argo
+ignores only that Secret's generated administrator data fields to prevent
+render-time randomness from rotating the credential; no administrator value is
+committed or logged. Other exporters, rules and operator components do not need
+persistent data claims.
 
 ## Controlled transition from an installed wave-1 chart
 

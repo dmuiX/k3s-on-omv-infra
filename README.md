@@ -90,9 +90,11 @@ bootstrap. Secrets such as Cloudflare tokens and backup passwords live
 in OpenBao, not Git. The public templates use non-secret `vault:` references;
 the private values file contains identifiers, not credentials.
 The root and child Applications' automation and pruning settings require review before deployment.
-Before the full monitoring Application can start, seed the immutable Opaque
-`kube-prometheus-stack/kube-prometheus-stack-grafana` Secret off-Git with exactly
-`admin-user` and `admin-password`; neither value is generated or committed.
+The Grafana subchart creates its initial random administrator Secret in-cluster.
+Argo ignores only the generated `admin-user` and `admin-password` data fields so
+subsequent Helm renders do not rotate them. The values are never committed or
+logged; inspect or rotate them only through an explicitly approved secret-access
+procedure.
 
 ### OpenBao backup credential admission
 

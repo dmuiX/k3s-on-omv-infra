@@ -246,10 +246,14 @@ check(monitor_values.dig('crds', 'enabled') == false, 'Full monitoring stack mus
 check(monitor_values.dig('grafana', 'persistence', 'enabled') == true &&
       monitor_values.dig('grafana', 'persistence', 'storageClassName') == 'longhorn',
       'Grafana must persist on Longhorn')
-check(monitor_values.dig('grafana', 'admin') == {
-        'existingSecret' => 'kube-prometheus-stack-grafana',
-        'userKey' => 'admin-user', 'passwordKey' => 'admin-password' },
-      'Grafana must use the operator-seeded Secret instead of generating a password')
+check(monitor_values.dig('grafana', 'admin').nil?,
+      'Grafana must let the chart create its initial random administrator Secret')
+grafana_secret_ignore = monitoring.fetch('spec').fetch('ignoreDifferences').find do |entry|
+  entry['group'] == '' && entry['kind'] == 'Secret' && entry['name'] == 'kube-prometheus-stack-grafana'
+end
+check(grafana_secret_ignore && grafana_secret_ignore['jsonPointers'].sort ==
+      ['/data/admin-password', '/data/admin-user'],
+      'Argo must ignore only the chart-generated Grafana administrator data fields')
 %w[prometheus alertmanager].each do |component|
   spec = component == 'prometheus' ? 'prometheusSpec' : 'alertmanagerSpec'
   field = component == 'prometheus' ? 'storageSpec' : 'storage'

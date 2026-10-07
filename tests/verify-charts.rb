@@ -188,8 +188,9 @@ Dir.mktmpdir('infra-helm-check-') do |dir|
   end
   check(monitoring.none? { |r| r['kind'] == 'CustomResourceDefinition' || r['kind'] == 'Certificate' },
         'Full monitoring must not own CRDs or depend on cert-manager')
-  check(monitoring.none? { |r| r['kind'] == 'Secret' && r.dig('metadata', 'name') == 'kube-prometheus-stack-grafana' },
-        'Generated Grafana administrator Secret must not be committed')
+  grafana_secret = find_resource(monitoring, 'Secret', 'kube-prometheus-stack-grafana')
+  check((%w[admin-password admin-user] - grafana_secret.fetch('data').keys).empty?,
+        'Chart-generated Grafana administrator Secret contract changed')
   grafana = find_resource(monitoring, 'PersistentVolumeClaim', 'kube-prometheus-stack-grafana')
   check(grafana.dig('spec', 'storageClassName') == 'longhorn' &&
         grafana.dig('spec', 'resources', 'requests', 'storage') == '10Gi' &&

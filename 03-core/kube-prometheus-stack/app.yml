@@ -55,3 +55,9 @@ spec:
       kind: ServiceMonitor
       jqPathExpressions:
         - .metadata.annotations
+    - group: ""
+      kind: Secret
+      name: kube-prometheus-stack-grafana
+      jsonPointers:
+        - /data/admin-user
+        - /data/admin-password

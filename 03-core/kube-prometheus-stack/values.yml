@@ -9,12 +9,9 @@ prometheusOperator:
     certManager:
       enabled: false # Avoid a cert-manager dependency for monitoring's admission webhook.
 grafana:
-  # Never commit Helm's randomly generated administrator password. Seed this
-  # Opaque Secret off-Git with exactly admin-user/admin-password before root.
-  admin:
-    existingSecret: kube-prometheus-stack-grafana
-    userKey: admin-user
-    passwordKey: admin-password
+  # Let the chart create the initial random administrator credential. The
+  # Application ignores only those generated Secret data fields so Argo does not
+  # rotate them on each Helm render; never commit or log their values.
   # Stop the old writer before reattaching the RWO volume during upgrades.
   deploymentStrategy:
     type: Recreate
