@@ -12,8 +12,8 @@ def check(condition, message)
   raise message unless condition
 end
 
-app = document('02-longhorn/app.yml')
-cm = document('02-longhorn/storageclass-configmap.yaml')
+app = document('02-controllers/longhorn/app.yml')
+cm = document('02-controllers/longhorn/storageclass-configmap.yaml')
 sc = YAML.safe_load(cm.fetch('data').fetch('storageclass.yaml'))
 sources = app.dig('spec', 'sources')
 
@@ -23,7 +23,7 @@ check(sources.any? { |source| source['chart'] == 'longhorn' && source['targetRev
       'Longhorn must use its pinned Helm chart')
 check(sources.any? { |source| source['ref'] == 'values' }, 'Longhorn Git values source missing')
 check(sources.last == { 'repoURL' => 'https://github.com/dmuiX/k3s-on-omv-infra.git',
-                        'targetRevision' => '454e34967db12ff4dcd869b8ca1947078eadd19e', 'path' => '02-longhorn',
+                        'targetRevision' => '454e34967db12ff4dcd869b8ca1947078eadd19e', 'path' => '02-controllers/longhorn',
                         'directory' => { 'include' => 'storageclass-configmap.yaml' } },
       'Encrypted StorageClass ConfigMap must be the final Argo source override')
 check(cm['apiVersion'] == 'v1' && cm['kind'] == 'ConfigMap' &&
@@ -56,15 +56,15 @@ check(params.keys.grep(/secret-(name|namespace)\z/).size == 8, 'Unexpected CSI c
 check(!params.key?('CRYPTO_KEY_VALUE') && !sc.key?('data') && !sc.key?('stringData'),
       'Key material must not be rendered into the public class')
 check(params.values.none? { |value| value.start_with?('vault:') }, 'No OpenBao dependency for volume unlock')
-%w[02-longhorn/config-app.yml 02-longhorn/storageclass-encrypted.yaml].each do |path|
+%w[02-controllers/longhorn/config-app.yml 02-controllers/longhorn/storageclass-encrypted.yaml].each do |path|
   check(!File.exist?(File.join(ROOT, path)), 'Retired additional-class proposal is still selected')
 end
 
 # No workload/PVC-name changes or default-class switch are part of this rollout.
-values = document('02-longhorn/values.yml')
+values = document('02-controllers/longhorn/values.yml')
 check(values.dig('persistence', 'defaultClass') == false, 'Original class default changed')
 check(values.dig('persistence', 'defaultClassReplicaCount') == 3, 'New PVC replica default must be three')
-openbao = document('03-openbao/values.yml')
+openbao = document('03-core/openbao/values.yml')
 %w[dataStorage auditStorage].each do |storage|
   check(openbao.dig('server', storage, 'storageClass') == 'longhorn', 'Existing OpenBao PVC selection changed')
 end

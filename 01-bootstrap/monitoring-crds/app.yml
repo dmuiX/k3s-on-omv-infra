@@ -1,0 +1,45 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: monitoring-crds
+  namespace: argocd
+  annotations:
+    # Longhorn and cert-manager emit ServiceMonitors in wave 2.
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  destination:
+    name: in-cluster
+    namespace: kube-prometheus-stack
+  project: default
+  sources:
+    - repoURL: https://prometheus-community.github.io/helm-charts
+      targetRevision: 91.4.1
+      chart: kube-prometheus-stack
+      helm:
+        releaseName: monitoring-crds
+        valueFiles:
+          - $values/01-bootstrap/monitoring-crds/values.yml
+    - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
+      targetRevision: 454e34967db12ff4dcd869b8ca1947078eadd19e
+      ref: values
+  syncPolicy:
+    automated:
+      prune: false # Never delete monitoring CRDs (and their instances) during migration.
+      selfHeal: true
+      allowEmpty: false
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 5m
+    syncOptions:
+      - PruneLast=true
+      - CreateNamespace=true
+      - ServerSideApply=true
+  ignoreDifferences:
+    - group: apiextensions.k8s.io
+      kind: CustomResourceDefinition
+      jsonPointers:
+        - /status
+        - /spec/preserveUnknownFields

@@ -1,0 +1,74 @@
+# yaml-language-server: $schema=../../values-schemas/openbao/values.schema.json
+global:
+  serverTelemetry:
+    prometheusOperator: true
+# The Bank-Vaults webhook is used for injection; avoid two mutating webhooks.
+injector:
+  enabled: false
+serverTelemetry:
+  serviceMonitor:
+    enabled: true
+server:
+  auditStorage:
+    enabled: true
+    accessMode: ReadWriteOnce
+    storageClass: longhorn
+  dataStorage:
+    enabled: true
+    accessMode: ReadWriteOnce
+    storageClass: longhorn
+  volumes:
+    - name: unseal-key-volume
+      secret:
+        secretName: openbao-unseal-key
+        items:
+          - key: unseal-key
+            path: unseal-key
+  volumeMounts:
+    - name: unseal-key-volume
+      mountPath: /openbao/secrets
+      readOnly: true
+  ha:
+    enabled: true
+    replicas: 3 # One Raft voter per cluster node; the chart's PDB protects quorum.
+    raft:
+      enabled: true
+      setNodeId: true
+      config: |
+        ui = true
+
+        listener "tcp" {
+          tls_disable = 1
+          address = "[::]:8200"
+          cluster_address = "[::]:8201"
+          unauthenticated_metrics_access = "true"
+        }
+
+        service_registration "kubernetes" {}
+
+        seal "static" {
+          current_key_id = "20260323"
+          current_key = "file:///openbao/secrets/unseal-key"
+        }
+
+        telemetry {
+          prometheus_retention_time = "30s"
+          disable_hostname = true
+        }
+
+        storage "raft" {
+          path = "/openbao/data"
+          retry_join {
+            auto_join = "provider=k8s namespace=openbao label_selector=\"app.kubernetes.io/name=openbao,component=server\""
+            auto_join_scheme = "http"
+          }
+        }
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+ui:
+  enabled: true

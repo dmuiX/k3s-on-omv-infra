@@ -31,14 +31,14 @@ end
 root = YAML.load_file(File.join(ROOT, 'infra.yml'))
 public_url = root.dig('spec', 'source', 'repoURL')
 pattern = root.dig('spec', 'source', 'directory', 'include')
-apps = Dir.glob(File.join(ROOT, '[0-9][0-9]-*', '*app.yml')).map do |path|
+apps = Dir.glob(File.join(ROOT, '[0-9][0-9]-*', '*', '*app.yml')).map do |path|
   YAML.load_file(path) if File.fnmatch(pattern, path.delete_prefix(ROOT + '/'), File::FNM_EXTGLOB)
 end.compact.to_h { |app| [app.dig('metadata', 'name'), app] }
 expected_apps = %w[argocd-config argocd-route grafana-route kube-prometheus-stack monitoring-crds
                    cert-manager cert-manager-config k8up longhorn longhorn-route openbao
                    openbao-access-config openbao-config openbao-route vault-secrets-webhook]
-check(apps.keys.sort == expected_apps.sort && apps.values.map { |app| wave(app) }.uniq.sort == (1..6).to_a,
-      'One public root must own all components across waves 1–6')
+check(apps.keys.sort == expected_apps.sort && apps.values.map { |app| wave(app) }.uniq.sort == [1, 2, 3, 4, 5, 6, 8],
+      'One public root must own all implemented components in their wave folders')
 check(File.file?(VALUES), 'Private values file missing')
 private_values = YAML.load_file(VALUES)
 backup_endpoint = URI.parse(private_values.dig('backup', 'endpoint'))
@@ -46,10 +46,10 @@ check(backup_endpoint.is_a?(URI::HTTPS) && ['', '/'].include?(backup_endpoint.pa
       'Backup endpoint must not repeat the separately configured bucket path')
 
 rendered = {}
-{ 'argocd-route' => ['argocd', 6, 'argocd-config', 'argocd-server', 80],
-  'grafana-route' => ['grafana', 6, 'kube-prometheus-stack', 'kube-prometheus-stack-grafana', 80],
-  'longhorn-route' => ['longhorn', 6, 'longhorn', 'longhorn-frontend', 80],
-  'openbao-route' => ['openbao', 6, 'openbao', 'openbao-ui', 8200],
+{ 'argocd-route' => ['argocd', 8, 'argocd-config', 'argocd-server', 80],
+  'grafana-route' => ['grafana', 8, 'kube-prometheus-stack', 'kube-prometheus-stack-grafana', 80],
+  'longhorn-route' => ['longhorn', 8, 'longhorn', 'longhorn-frontend', 80],
+  'openbao-route' => ['openbao', 8, 'openbao', 'openbao-ui', 8200],
   'cert-manager-config' => ['certificates', 5, 'vault-secrets-webhook'],
   'openbao-config' => ['backups', 6, 'k8up'] }.each do |name, (component, stage, dependency, service, port)|
   app = apps.fetch(name)

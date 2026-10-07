@@ -16,22 +16,36 @@ lives in a separate bootstrap repository. This repo does not install Traefik or
 External-DNS. It uses Argo CD (already installed) for these applications:
 
 ```text
-01-argocd-bootstrap/       child-Application health customization
-01-argocd-server-config/   existing Argo CD server backend configuration
-01-monitoring-crds/       monitoring CRDs only (no workloads/PVCs)
-02-cert-manager/           certificate controller
-02-k8up/                   backup controller
-02-longhorn/               three-replica storage across the cluster
-03-kube-prometheus-stack/  persistent monitoring on Longhorn
-03-openbao/                secret store
-04-openbao-access-config/  Git-managed webhook ACL, initial Job and recurring CronJob
-04-vault-secrets-webhook/   admission-time secret injection
-05-certificates/           wildcard certificate/issuers after secrets
-06-*-route/                UI routes after certificate configuration
-06-openbao-backups/        OpenBao backup schedule
+01-bootstrap/
+├── argocd-bootstrap/       child-Application health customization
+├── argocd-server-config/   existing Argo CD server backend configuration
+└── monitoring-crds/        monitoring CRDs only (no workloads/PVCs)
+02-controllers/
+├── cert-manager/           certificate controller
+├── k8up/                   backup controller
+└── longhorn/               three-replica storage across the cluster
+03-core/
+├── kube-prometheus-stack/  persistent monitoring on Longhorn
+└── openbao/                secret store
+04-secrets/
+├── openbao-access-config/  Git-managed webhook ACL, initial Job and recurring CronJob
+└── vault-secrets-webhook/  admission-time secret injection
+05-pki/
+└── public-certificates/    wildcard certificate/issuers after secrets
+06-data/
+└── openbao-backups/        OpenBao backup schedule
+08-routes/
+├── argocd/
+├── grafana/
+├── longhorn/
+└── openbao/                UI routes after healthy backends and certificates
 ```
 
-Prefixes are the first parent sync wave. The wave-1 CRD-only Application
+The first directory level is the parent sync wave; the second keeps component
+ownership separate. Applications in one wave are independent and may start in
+any order. A real dependency belongs in a later wave, not in an alphabetic
+component name. Wave 7 is reserved for future applications and is intentionally
+absent until one is implemented. The wave-1 CRD-only Application
 renders only the monitoring CRDs before wave-2 controllers emit ServiceMonitors;
 the full monitoring stack (Grafana, Prometheus, Alertmanager and operator) starts in
 wave 3, after Longhorn, with explicit encrypted Longhorn PVCs. Longhorn also
@@ -49,8 +63,9 @@ Authored Kustomize resources remain in Git, but rendered upstream chart output
 is deliberately not vendored. The encrypted Longhorn StorageClass ConfigMap is
 an explicit final Argo source overriding the chart resource that Longhorn
 reconciles. Backends run in waves 1–3; certificate issuance follows
-OpenBao/webhook (wave 5), and UI routes and backups are configured in wave 6.
-Routes cannot block the controllers needed to issue their TLS certificate.
+OpenBao/webhook in wave 5, backup configuration follows in wave 6, and UI routes
+follow healthy backends and certificates in wave 8. Routes cannot block the
+controllers needed to issue their TLS certificate.
 
 The local chart installs no controller and defaults to `component: none`.
 A rendered route does not prove working HTTPS: check Certificate Ready and the
@@ -75,10 +90,10 @@ bootstrap script can enable `userpass/` and interactively create a personal
 user without putting a password in Git; MFA enrollment stays manual. **They are not deployed.**
 Before enabling the new `openbao-access-config` Argo Application, run its
 reviewed one-time local bootstrap script as described in
-[`04-openbao-access-config/CONFIG-IAC-DESIGN.md`](04-openbao-access-config/CONFIG-IAC-DESIGN.md). Thereafter
-edit `04-openbao-access-config/workload/policies/vault-secrets-webhook-read.hcl`
+[`04-secrets/openbao-access-config/CONFIG-IAC-DESIGN.md`](04-secrets/openbao-access-config/CONFIG-IAC-DESIGN.md). Thereafter
+edit `04-secrets/openbao-access-config/workload/policies/vault-secrets-webhook-read.hcl`
 for webhook ACLs, `workload/policies/human-admin.hcl` for the human policy,
-and `04-openbao-access-config/workload/config.json` for the webhook role
+and `04-secrets/openbao-access-config/workload/config.json` for the webhook role
 and mount references (KV v2 and userpass are verified, not recreated by the loop). Its intentional `kv/data/*` grant is broad:
 anyone permitted to create and read a webhook-selected Kubernetes Secret may
 request any KV v2 value under `kv/`.
@@ -131,7 +146,7 @@ the safe local templates without contacting Kubernetes. With a sibling private
 checkout, `ruby tests/verify-private-values.rb` checks the private values and host
 Gateway wiring. Passing checks is not a
 storage, certificate, recovery, or live readiness test.
-See [tests/README.md](tests/README.md) and [02-longhorn/README.md](02-longhorn/README.md)
+See [tests/README.md](tests/README.md) and [02-controllers/longhorn/README.md](02-controllers/longhorn/README.md)
 for limits and storage preflight gates.
 
 The Helm values keep local JSON schemas, linked by
@@ -154,4 +169,4 @@ unseal/recovery and an independent backup restore must pass before relying on
 it. Monitoring uses encrypted three-replica Longhorn claims (Grafana
 10Gi, Prometheus 20Gi with 15d/18GB retention, Alertmanager 5Gi); this is not
 HA or a backup. Before changing a running wave-1 monitoring deployment, see
-[the monitoring migration notes](03-kube-prometheus-stack/README.md).
+[the monitoring migration notes](03-core/kube-prometheus-stack/README.md).

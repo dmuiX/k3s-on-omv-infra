@@ -18,7 +18,7 @@ spec:
     targetRevision: main
     directory:
       recurse: true
-      include: "{01-argocd-bootstrap/application-health-config.yml,*/app.yml,*/config-app.yml}"
+      include: "{01-bootstrap/argocd-bootstrap/application-health-config.yml,*/*/app.yml,*/*/config-app.yml}"
   syncPolicy:
     automated:
       prune: false

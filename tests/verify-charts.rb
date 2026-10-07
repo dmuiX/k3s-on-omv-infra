@@ -23,7 +23,7 @@ def find_resource(resources, kind, name)
 end
 
 def render(name, env)
-  app = Dir.glob(File.join(ROOT, '[0-9][0-9]-*', 'app.yml'))
+  app = Dir.glob(File.join(ROOT, '[0-9][0-9]-*', '*', 'app.yml'))
            .flat_map { |path| yaml_docs(File.read(path)) }
            .find { |resource| resource.dig('metadata', 'name') == name }
   check(!app.nil?, "Application #{name} not found in a numbered component directory")
@@ -56,7 +56,7 @@ Dir.mktmpdir('infra-helm-check-') do |dir|
   longhorn = render('longhorn', env)
   # Argo's last source intentionally replaces the chart's ConfigMap with the
   # reviewed encrypted StorageClass template.
-  longhorn_override = yaml_docs(File.read(File.join(ROOT, '02-longhorn', 'storageclass-configmap.yaml'))).first
+  longhorn_override = yaml_docs(File.read(File.join(ROOT, '02-controllers/longhorn', 'storageclass-configmap.yaml'))).first
   longhorn_index = longhorn.index { |resource| resource['kind'] == 'ConfigMap' && resource.dig('metadata', 'name') == 'longhorn-storageclass' }
   check(longhorn_index, 'Pinned Longhorn chart lost its storage-class ConfigMap')
   longhorn[longhorn_index] = longhorn_override
@@ -137,7 +137,7 @@ Dir.mktmpdir('infra-helm-check-') do |dir|
         k8up_deployment.dig('spec', 'template', 'spec', 'affinity', 'podAntiAffinity',
                              'requiredDuringSchedulingIgnoredDuringExecution'),
         'K8up must have two leader-elected controller replicas on distinct nodes')
-  k8up_pdb = yaml_docs(File.read(File.join(ROOT, '02-k8up', 'pdb.yaml'))).first
+  k8up_pdb = yaml_docs(File.read(File.join(ROOT, '02-controllers/k8up', 'pdb.yaml'))).first
   check(k8up_pdb['kind'] == 'PodDisruptionBudget' && k8up_pdb.dig('spec', 'minAvailable') == 1 &&
         k8up_pdb.dig('spec', 'selector', 'matchLabels').all? do |key, value|
           k8up_deployment.dig('spec', 'selector', 'matchLabels', key) == value

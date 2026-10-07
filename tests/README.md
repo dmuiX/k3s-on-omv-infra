@@ -41,7 +41,7 @@ Before any live sync, separately review: initial Argo CD read-only Git access
 (the private repo cannot bootstrap its own credential through OpenBao), Argo CD
 child-Application health customization, host storage prerequisites, disposable
 Longhorn PVC provisioning/write/read/reattach, the monitoring CRD ownership
-handoff and new PVCs (see `03-kube-prometheus-stack/README.md`), OpenBao unseal and recovery,
+handoff and new PVCs (see `03-core/kube-prometheus-stack/README.md`), OpenBao unseal and recovery,
 Certificate Ready, Gateway/route status, independent backup/restore and the
 Argo automated prune/self-heal settings. Cluster-mutating tests need separate
 approval and a cleanup plan.

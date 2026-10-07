@@ -9,7 +9,7 @@ def check(condition, message)
   raise message unless condition
 end
 
-paths = Dir.glob(File.join(ROOT, '[0-9][0-9]-*', '*.{yml,yaml}'))
+paths = Dir.glob(File.join(ROOT, '[0-9][0-9]-*', '*', '*.{yml,yaml}'))
 documents = paths.flat_map { |path| YAML.load_stream(File.read(path)).compact }
 check(documents.none? { |doc| %w[Gateway GatewayClass TLSRoute HTTPRoute Certificate ClusterIssuer Schedule Restore].include?(doc['kind']) },
       'Public base includes a cluster-specific route, certificate or backup')
@@ -25,8 +25,8 @@ root = YAML.load_file(File.join(ROOT, 'infra.yml'))
 source = root.fetch('spec').fetch('source')
 check(source.fetch('path') == '.' && source.dig('directory', 'recurse'), 'Public root must discover reusable Applications')
 pattern = source.dig('directory', 'include')
-%w[01-argocd-bootstrap/application-health-config.yml 01-monitoring-crds/app.yml
-   02-longhorn/app.yml 03-kube-prometheus-stack/app.yml 03-openbao/app.yml].each do |path|
+%w[01-bootstrap/argocd-bootstrap/application-health-config.yml 01-bootstrap/monitoring-crds/app.yml
+   02-controllers/longhorn/app.yml 03-core/kube-prometheus-stack/app.yml 03-core/openbao/app.yml].each do |path|
   check(File.fnmatch(pattern, path, File::FNM_EXTGLOB), "Public root excludes #{path}")
 end
 
@@ -41,9 +41,9 @@ apps.each do |app|
           "Public Application selects private manifests: #{app.dig('metadata', 'name')}")
   end
 end
-server = YAML.load_file(File.join(ROOT, '01-argocd-server-config', 'argocd-cmd-params-cm.yml'))
+server = YAML.load_file(File.join(ROOT, '01-bootstrap/argocd-server-config', 'argocd-cmd-params-cm.yml'))
 check(server.dig('data', 'server.insecure') == 'true', 'Traefik HTTP backend setting missing')
-%w[05-certificates 06-openbao-backups].each do |dir|
+%w[05-pki/public-certificates 06-data/openbao-backups].each do |dir|
   check(Dir.glob(File.join(ROOT, dir, '*.{yml,yaml}')).map { |f| File.basename(f) } == ['config-app.yml'],
         "#{dir} must contain only its public Application, not real cluster data")
 end

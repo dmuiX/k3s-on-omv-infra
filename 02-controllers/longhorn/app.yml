@@ -1,0 +1,55 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: longhorn
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  destination:
+    name: in-cluster
+    namespace: longhorn
+  project: default
+  sources:
+    - repoURL: https://charts.longhorn.io
+      targetRevision: 1.11.1
+      chart: longhorn
+      helm:
+        valueFiles:
+          - $values/02-controllers/longhorn/values.yml
+    - repoURL: "https://github.com/dmuiX/k3s-on-omv-infra.git"
+      targetRevision: 454e34967db12ff4dcd869b8ca1947078eadd19e
+      ref: values
+    # Longhorn has no Helm value for CSI encryption key references. This last
+    # source intentionally overrides the chart's longhorn-storageclass ConfigMap.
+    - repoURL: "https://github.com/dmuiX/k3s-on-omv-infra.git"
+      targetRevision: 454e34967db12ff4dcd869b8ca1947078eadd19e
+      path: 02-controllers/longhorn
+      directory:
+        include: storageclass-configmap.yaml
+  syncPolicy:
+    managedNamespaceMetadata:
+      labels:
+        pod-security.kubernetes.io/enforce: privileged
+        pod-security.kubernetes.io/audit: privileged
+        pod-security.kubernetes.io/warn: privileged
+    automated:
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+    syncOptions:
+      - PruneLast=true
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - RespectIgnoreDifferences=true
+  ignoreDifferences:
+    - group: apiextensions.k8s.io
+      kind: CustomResourceDefinition
+      jsonPointers:
+        - /status

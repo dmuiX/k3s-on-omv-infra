@@ -9,7 +9,7 @@ import unittest
 from unittest.mock import patch
 
 os.environ.setdefault("OPENBAO_ADDR", "http://example.invalid:8200")
-SCRIPT = Path(__file__).resolve().parents[1] / "04-openbao-access-config/workload/reconcile.py"
+SCRIPT = Path(__file__).resolve().parents[1] / "04-secrets/openbao-access-config/workload/reconcile.py"
 spec = importlib.util.spec_from_file_location("openbao_reconcile", SCRIPT)
 reconcile = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(reconcile)

@@ -4,7 +4,7 @@ require 'yaml'
 require 'open3'
 
 ROOT = File.expand_path('..', __dir__)
-config = YAML.load_file(File.join(ROOT, '01-argocd-bootstrap', 'application-health-config.yml'))
+config = YAML.load_file(File.join(ROOT, '01-bootstrap/argocd-bootstrap', 'application-health-config.yml'))
 lua = config.fetch('data').fetch('resource.customizations.health.argoproj.io_Application')
 
 raise 'Failed child sync must be Degraded' unless lua.include?('status.operationState.phase == "Failed"') &&
