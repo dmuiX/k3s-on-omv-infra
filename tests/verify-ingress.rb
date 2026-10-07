@@ -43,7 +43,7 @@ check(File.fnmatch(include_pattern, staged_pki_path, File::FNM_EXTGLOB) &&
 check(File.fnmatch(include_pattern, staged_postgresql_path, File::FNM_EXTGLOB) &&
       File.fnmatch(exclude_pattern, staged_postgresql_path, File::FNM_EXTGLOB) &&
       !root_selects.call(staged_postgresql_path),
-      'Future PostgreSQL phase must remain inactive until guarded activation')
+      'Implemented PostgreSQL phase must remain inactive until guarded activation')
 
 apps = documents.select { |doc| doc['kind'] == 'Application' }
 apps.each do |app|

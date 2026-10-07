@@ -32,9 +32,10 @@ External-DNS. It uses Argo CD (already installed) for these applications:
 └── vault-secrets-webhook/  admission-time secret injection
 05-pki/
 ├── public-certificates/    wildcard certificate/issuers after secrets
-└── openbao-pki/            optional, explicitly registered internal PKI integration
+└── openbao-pki/            mandatory internal PKI phase, staged inactive until ceremony
 06-data/
-└── openbao-backups/        OpenBao backup schedule
+├── openbao-backups/        OpenBao backup schedule
+└── postgresql/             staged central CloudNativePG HA platform
 08-routes/
 ├── argocd/
 ├── grafana/
@@ -56,13 +57,19 @@ shares wave 1 with other Applications: **seed and verify it separately before a
 first root sync**. Changing the existing Argo CD backend to HTTP also requires a
 controlled `argocd-server` restart; plan that before enabling its external route.
 
-`infra.yml` is the **one** Argo CD root for the regular application inventory.
-The optional [`05-pki/openbao-pki/`](05-pki/openbao-pki/workload/README.md) component is a deliberate
-exception: its `application.yml` filename is not selected by the root include and
-it must be pinned to an immutable commit before independent, explicit registration.
-It adds no Certificate consumers. Upstream controllers are Argo
-multi-source Applications: one version-pinned Helm/OCI chart plus values from
-this Git repository. Route, certificate and backup Applications render the local
+`infra.yml` is the **one** Argo CD root for the application inventory.
+The mandatory [`05-pki/openbao-pki/`](05-pki/openbao-pki/workload/README.md) platform phase is
+staged rather than optional: the root include names its `application.yml`
+explicitly, while the default root exclusion keeps it inactive until the
+external-root ceremony and guarded installation have passed. Its workload source
+is already pinned to an immutable commit. After those gates pass, the GitOps
+bootstrap activates the pinned Application by promoting the root configuration;
+do not register it independently or remove the safety gate ad hoc. The same
+default exclusion gates the implemented `06-data/postgresql/app.yml`; the guarded
+PKI installation activates both mandatory platform phases, and PostgreSQL then
+runs as a Wave-6 acceptance target. OpenBao PKI adds no Certificate consumers. Upstream
+controllers are Argo multi-source Applications: one version-pinned Helm/OCI chart
+plus values from this Git repository. Route, certificate and backup Applications render the local
 `charts/cluster-config` chart with private values from the live repository.
 Authored Kustomize resources remain in Git, but rendered upstream chart output
 is deliberately not vendored. The encrypted Longhorn StorageClass ConfigMap is
@@ -140,7 +147,8 @@ ruby tests/verify-bootstrap.rb
 ruby tests/verify-application-health.rb # requires Lua
 ruby tests/verify-longhorn-encryption.rb
 ruby tests/verify-openbao-access.rb
-ruby tests/verify-openbao-pki.rb # optional app exclusion + offline Kustomize checks
+ruby tests/verify-openbao-pki.rb # staged activation gate + offline Kustomize checks
+ruby tests/verify-postgresql.rb # HA/storage/backup/policy manifests + pinned chart renders
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p 'test_openbao_*.py'
 ruby tests/verify-ingress.rb
 ruby tests/verify-charts.rb # Helm + network access to pinned chart repositories

@@ -58,4 +58,40 @@ fixtures.each do |input, expected|
   raise "Lua health test failed: #{stderr}" unless status.success?
   raise "Expected #{expected}, got #{stdout} for #{input.inspect}" unless stdout == expected
 end
-puts "PASS: Argo child-Application health Lua (#{fixtures.length} cases)"
+
+platform_fixtures = {
+  'resource.customizations.health.postgresql.cnpg.io_Cluster' =>
+    {'status' => {'phase' => 'Cluster in healthy state'}},
+  'resource.customizations.health.postgresql.cnpg.io_DatabaseRole' =>
+    {'metadata' => {'generation' => '1'}, 'status' => {'observedGeneration' => '1', 'applied' => 'true'}},
+  'resource.customizations.health.postgresql.cnpg.io_Database' =>
+    {'metadata' => {'generation' => '1'}, 'status' => {'observedGeneration' => '1', 'applied' => 'true'}},
+  'resource.customizations.health.postgresql.cnpg.io_ScheduledBackup' =>
+    {'status' => {'lastScheduleTime' => 'present'}},
+  'resource.customizations.health.postgresql.cnpg.io_Backup' =>
+    {'status' => {'phase' => 'completed'}},
+  'resource.customizations.health.barmancloud.cnpg.io_ObjectStore' =>
+    {'status' => {'serverRecoveryWindow' => {'platform-postgres' => {'lastSuccessfulBackupTime' => 'present'}}}}
+}
+
+def lua_literal_with_scalars(value)
+  case value
+  when Hash
+    '{' + value.map { |key, child| "[#{key.dump}]=#{lua_literal_with_scalars(child)}" }.join(', ') + '}'
+  when String
+    return 'true' if value == 'true'
+    value.dump
+  else
+    raise "Unexpected platform fixture type: #{value.class}"
+  end
+end
+
+platform_fixtures.each do |key, input|
+  script = config.fetch('data').fetch(key)
+  program = "local function evaluate(obj)\n#{script}\nend\n" \
+            "local result = evaluate(#{lua_literal_with_scalars(input)})\nio.write(result.status)\n"
+  stdout, stderr, status = Open3.capture3(lua_bin, '-e', program)
+  raise "Lua platform health test failed for #{key}: #{stderr}" unless status.success?
+  raise "Expected Healthy, got #{stdout} for #{key}" unless stdout == 'Healthy'
+end
+puts "PASS: Argo health Lua (#{fixtures.length} Application + #{platform_fixtures.length} platform cases)"

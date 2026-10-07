@@ -92,6 +92,13 @@ check(certificate.dig('spec', 'dnsNames') == [private_values.dig('certificate', 
 check(schedule.dig('spec', 'backend', 's3', 'endpoint') == private_values.dig('backup', 'endpoint') &&
       schedule.dig('spec', 'backend', 's3', 'bucket') == private_values.dig('backup', 'bucket'),
       'Private backup values not rendered')
+postgresql = render('postgresql')
+postgresql_store = postgresql.find { |r| r['kind'] == 'ObjectStore' && r.dig('metadata', 'name') == 'platform-postgres-backups' }
+check(postgresql_store &&
+      postgresql_store.dig('spec', 'configuration', 'endpointURL') == private_values.dig('postgresqlBackup', 'endpoint') &&
+      postgresql_store.dig('spec', 'configuration', 'destinationPath') == "s3://#{private_values.dig('postgresqlBackup', 'bucket')}/" &&
+      postgresql.any? { |r| r['kind'] == 'Secret' && r.dig('metadata', 'name') == 'postgresql-r2-credentials' },
+      'Private PostgreSQL backup identifiers or Vault references did not render')
 check(render('restore').one? { |r| r['kind'] == 'Restore' } &&
       apps.values.none? { |app| app.dig('spec', 'sources', 0, 'helm', 'parameters', 0, 'value') == 'restore' },
       'Restore must be manual-only')
@@ -106,7 +113,8 @@ check(listener.dig('certificateRefs', 0, 'name') == certificate.dig('spec', 'sec
 
 identifiers = private_values.fetch('routes').values.map { |r| r.fetch('hostname') }
 identifiers += [private_values.dig('certificate', 'dnsName'), private_values.dig('certificate', 'acmeEmail'),
-                private_values.dig('backup', 'endpoint'), private_values.dig('backup', 'bucket')]
+                private_values.dig('backup', 'endpoint'), private_values.dig('backup', 'bucket'),
+                private_values.dig('postgresqlBackup', 'endpoint'), private_values.dig('postgresqlBackup', 'bucket')]
 files = Dir.glob(File.join(ROOT, '{[0-9][0-9]-*,charts,docs,tests}', '**', '*.{md,yml,yaml,rb,tpl,py,json,hcl}'), File::FNM_EXTGLOB)
 files += [File.join(ROOT, 'README.md'), File.join(ROOT, 'infra.yml')]
 files.uniq.each do |path|

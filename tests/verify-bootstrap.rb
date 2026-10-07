@@ -7,6 +7,8 @@ require 'pathname'
 ROOT = File.expand_path('..', __dir__)
 INFRA_REVISION = '1c8e6032db1ba5d170230e87d971019b50600fd5'
 LIVE_REVISION = 'ce6ad756dd48ef28145f836e6825a65fcafe548f'
+POSTGRES_REVISION = '8ea9c97114c872e0833238665d3147d6d03de7aa'
+POSTGRES_LIVE_REVISION = 'd12ff7bdb2cbc3ed37299d69e21d3549d1687568'
 
 def docs(path)
   YAML.load_stream(File.read(File.join(ROOT, path))).compact
@@ -22,13 +24,42 @@ end
 
 root = docs('infra.yml').first
 source = root.fetch('spec').fetch('source')
-app_files = Dir.glob(File.join(ROOT, '*', '*', '*app.yml')).select do |path|
-  File.fnmatch(source.fetch('directory').fetch('include'), path.delete_prefix(ROOT + '/'), File::FNM_EXTGLOB)
+directory = source.fetch('directory')
+include_pattern = directory.fetch('include')
+exclude_pattern = directory.fetch('exclude')
+root_selects = lambda do |path|
+  File.fnmatch(include_pattern, path, File::FNM_EXTGLOB) &&
+    !File.fnmatch(exclude_pattern, path, File::FNM_EXTGLOB)
+end
+app_files = Dir.glob(File.join(ROOT, '*', '*', '{*app.yml,application.yml}'), File::FNM_EXTGLOB).select do |path|
+  root_selects.call(path.delete_prefix(ROOT + '/'))
 end
 applications = app_files.flat_map { |path| YAML.load_stream(File.read(path)).compact }
 check(applications.all? { |app| app['kind'] == 'Application' }, 'Root discovers unexpected resources')
 apps = applications.to_h { |app| [app.dig('metadata', 'name'), app] }
 check(apps.size == applications.size, 'Duplicate Application names')
+
+pki_path = '05-pki/openbao-pki/application.yml'
+postgresql_path = '06-data/postgresql/app.yml'
+check(File.fnmatch(include_pattern, pki_path, File::FNM_EXTGLOB),
+      'Root include must explicitly stage the mandatory OpenBao PKI Application')
+check(File.fnmatch(exclude_pattern, pki_path, File::FNM_EXTGLOB) &&
+      File.fnmatch(exclude_pattern, postgresql_path, File::FNM_EXTGLOB),
+      'Root defaults must gate OpenBao PKI and PostgreSQL until guarded activation')
+check(!root_selects.call(pki_path) && !root_selects.call(postgresql_path),
+      'Staged platform Applications must remain inactive before their bootstrap gates pass')
+pki_app = docs(pki_path).first
+postgresql_app = docs(postgresql_path).first
+check(pki_app.dig('spec', 'source', 'targetRevision').to_s.match?(/\A[0-9a-f]{40}\z/),
+      'Staged OpenBao PKI workload must remain immutably pinned')
+check(postgresql_app.fetch('spec').fetch('sources').all? do |candidate|
+        !candidate['repoURL']&.start_with?('https://github.com/dmuiX/') ||
+          candidate['targetRevision'].to_s.match?(/\A[0-9a-f]{40}\z/)
+      end, 'Staged PostgreSQL Git sources must remain immutably pinned')
+activated_applications = applications + [pki_app, postgresql_app]
+activated_apps = activated_applications.to_h { |app| [app.dig('metadata', 'name'), app] }
+check(activated_apps.size == activated_applications.size,
+      'Bootstrap activation must not introduce a duplicate Application name')
 # Public Applications own all resources; only their real value overrides are private.
 app_files.group_by { |path| File.dirname(path) }.each do |dir, paths|
   relative = Pathname.new(dir).relative_path_from(Pathname.new(ROOT)).each_filename.to_a
@@ -56,8 +87,10 @@ helm_apps.each do |name|
   values_source = sources.find { |candidate| candidate['ref'] == 'values' }
   check(chart && chart['targetRevision'].to_s.match?(/\Av?\d+\.\d+\.\d+(?:[-+][\w.-]+)?\z/),
         "#{name} chart version is not pinned")
+  allowed_values_revisions = name == 'kube-prometheus-stack' ? [INFRA_REVISION, POSTGRES_REVISION] : [INFRA_REVISION]
   check(values_source && values_source['repoURL'] == source['repoURL'] &&
-        values_source['targetRevision'] == INFRA_REVISION, "#{name} values source is not the pinned reviewed Git revision")
+        allowed_values_revisions.include?(values_source['targetRevision']),
+        "#{name} values source is not the pinned reviewed Git revision")
   chart.fetch('helm', {}).fetch('valueFiles', []).each do |path|
     check(path.start_with?('$values/') && File.file?(File.join(ROOT, path.delete_prefix('$values/'))),
           "#{name} references a missing Git values file")
@@ -90,13 +123,17 @@ check(apps.fetch('openbao-access-config').dig('spec', 'source', 'path') == '04-s
         "Editor schema invalid or not a values schema: #{chart}")
 end
 
-git_sources = applications.flat_map do |app|
+git_sources = activated_applications.flat_map do |app|
   spec = app.fetch('spec')
   spec['sources'] || [spec['source']]
 end.compact.select { |candidate| candidate['repoURL']&.start_with?('https://github.com/dmuiX/') }
 check(git_sources.all? do |candidate|
-  expected = candidate['repoURL'].end_with?('k3s-on-omv-infra.git') ? INFRA_REVISION : LIVE_REVISION
-  candidate['targetRevision'] == expected
+  allowed = if candidate['repoURL'].end_with?('k3s-on-omv-infra.git')
+              [INFRA_REVISION, POSTGRES_REVISION, pki_app.dig('spec', 'source', 'targetRevision')]
+            else
+              [LIVE_REVISION, POSTGRES_LIVE_REVISION]
+            end
+  allowed.include?(candidate['targetRevision'])
 end, 'Every owned Git child source must use its reviewed immutable revision')
 
 health_path = '01-bootstrap/argocd-bootstrap/application-health-config.yml'
@@ -112,8 +149,15 @@ check(wave(health) <= applications.map { |app| wave(app) }.min,
 # Both the health ConfigMap and CRD Application are wave 1. The custom
 # health check must be seeded in Argo CD before the first root sync; wave 1
 # alone does not order resources within the wave.
-check(health.fetch('data').key?('resource.customizations.health.argoproj.io_Application'),
+health_keys = health.fetch('data').keys
+check(health_keys.include?('resource.customizations.health.argoproj.io_Application'),
       'Root cannot wait for child Application health')
+%w[Cluster DatabaseRole Database ScheduledBackup Backup].each do |kind|
+  check(health_keys.include?("resource.customizations.health.postgresql.cnpg.io_#{kind}"),
+        "Missing Argo health gate for CloudNativePG #{kind}")
+end
+check(health_keys.include?('resource.customizations.health.barmancloud.cnpg.io_ObjectStore'),
+      'Missing Argo health gate for the Barman ObjectStore')
 crd_app = apps.fetch('monitoring-crds')
 monitoring = apps.fetch('kube-prometheus-stack')
 %w[longhorn cert-manager kube-prometheus-stack openbao vault-secrets-webhook].each do |name|
@@ -136,23 +180,42 @@ check(wave(apps.fetch('openbao')) < wave(apps.fetch('openbao-access-config')) &&
       wave(apps.fetch('openbao-access-config')) < wave(apps.fetch('openbao-config')),
       'OpenBao ACL reconciliation must precede webhook-backed Secrets')
 check(wave(apps.fetch('argocd-config')) == 1, 'Existing Argo CD server configuration must be wave 1')
-expected = %w[argocd-config argocd-route grafana-route kube-prometheus-stack monitoring-crds cert-manager cert-manager-config
-              k8up longhorn longhorn-route openbao openbao-access-config openbao-config openbao-route vault-secrets-webhook]
-check(apps.keys.sort == expected.sort, 'One public root must own all child Applications')
+expected_default = %w[argocd-config argocd-route grafana-route kube-prometheus-stack monitoring-crds cert-manager
+                      cert-manager-config k8up longhorn longhorn-route openbao openbao-access-config openbao-config
+                      openbao-route vault-secrets-webhook]
+check(apps.keys.sort == expected_default.sort,
+      'Default public root must own regular Applications and keep staged platform phases inactive')
+expected_activated = expected_default + %w[openbao-pki postgresql]
+check(activated_apps.keys.sort == expected_activated.sort,
+      'GitOps bootstrap activation must add mandatory OpenBao PKI and PostgreSQL Applications')
 expected_by_wave = {
   1 => %w[argocd-config monitoring-crds],
   2 => %w[cert-manager k8up longhorn],
   3 => %w[kube-prometheus-stack openbao],
   4 => %w[openbao-access-config vault-secrets-webhook],
-  5 => %w[cert-manager-config],
-  6 => %w[openbao-config],
+  5 => %w[cert-manager-config openbao-pki],
+  6 => %w[openbao-config postgresql],
   8 => %w[argocd-route grafana-route longhorn-route openbao-route]
 }
-actual_by_wave = applications.group_by { |app| wave(app) }.transform_values do |items|
+actual_by_wave = activated_applications.group_by { |app| wave(app) }.transform_values do |items|
   items.map { |app| app.dig('metadata', 'name') }.sort
 end
 check(actual_by_wave == expected_by_wave.transform_values(&:sort),
-      'Applications must stay in their independent wave cohorts; no same-wave ordering is assumed')
+      'Activated Applications must stay in their independent wave cohorts; no same-wave ordering is assumed')
+check(wave(activated_apps.fetch('openbao-access-config')) < wave(activated_apps.fetch('openbao-pki')) &&
+      wave(activated_apps.fetch('cert-manager')) < wave(activated_apps.fetch('openbao-pki')) &&
+      wave(activated_apps.fetch('openbao')) < wave(activated_apps.fetch('openbao-pki')),
+      'OpenBao PKI activation must follow its controller, OpenBao and access bootstrap phases')
+check(wave(activated_apps.fetch('openbao-pki')) < wave(activated_apps.fetch('postgresql')),
+      'PostgreSQL must follow the mandatory OpenBao PKI phase')
+postgres_sources = activated_apps.fetch('postgresql').dig('spec', 'sources')
+check(postgres_sources.count { |entry| entry['chart'] } == 2 &&
+      postgres_sources.any? { |entry| entry['chart'] == 'cloudnative-pg' && entry['targetRevision'] == '0.29.1' } &&
+      postgres_sources.any? { |entry| entry['chart'] == 'plugin-barman-cloud' && entry['targetRevision'] == '0.8.1' } &&
+      postgres_sources.any? { |entry| entry['path'] == '06-data/postgresql' && entry['ref'] == 'infra' } &&
+      postgres_sources.any? { |entry| entry['path'] == 'charts/cluster-config' } &&
+      postgres_sources.any? { |entry| entry['ref'] == 'private' },
+      'PostgreSQL must remain one pinned multi-source Application')
 { 'argocd-route' => ['argocd', 8], 'grafana-route' => ['grafana', 8],
   'longhorn-route' => ['longhorn', 8], 'openbao-route' => ['openbao', 8],
   'cert-manager-config' => ['certificates', 5], 'openbao-config' => ['backups', 6] }.each do |name, (component, stage)|

@@ -128,6 +128,9 @@ Dir.mktmpdir('postgresql-render-') do |dir|
                     '--include-crds', '--values', '06-data/postgresql/values-barman.yml', chdir: ROOT))
   operator_deploy = resource(operator, 'Deployment', 'cloudnative-pg')
   plugin_deploy = resource(plugin, 'Deployment', 'plugin-barman-cloud')
+  check(operator_deploy.dig('spec', 'template', 'spec', 'containers', 0, 'env').any? do |entry|
+          entry['name'] == 'WATCH_NAMESPACE' && entry['value'] == 'postgresql'
+        end, 'CloudNativePG operator must watch only the PostgreSQL namespace')
   [operator_deploy, plugin_deploy].each do |deployment|
     check(deployment.dig('spec', 'replicas') == 2, "#{deployment.dig('metadata', 'name')} must have two replicas")
     check(deployment.dig('spec', 'template', 'spec', 'affinity', 'podAntiAffinity',

@@ -22,24 +22,26 @@ def find_resource(resources, kind, name)
     raise("Rendered #{kind}/#{name} not found")
 end
 
-def render(name, env)
+def render(name, env, chart_name = nil)
   app = Dir.glob(File.join(ROOT, '[0-9][0-9]-*', '*', 'app.yml'))
            .flat_map { |path| yaml_docs(File.read(path)) }
            .find { |resource| resource.dig('metadata', 'name') == name }
   check(!app.nil?, "Application #{name} not found in a numbered component directory")
   sources = app.fetch('spec').fetch('sources')
-  source = sources.find { |candidate| candidate['chart'] }
-  check(source, "Application #{name} has no Helm chart source")
+  source = sources.find { |candidate| candidate['chart'] && (!chart_name || candidate['chart'] == chart_name) }
+  check(source, "Application #{name} has no requested Helm chart source")
   repo = source.fetch('repoURL')
   chart = source.fetch('chart')
+  release = source.dig('helm', 'releaseName') || name
   chart_ref = repo.start_with?('ghcr.io/') ? "oci://#{repo}/#{chart}" : chart
-  args = [HELM, 'template', name, chart_ref]
+  args = [HELM, 'template', release, chart_ref]
   args.concat(['--repo', repo]) unless chart_ref.start_with?('oci://')
   args.concat(['--version', source.fetch('targetRevision'), '--namespace', app.dig('spec', 'destination', 'namespace'),
                '--kube-version', '1.36.4', '--include-crds'])
   source.fetch('helm', {}).fetch('valueFiles', []).each do |path|
-    check(path.start_with?('$values/'), 'Helm values must use the Git values source')
-    args.concat(['--values', File.join(ROOT, path.delete_prefix('$values/'))])
+    prefix = %w[$values/ $infra/].find { |candidate| path.start_with?(candidate) }
+    check(prefix, 'Helm values must use a reviewed Git values source')
+    args.concat(['--values', File.join(ROOT, path.delete_prefix(prefix))])
   end
   output, _stderr, status = Open3.capture3(env, *args, chdir: File.dirname(env.fetch('HELM_CACHE_HOME')))
   check(status.success?, "Helm rendering failed for #{name} (exit #{status.exitstatus}); chart diagnostics suppressed")
@@ -64,7 +66,9 @@ Dir.mktmpdir('infra-helm-check-') do |dir|
   cert_manager = render('cert-manager', env)
   k8up = render('k8up', env)
   secrets_webhook = render('vault-secrets-webhook', env)
-  auxiliary = k8up + secrets_webhook
+  cnpg = render('postgresql', env, 'cloudnative-pg')
+  barman = render('postgresql', env, 'plugin-barman-cloud')
+  auxiliary = k8up + secrets_webhook + cnpg + barman
   check((crds + monitoring + longhorn + openbao + cert_manager + auxiliary).none? do |resource|
     %w[Application ApplicationSet].include?(resource['kind'])
   end, 'A Helm chart unexpectedly rendered a nested Argo resource')
@@ -72,7 +76,7 @@ Dir.mktmpdir('infra-helm-check-') do |dir|
   # Public cluster resources are complete templates, but their sample defaults
   # must never create live resources unless an explicit component is selected.
   local_chart = File.join(ROOT, 'charts', 'cluster-config')
-  %w[none argocd grafana longhorn openbao certificates backups restore].each do |component|
+  %w[none argocd grafana longhorn openbao certificates backups postgresql restore].each do |component|
     output, status = Open3.capture2(env, HELM, 'template', "check-#{component}", local_chart,
                                      '--set', "component=#{component}", err: File::NULL, chdir: dir)
     check(status.success?, "Local #{component} template failed; chart diagnostics suppressed")
@@ -90,6 +94,12 @@ Dir.mktmpdir('infra-helm-check-') do |dir|
       end
       check(schedule.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '0',
             'Backup Schedule must sync after its Secrets')
+    end
+    if component == 'postgresql'
+      object_store = find_resource(resources, 'ObjectStore', 'platform-postgres-backups')
+      check(object_store.dig('spec', 'retentionPolicy') == '30d' &&
+            find_resource(resources, 'Secret', 'postgresql-r2-credentials'),
+            'PostgreSQL Barman configuration is incomplete')
     end
     check(resources.one? { |r| r['kind'] == 'Restore' }, 'Manual restore template missing') if component == 'restore'
   end
@@ -153,6 +163,19 @@ Dir.mktmpdir('infra-helm-check-') do |dir|
   webhook_pdb = find_resource(secrets_webhook, 'PodDisruptionBudget', 'vault-secrets-webhook')
   check(webhook_pdb.dig('spec', 'minAvailable') == 2,
         'Vault Secrets Webhook PDB must retain two admission replicas')
+
+  cnpg_operator = find_resource(cnpg, 'Deployment', 'cloudnative-pg')
+  barman_operator = find_resource(barman, 'Deployment', 'plugin-barman-cloud')
+  [cnpg_operator, barman_operator].each do |deployment|
+    check(deployment.dig('spec', 'replicas') == 2 &&
+          deployment.dig('spec', 'template', 'spec', 'affinity', 'podAntiAffinity',
+                         'requiredDuringSchedulingIgnoredDuringExecution'),
+          "#{deployment.dig('metadata', 'name')} must have two distributed replicas")
+    check(deployment.dig('spec', 'template', 'spec', 'containers', 0, 'image').match?(/@sha256:[0-9a-f]{64}\z/),
+          "#{deployment.dig('metadata', 'name')} image must be digest pinned")
+  end
+  check(find_resource(barman, 'ConfigMap', 'plugin-barman-cloud-config').dig('data', 'SIDECAR_IMAGE')
+          .match?(/@sha256:[0-9a-f]{64}\z/), 'Barman sidecar image must be digest pinned')
 
   retained_crds = cert_manager.select { |r| r['kind'] == 'CustomResourceDefinition' }
   check(!retained_crds.empty? && retained_crds.all? { |r|
@@ -231,5 +254,5 @@ Dir.mktmpdir('infra-helm-check-') do |dir|
   check(container.dig('resources', 'limits', 'memory') == '512Mi', 'Manager memory limit was ignored')
   check(longhorn.none? { |r| %w[Gateway Ingress HelmRelease HelmRepository].include?(r['kind']) },
         'Unexpected routing or Flux resource rendered by Longhorn')
-  puts 'PASS: seven pinned Helm renders and private templates, early monitoring CRDs, Longhorn-backed monitoring, three-node replicas/retention/UI'
+  puts 'PASS: pinned Helm renders and private templates, early monitoring CRDs, Longhorn-backed monitoring, PostgreSQL controllers'
 end
