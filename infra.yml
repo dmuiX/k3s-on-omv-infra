@@ -18,8 +18,8 @@ spec:
     targetRevision: main
     directory:
       recurse: true
-      include: "{01-bootstrap/argocd-bootstrap/application-health-config.yml,*/*/app.yml,*/*/config-app.yml,05-pki/openbao-pki/application.yml}"
-      exclude: "{05-pki/openbao-pki/application.yml,06-data/postgresql/app.yml}"
+      include: "{01-bootstrap/argocd-bootstrap/application-health-config.yml,*/*/app.yml,*/*/config-app.yml,05-platform/openbao-pki/application.yml}"
+      exclude: "{05-platform/openbao-pki/application.yml,06-data/postgresql/app.yml}"
   syncPolicy:
     automated:
       prune: false

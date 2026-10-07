@@ -8,7 +8,7 @@ from unittest.mock import mock_open, patch
 
 os.environ.setdefault("OPENBAO_ADDR", "http://example.invalid:8200")
 ROOT = Path(__file__).resolve().parents[1]
-SCRIPT = ROOT / "05-pki/openbao-pki/workload/reconcile.py"
+SCRIPT = ROOT / "05-platform/openbao-pki/workload/reconcile.py"
 SPEC = importlib.util.spec_from_file_location("openbao_pki_reconcile", SCRIPT)
 reconcile = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(reconcile)
@@ -17,7 +17,7 @@ SERVICE = {"mount": "pki-services", **reconcile.EXPECTED_IDENTITIES["pki-service
 
 class OpenBaoPkiReconcileTest(unittest.TestCase):
     def test_profiles_are_exact_and_limited_to_leaf_signing(self):
-        with patch.object(reconcile, "CONFIG_PATH", str(ROOT / "05-pki/openbao-pki/workload/config.json")):
+        with patch.object(reconcile, "CONFIG_PATH", str(ROOT / "05-platform/openbao-pki/workload/config.json")):
             config = reconcile.load_config()
         self.assertEqual([entry["mount"] for entry in config["mounts"]],
                          ["pki-services", "pki-clients"])
@@ -26,7 +26,7 @@ class OpenBaoPkiReconcileTest(unittest.TestCase):
         self.assertNotIn('/root/generate', source)
         self.assertNotIn('/intermediate/generate', source)
         for entry in config["mounts"]:
-            policy = ROOT / "05-pki/openbao-pki/workload/policies" / f'{entry["policy"]}.hcl'
+            policy = ROOT / "05-platform/openbao-pki/workload/policies" / f'{entry["policy"]}.hcl'
             self.assertEqual(policy.read_text(encoding="utf-8").strip(),
                              f'path "{entry["mount"]}/sign/{entry["pki_role"]}" {{\n'
                              '  capabilities = ["update"]\n}')

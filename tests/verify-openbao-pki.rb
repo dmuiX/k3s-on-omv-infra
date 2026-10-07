@@ -9,11 +9,11 @@ def check(condition, message)
   raise message unless condition
 end
 
-application_path = '05-pki/openbao-pki/application.yml'
+application_path = '05-platform/openbao-pki/application.yml'
 app = YAML.load_file(File.join(ROOT, application_path))
 check(File.basename(application_path) == 'application.yml', 'Staged Application filename changed')
 check(app.dig('metadata', 'name') == 'openbao-pki', 'Wrong mandatory PKI Application identity')
-check(app.dig('spec', 'source', 'path') == '05-pki/openbao-pki/workload', 'Wrong workload source')
+check(app.dig('spec', 'source', 'path') == '05-platform/openbao-pki/workload', 'Wrong workload source')
 revision = app.dig('spec', 'source', 'targetRevision').to_s
 check(revision.match?(/\A[0-9a-f]{40}\z/), 'Mandatory PKI workload revision must remain immutable')
 cert_manager_values = YAML.load_file(File.join(ROOT, '02-controllers/cert-manager/values.yml'))
@@ -38,7 +38,7 @@ check(!discovered.include?(application_path), 'Staged PKI Application became act
 check(File.fnmatch(exclude_pattern, '06-data/postgresql/app.yml', File::FNM_EXTGLOB),
       'Future PostgreSQL Application must remain excluded by default')
 
-output, stderr, result = Open3.capture3('kubectl', 'kustomize', File.join(ROOT, '05-pki/openbao-pki/workload'))
+output, stderr, result = Open3.capture3('kubectl', 'kustomize', File.join(ROOT, '05-platform/openbao-pki/workload'))
 raise "Kustomize failed: #{stderr}" unless result.success?
 resources = YAML.load_stream(output).compact
 find_all = ->(kind) { resources.select { |resource| resource['kind'] == kind } }

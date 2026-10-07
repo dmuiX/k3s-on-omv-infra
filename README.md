@@ -30,17 +30,16 @@ External-DNS. It uses Argo CD (already installed) for these applications:
 04-secrets/
 ├── openbao-access-config/  Git-managed webhook ACL, initial Job and recurring CronJob
 └── vault-secrets-webhook/  admission-time secret injection
-05-pki/
+05-platform/
 ├── public-certificates/    wildcard certificate/issuers after secrets
-└── openbao-pki/            mandatory internal PKI phase, staged inactive until ceremony
-06-data/
-├── openbao-backups/        OpenBao backup schedule
-└── postgresql/             staged central CloudNativePG HA platform
-08-routes/
+├── openbao-pki/            mandatory internal PKI phase, staged inactive until ceremony
 ├── argocd/
 ├── grafana/
 ├── longhorn/
-└── openbao/                UI routes after healthy backends and certificates
+└── openbao/                early UI routes, usable when wildcard TLS becomes ready
+06-data/
+├── openbao-backups/        OpenBao backup schedule
+└── postgresql/             staged central CloudNativePG HA platform
 ```
 
 The first directory level is the parent sync wave; the second keeps component
@@ -51,14 +50,17 @@ absent until one is implemented. The wave-1 CRD-only Application
 renders only the monitoring CRDs before wave-2 controllers emit ServiceMonitors;
 the full monitoring stack (Grafana, Prometheus, Alertmanager and operator) starts in
 wave 3, after Longhorn, with explicit encrypted Longhorn PVCs. Longhorn also
-precedes OpenBao PVCs; the secrets webhook and access-config Job follow OpenBao. The real certificate and backup schedule wait
-until OpenBao and the webhook are initialized. Argo CD's health customization
+precedes OpenBao PVCs; the secrets webhook and access-config Job follow OpenBao.
+Wildcard certificate issuance and UI routes share wave 5 after OpenBao-backed
+Cloudflare custody and webhook activation; routes may reconcile first but become
+usable only when the Gateway certificate is ready. The backup schedule remains
+separately gated until its OpenBao credentials exist. Argo CD's health customization
 shares wave 1 with other Applications: **seed and verify it separately before a
 first root sync**. Changing the existing Argo CD backend to HTTP also requires a
 controlled `argocd-server` restart; plan that before enabling its external route.
 
 `infra.yml` is the **one** Argo CD root for the application inventory.
-The mandatory [`05-pki/openbao-pki/`](05-pki/openbao-pki/workload/README.md) platform phase is
+The mandatory [`05-platform/openbao-pki/`](05-platform/openbao-pki/workload/README.md) platform phase is
 staged rather than optional: the root include names its `application.yml`
 explicitly, while the default root exclusion keeps it inactive until the
 external-root ceremony and guarded installation have passed. Its workload source
@@ -74,10 +76,10 @@ plus values from this Git repository. Route, certificate and backup Applications
 Authored Kustomize resources remain in Git, but rendered upstream chart output
 is deliberately not vendored. The encrypted Longhorn StorageClass ConfigMap is
 an explicit final Argo source overriding the chart resource that Longhorn
-reconciles. Backends run in waves 1–3; certificate issuance follows
-OpenBao/webhook in wave 5, backup configuration follows in wave 6, and UI routes
-follow healthy backends and certificates in wave 8. Routes cannot block the
-controllers needed to issue their TLS certificate.
+reconciles. Backends run in waves 1–3. Certificate issuance and UI routes follow
+OpenBao/webhook together in wave 5, so routes are created at the earliest safe
+platform stage and become reachable as soon as wildcard TLS is ready. Backup
+configuration and PostgreSQL remain wave-6 data concerns.
 
 The local chart installs no controller and defaults to `component: none`.
 A rendered route does not prove working HTTPS: check Certificate Ready and the

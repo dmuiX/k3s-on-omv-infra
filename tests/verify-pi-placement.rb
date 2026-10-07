@@ -50,8 +50,8 @@ check(permits_pi?(yaml('06-data/postgresql/cluster/cluster.yaml').dig('spec', 'a
 [
   ['04-secrets/openbao-access-config/workload/initial-job.yaml', %w[spec template spec tolerations]],
   ['04-secrets/openbao-access-config/workload/cronjob.yaml', %w[spec jobTemplate spec template spec tolerations]],
-  ['05-pki/openbao-pki/workload/initial-job.yaml', %w[spec template spec tolerations]],
-  ['05-pki/openbao-pki/workload/cronjob.yaml', %w[spec jobTemplate spec template spec tolerations]]
+  ['05-platform/openbao-pki/workload/initial-job.yaml', %w[spec template spec tolerations]],
+  ['05-platform/openbao-pki/workload/cronjob.yaml', %w[spec jobTemplate spec template spec tolerations]]
 ].each do |path, keys|
   value = keys.reduce(yaml(path)) { |current, key| current.fetch(key) }
   check(permits_pi?(value), "#{path} cannot use raspi4")

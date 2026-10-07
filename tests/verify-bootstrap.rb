@@ -39,7 +39,7 @@ check(applications.all? { |app| app['kind'] == 'Application' }, 'Root discovers 
 apps = applications.to_h { |app| [app.dig('metadata', 'name'), app] }
 check(apps.size == applications.size, 'Duplicate Application names')
 
-pki_path = '05-pki/openbao-pki/application.yml'
+pki_path = '05-platform/openbao-pki/application.yml'
 postgresql_path = '06-data/postgresql/app.yml'
 check(File.fnmatch(include_pattern, pki_path, File::FNM_EXTGLOB),
       'Root include must explicitly stage the mandatory OpenBao PKI Application')
@@ -141,9 +141,9 @@ health = docs(health_path).first
 check(File.fnmatch(source.fetch('directory').fetch('include'), health_path, File::FNM_EXTGLOB),
       'Root must discover the bootstrap health configuration')
 check(wave(health) == 1, 'Bootstrap health configuration must be in wave 1')
-expected_waves = [1, 2, 3, 4, 5, 6, 8]
+expected_waves = [1, 2, 3, 4, 5, 6]
 check(([wave(health)] + applications.map { |app| wave(app) }).uniq.sort == expected_waves,
-      'Infra Applications must use the implemented wave folders; wave 7 is reserved for future apps')
+      'Infra Applications must use the implemented wave folders; later waves are reserved for future apps')
 check(wave(health) <= applications.map { |app| wave(app) }.min,
       'Child health customization must not follow the first child Application')
 # Both the health ConfigMap and CRD Application are wave 1. The custom
@@ -193,9 +193,8 @@ expected_by_wave = {
   2 => %w[cert-manager k8up longhorn],
   3 => %w[kube-prometheus-stack openbao],
   4 => %w[openbao-access-config vault-secrets-webhook],
-  5 => %w[cert-manager-config openbao-pki],
-  6 => %w[openbao-config postgresql],
-  8 => %w[argocd-route grafana-route longhorn-route openbao-route]
+  5 => %w[argocd-route cert-manager-config grafana-route longhorn-route openbao-pki openbao-route],
+  6 => %w[openbao-config postgresql]
 }
 actual_by_wave = activated_applications.group_by { |app| wave(app) }.transform_values do |items|
   items.map { |app| app.dig('metadata', 'name') }.sort
@@ -216,8 +215,8 @@ check(postgres_sources.count { |entry| entry['chart'] } == 2 &&
       postgres_sources.any? { |entry| entry['path'] == 'charts/cluster-config' } &&
       postgres_sources.any? { |entry| entry['ref'] == 'private' },
       'PostgreSQL must remain one pinned multi-source Application')
-{ 'argocd-route' => ['argocd', 8], 'grafana-route' => ['grafana', 8],
-  'longhorn-route' => ['longhorn', 8], 'openbao-route' => ['openbao', 8],
+{ 'argocd-route' => ['argocd', 5], 'grafana-route' => ['grafana', 5],
+  'longhorn-route' => ['longhorn', 5], 'openbao-route' => ['openbao', 5],
   'cert-manager-config' => ['certificates', 5], 'openbao-config' => ['backups', 6] }.each do |name, (component, stage)|
   app = apps.fetch(name)
   chart, private_values = app.dig('spec', 'sources')
@@ -228,8 +227,8 @@ check(postgres_sources.count { |entry| entry['chart'] } == 2 &&
         private_values['ref'] == 'values', "Wrong private Helm values wiring for #{name}")
 end
 %w[argocd-route grafana-route longhorn-route openbao-route].each do |name|
-  check(wave(apps.fetch('cert-manager-config')) < wave(apps.fetch(name)),
-        "Route #{name} must follow wildcard certificate configuration")
+  check(wave(apps.fetch('cert-manager-config')) <= wave(apps.fetch(name)),
+        "Route #{name} must not precede wildcard certificate configuration")
 end
 check(wave(apps.fetch('openbao')) < wave(apps.fetch('cert-manager-config')) &&
       wave(apps.fetch('vault-secrets-webhook')) < wave(apps.fetch('cert-manager-config')) &&

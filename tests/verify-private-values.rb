@@ -42,7 +42,7 @@ end.compact.to_h { |app| [app.dig('metadata', 'name'), app] }
 expected_apps = %w[argocd-config argocd-route grafana-route kube-prometheus-stack monitoring-crds
                    cert-manager cert-manager-config k8up longhorn longhorn-route openbao
                    openbao-access-config openbao-config openbao-route vault-secrets-webhook]
-check(apps.keys.sort == expected_apps.sort && apps.values.map { |app| wave(app) }.uniq.sort == [1, 2, 3, 4, 5, 6, 8],
+check(apps.keys.sort == expected_apps.sort && apps.values.map { |app| wave(app) }.uniq.sort == [1, 2, 3, 4, 5, 6],
       'Default public root must own regular components and keep staged phases inactive')
 check(File.file?(VALUES), 'Private values file missing')
 private_values = YAML.load_file(VALUES)
@@ -51,15 +51,15 @@ check(backup_endpoint.is_a?(URI::HTTPS) && ['', '/'].include?(backup_endpoint.pa
       'Backup endpoint must not repeat the separately configured bucket path')
 
 rendered = {}
-{ 'argocd-route' => ['argocd', 8, 'argocd-config', 'argocd-server', 80],
-  'grafana-route' => ['grafana', 8, 'kube-prometheus-stack', 'kube-prometheus-stack-grafana', 80],
-  'longhorn-route' => ['longhorn', 8, 'longhorn', 'longhorn-frontend', 80],
-  'openbao-route' => ['openbao', 8, 'openbao', 'openbao-ui', 8200],
+{ 'argocd-route' => ['argocd', 5, 'argocd-config', 'argocd-server', 80],
+  'grafana-route' => ['grafana', 5, 'kube-prometheus-stack', 'kube-prometheus-stack-grafana', 80],
+  'longhorn-route' => ['longhorn', 5, 'longhorn', 'longhorn-frontend', 80],
+  'openbao-route' => ['openbao', 5, 'openbao', 'openbao-ui', 8200],
   'cert-manager-config' => ['certificates', 5, 'vault-secrets-webhook'],
   'openbao-config' => ['backups', 6, 'k8up'] }.each do |name, (component, stage, dependency, service, port)|
   app = apps.fetch(name)
   check(wave(app) == stage && wave(apps.fetch(dependency)) <= stage &&
-        (!service || wave(apps.fetch('cert-manager-config')) < stage),
+        (!service || wave(apps.fetch('cert-manager-config')) <= stage),
         "#{name} is scheduled before its backend/certificate dependency")
   chart_source, values_source = app.dig('spec', 'sources')
   check(chart_source['repoURL'] == public_url && chart_source['path'] == 'charts/cluster-config' &&

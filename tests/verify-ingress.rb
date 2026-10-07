@@ -34,7 +34,7 @@ end
    02-controllers/longhorn/app.yml 03-core/kube-prometheus-stack/app.yml 03-core/openbao/app.yml].each do |path|
   check(root_selects.call(path), "Public root excludes #{path}")
 end
-staged_pki_path = '05-pki/openbao-pki/application.yml'
+staged_pki_path = '05-platform/openbao-pki/application.yml'
 staged_postgresql_path = '06-data/postgresql/app.yml'
 check(File.fnmatch(include_pattern, staged_pki_path, File::FNM_EXTGLOB) &&
       File.fnmatch(exclude_pattern, staged_pki_path, File::FNM_EXTGLOB) &&
@@ -64,7 +64,7 @@ apps.each do |app|
 end
 server = YAML.load_file(File.join(ROOT, '01-bootstrap/argocd-server-config', 'argocd-cmd-params-cm.yml'))
 check(server.dig('data', 'server.insecure') == 'true', 'Traefik HTTP backend setting missing')
-%w[05-pki/public-certificates 06-data/openbao-backups].each do |dir|
+%w[05-platform/public-certificates 06-data/openbao-backups].each do |dir|
   check(Dir.glob(File.join(ROOT, dir, '*.{yml,yaml}')).map { |f| File.basename(f) } == ['config-app.yml'],
         "#{dir} must contain only its public Application, not real cluster data")
 end

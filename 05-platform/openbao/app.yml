@@ -1,14 +1,14 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: longhorn-route
+  name: openbao-route
   namespace: argocd
   annotations:
-    argocd.argoproj.io/sync-wave: "8"
+    argocd.argoproj.io/sync-wave: "5"
 spec:
   destination:
     name: in-cluster
-    namespace: longhorn
+    namespace: openbao
   project: default
   sources:
     - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
@@ -19,7 +19,7 @@ spec:
           - $values/clusters/omv/values.yml
         parameters:
           - name: component
-            value: longhorn
+            value: openbao
     - repoURL: https://github.com/dmuiX/k3s-on-omv-live.git
       targetRevision: ce6ad756dd48ef28145f836e6825a65fcafe548f
       ref: values
