@@ -20,7 +20,7 @@ spec:
         valueFiles:
           - $values/01-bootstrap/monitoring-crds/values.yml
     - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
-      targetRevision: 093646c172259a826396df092fdda7839695f533
+      targetRevision: 9213c8ff998cd381f834f0b3ed9864e0e692d0c5
       ref: values
   syncPolicy:
     automated:
