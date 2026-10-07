@@ -243,8 +243,9 @@ end
 monitor_values = docs('03-core/kube-prometheus-stack/values.yml').first
 check(monitor_values.dig('crds', 'enabled') == false, 'Full monitoring stack must not own CRDs')
 check(monitor_values.dig('grafana', 'persistence', 'enabled') == true &&
-      monitor_values.dig('grafana', 'persistence', 'storageClassName') == 'longhorn',
-      'Grafana must persist on Longhorn')
+      monitor_values.dig('grafana', 'persistence', 'storageClassName') == 'longhorn' &&
+      monitor_values.dig('grafana', 'persistence', 'size') == '2Gi',
+      'Grafana must use the right-sized Longhorn claim')
 check(monitor_values.dig('grafana', 'admin').nil?,
       'Grafana must let the chart create its initial random administrator Secret')
 grafana_secret_ignore = monitoring.fetch('spec').fetch('ignoreDifferences').find do |entry|
@@ -253,12 +254,19 @@ end
 check(grafana_secret_ignore && grafana_secret_ignore['jsonPointers'].sort ==
       ['/data/admin-password', '/data/admin-user'],
       'Argo must ignore only the chart-generated Grafana administrator data fields')
-%w[prometheus alertmanager].each do |component|
+{ 'prometheus' => '5Gi', 'alertmanager' => '1Gi' }.each do |component, size|
   spec = component == 'prometheus' ? 'prometheusSpec' : 'alertmanagerSpec'
   field = component == 'prometheus' ? 'storageSpec' : 'storage'
-  check(monitor_values.dig(component, spec, field, 'volumeClaimTemplate', 'spec', 'storageClassName') == 'longhorn',
-        "#{component} must persist on Longhorn")
+  claim = monitor_values.dig(component, spec, field, 'volumeClaimTemplate', 'spec')
+  check(claim['storageClassName'] == 'longhorn' && claim.dig('resources', 'requests', 'storage') == size,
+        "#{component} must use its right-sized Longhorn claim")
 end
+check(monitor_values.dig('prometheus', 'prometheusSpec', 'retention') == '7d' &&
+      monitor_values.dig('prometheus', 'prometheusSpec', 'retentionSize') == '4GB',
+      'Prometheus retention must fit inside its 5Gi claim')
+capacity_alerts = monitor_values.dig('additionalPrometheusRulesMap', 'persistent-volume-capacity', 'groups', 0, 'rules')
+check(capacity_alerts&.map { |rule| rule['alert'] } == %w[PlatformPVCUsageWarning PlatformPVCUsageCritical],
+      'Platform PVC capacity alerts are missing')
 check(monitor_values.dig('prometheusOperator', 'admissionWebhooks', 'certManager', 'enabled') == false,
       'Monitoring must not depend on cert-manager')
 %w[serviceMonitor podMonitor].each do |kind|
@@ -298,8 +306,9 @@ openbao_values = docs('03-core/openbao/values.yml').first
 check(openbao_values.dig('server', 'ha', 'enabled') && openbao_values.dig('server', 'ha', 'replicas') == 3,
       'OpenBao Raft must use three server pods')
 %w[dataStorage auditStorage].each do |storage|
-  check(openbao_values.dig('server', storage, 'storageClass') == 'longhorn',
-        'OpenBao must explicitly opt into Longhorn')
+  check(openbao_values.dig('server', storage, 'storageClass') == 'longhorn' &&
+        openbao_values.dig('server', storage, 'size') == '1Gi',
+        'OpenBao must explicitly use right-sized Longhorn claims')
 end
 longhorn_sources = longhorn.dig('spec', 'sources')
 check(longhorn_sources.any? { |entry| entry['chart'] == 'longhorn' } &&

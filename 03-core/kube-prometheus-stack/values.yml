@@ -20,7 +20,7 @@ grafana:
     type: pvc
     storageClassName: longhorn
     accessModes: [ReadWriteOnce]
-    size: 10Gi
+    size: 2Gi
   service:
     type: ClusterIP
   sidecar:
@@ -39,8 +39,8 @@ prometheus:
   service:
     type: ClusterIP
   prometheusSpec:
-    retention: 15d
-    retentionSize: 18GB # Below the 20Gi claim; leave room for WAL and compaction.
+    retention: 7d
+    retentionSize: 4GB # Below the 5Gi claim; leave room for WAL and compaction.
     storageSpec:
       volumeClaimTemplate:
         spec:
@@ -48,7 +48,7 @@ prometheus:
           accessModes: [ReadWriteOnce]
           resources:
             requests:
-              storage: 20Gi
+              storage: 5Gi
     # Include monitors emitted by other infra charts, not just this Helm release.
     serviceMonitorSelectorNilUsesHelmValues: false
     serviceMonitorSelector: {}
@@ -68,4 +68,25 @@ alertmanager:
           accessModes: [ReadWriteOnce]
           resources:
             requests:
-              storage: 5Gi
+              storage: 1Gi
+additionalPrometheusRulesMap:
+  persistent-volume-capacity:
+    groups:
+      - name: persistent-volume-capacity
+        rules:
+          - alert: PlatformPVCUsageWarning
+            expr: kubelet_volume_stats_used_bytes{namespace=~"kube-prometheus-stack|openbao"} / kubelet_volume_stats_capacity_bytes{namespace=~"kube-prometheus-stack|openbao"} > 0.70
+            for: 15m
+            labels:
+              severity: warning
+            annotations:
+              summary: A platform PVC is more than 70 percent full
+              runbook_url: 03-core/kube-prometheus-stack/README.md
+          - alert: PlatformPVCUsageCritical
+            expr: kubelet_volume_stats_used_bytes{namespace=~"kube-prometheus-stack|openbao"} / kubelet_volume_stats_capacity_bytes{namespace=~"kube-prometheus-stack|openbao"} > 0.85
+            for: 5m
+            labels:
+              severity: critical
+            annotations:
+              summary: A platform PVC is more than 85 percent full
+              runbook_url: 03-core/kube-prometheus-stack/README.md

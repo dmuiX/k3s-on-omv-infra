@@ -239,19 +239,20 @@ Dir.mktmpdir('infra-helm-check-') do |dir|
         'Chart-generated Grafana administrator Secret contract changed')
   grafana = find_resource(monitoring, 'PersistentVolumeClaim', 'kube-prometheus-stack-grafana')
   check(grafana.dig('spec', 'storageClassName') == 'longhorn' &&
-        grafana.dig('spec', 'resources', 'requests', 'storage') == '10Gi' &&
-        grafana.dig('spec', 'accessModes') == ['ReadWriteOnce'], 'Grafana PVC is not on Longhorn')
+        grafana.dig('spec', 'resources', 'requests', 'storage') == '2Gi' &&
+        grafana.dig('spec', 'accessModes') == ['ReadWriteOnce'], 'Grafana PVC is not right-sized on Longhorn')
   grafana_deployment = find_resource(monitoring, 'Deployment', 'kube-prometheus-stack-grafana')
   check(grafana_deployment.dig('spec', 'strategy') == { 'type' => 'Recreate' },
         'Grafana upgrades must not overlap writers or block on RWO cross-node attachment')
   prometheus = find_resource(monitoring, 'Prometheus', 'kube-prometheus-stack-prometheus')
   alertmanager = find_resource(monitoring, 'Alertmanager', 'kube-prometheus-stack-alertmanager')
-  { prometheus => '20Gi', alertmanager => '5Gi' }.each do |r, size|
+  { prometheus => '5Gi', alertmanager => '1Gi' }.each do |r, size|
     spec = r.dig('spec', 'storage', 'volumeClaimTemplate', 'spec')
     check(spec && spec['storageClassName'] == 'longhorn' && spec.dig('resources', 'requests', 'storage') == size &&
           spec['accessModes'] == ['ReadWriteOnce'], "#{r['kind']} PVC template is not on Longhorn")
   end
-  check(prometheus.dig('spec', 'retentionSize') == '18GB', 'Prometheus needs a bounded TSDB size')
+  check(prometheus.dig('spec', 'retention') == '7d' && prometheus.dig('spec', 'retentionSize') == '4GB',
+        'Prometheus retention must fit inside its 5Gi claim')
   %w[serviceMonitorSelector serviceMonitorNamespaceSelector podMonitorSelector podMonitorNamespaceSelector].each do |key|
     check(prometheus.dig('spec', key) == {}, "Prometheus #{key} would filter out infra monitors")
   end
@@ -293,8 +294,11 @@ Dir.mktmpdir('infra-helm-check-') do |dir|
         'OpenBao Raft voters must be placed on separate nodes')
   openbao_pdb = find_resource(openbao, 'PodDisruptionBudget', 'openbao')
   check(openbao_pdb.dig('spec', 'maxUnavailable') == 1, 'OpenBao PDB must protect Raft quorum')
-  check((openbao_server.dig('spec', 'volumeClaimTemplates') || []).length == 2,
-        'OpenBao must render separate data and audit PVC templates')
+  openbao_claims = openbao_server.dig('spec', 'volumeClaimTemplates') || []
+  check(openbao_claims.length == 2 && openbao_claims.all? { |claim|
+          claim.dig('spec', 'storageClassName') == 'longhorn' &&
+            claim.dig('spec', 'resources', 'requests', 'storage') == '1Gi'
+        }, 'OpenBao must render separate right-sized data and audit PVC templates')
   manager = find_resource(longhorn, 'DaemonSet', 'longhorn-manager')
   container = manager.dig('spec', 'template', 'spec', 'containers').find { |c| c['name'] == 'longhorn-manager' }
   check(container.dig('resources', 'requests', 'memory') == '256Mi', 'Manager memory request was ignored')

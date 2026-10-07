@@ -66,7 +66,9 @@ check(values.dig('persistence', 'defaultClass') == false, 'Original class defaul
 check(values.dig('persistence', 'defaultClassReplicaCount') == 3, 'New PVC replica default must be three')
 openbao = document('03-core/openbao/values.yml')
 %w[dataStorage auditStorage].each do |storage|
-  check(openbao.dig('server', storage, 'storageClass') == 'longhorn', 'Existing OpenBao PVC selection changed')
+  check(openbao.dig('server', storage, 'storageClass') == 'longhorn' &&
+        openbao.dig('server', storage, 'size') == '1Gi',
+        'OpenBao must use right-sized encrypted Longhorn claims')
 end
 check(openbao.dig('server', 'ha', 'replicas') == 3, 'OpenBao must run one Raft voter per node')
 puts 'PASS: encrypted standard longhorn class, multi-source ConfigMap override, three replicas, complete CSI references'

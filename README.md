@@ -39,7 +39,8 @@ External-DNS. It uses Argo CD (already installed) for these applications:
 └── openbao/                early UI routes, usable when wildcard TLS becomes ready
 06-data/
 ├── openbao-backups/        OpenBao backup schedule
-└── postgresql/             staged central CloudNativePG HA platform
+├── postgresql/             staged central CloudNativePG HA platform
+└── redis/                  dormant Redis operator preparation (`application.yml`)
 ```
 
 The first directory level is the parent sync wave; the second keeps component
@@ -158,6 +159,7 @@ ruby tests/verify-longhorn-encryption.rb
 ruby tests/verify-openbao-access.rb
 ruby tests/verify-openbao-pki.rb # staged activation gate + offline Kustomize checks
 ruby tests/verify-postgresql.rb # HA/storage/backup/policy manifests + pinned chart renders
+ruby tests/verify-redis.rb # dormant operator, storage and observability preparation
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p 'test_openbao_*.py'
 ruby tests/verify-ingress.rb
 ruby tests/verify-charts.rb # Helm + network access to pinned chart repositories
@@ -189,7 +191,9 @@ storage replicas and `Retain`; existing volumes must be expanded separately to
 three replicas. Verify replica placement, Raft quorum and recovery. Host storage
 prerequisites, a disposable PVC write/read/reattach test, OpenBao
 unseal/recovery and an independent backup restore must pass before relying on
-it. Monitoring uses encrypted three-replica Longhorn claims (Grafana
-10Gi, Prometheus 20Gi with 15d/18GB retention, Alertmanager 5Gi); this is not
-HA or a backup. Before changing a running wave-1 monitoring deployment, see
+it. Monitoring uses right-sized encrypted three-replica Longhorn claims (Grafana
+2Gi, Prometheus 5Gi with 7d/4GB retention, Alertmanager 1Gi). OpenBao explicitly
+uses 1Gi each for every Raft data and audit claim. The Pi's 128 GB device is the
+limiting node, so capacity decisions use its effective Longhorn-allocatable
+space rather than nominal disk size. Replication is not HA or a backup. Before changing a running wave-1 monitoring deployment, see
 [the monitoring migration notes](03-core/kube-prometheus-stack/README.md).
