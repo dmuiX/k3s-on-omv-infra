@@ -246,13 +246,13 @@ Dir.mktmpdir('infra-helm-check-') do |dir|
         'Grafana upgrades must not overlap writers or block on RWO cross-node attachment')
   prometheus = find_resource(monitoring, 'Prometheus', 'kube-prometheus-stack-prometheus')
   alertmanager = find_resource(monitoring, 'Alertmanager', 'kube-prometheus-stack-alertmanager')
-  { prometheus => '5Gi', alertmanager => '1Gi' }.each do |r, size|
+  { prometheus => '20Gi', alertmanager => '1Gi' }.each do |r, size|
     spec = r.dig('spec', 'storage', 'volumeClaimTemplate', 'spec')
     check(spec && spec['storageClassName'] == 'longhorn' && spec.dig('resources', 'requests', 'storage') == size &&
           spec['accessModes'] == ['ReadWriteOnce'], "#{r['kind']} PVC template is not on Longhorn")
   end
-  check(prometheus.dig('spec', 'retention') == '7d' && prometheus.dig('spec', 'retentionSize') == '4GB',
-        'Prometheus retention must fit inside its 5Gi claim')
+  check(prometheus.dig('spec', 'retention') == '15d' && prometheus.dig('spec', 'retentionSize') == '18GB',
+        'Prometheus retention must fit inside its 20Gi claim')
   %w[serviceMonitorSelector serviceMonitorNamespaceSelector podMonitorSelector podMonitorNamespaceSelector].each do |key|
     check(prometheus.dig('spec', key) == {}, "Prometheus #{key} would filter out infra monitors")
   end

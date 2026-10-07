@@ -39,8 +39,8 @@ prometheus:
   service:
     type: ClusterIP
   prometheusSpec:
-    retention: 7d
-    retentionSize: 4GB # Below the 5Gi claim; leave room for WAL and compaction.
+    retention: 15d
+    retentionSize: 18GB # Below the 20Gi claim; leave room for WAL and compaction.
     storageSpec:
       volumeClaimTemplate:
         spec:
@@ -48,7 +48,7 @@ prometheus:
           accessModes: [ReadWriteOnce]
           resources:
             requests:
-              storage: 5Gi
+              storage: 20Gi
     # Include monitors emitted by other infra charts, not just this Helm release.
     serviceMonitorSelectorNilUsesHelmValues: false
     serviceMonitorSelector: {}
