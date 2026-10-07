@@ -157,6 +157,17 @@ app = docs(File.read(File.join(ROOT, '06-data/postgresql/app.yml'))).first
 chart = app.dig('spec', 'sources').find { |source| source['chart'] == 'pgo' }
 check(chart && chart['repoURL'] == 'registry.developers.crunchydata.com/crunchydata' &&
       chart['targetRevision'] == '6.0.3', 'PostgreSQL Application must pin PGO 6.0.3')
+infra_sources = app.dig('spec', 'sources').select do |source|
+  source['repoURL'] == 'https://github.com/dmuiX/k3s-on-omv-infra.git'
+end
+infra_revisions = infra_sources.map { |source| source['targetRevision'] }.uniq
+check(infra_revisions.length == 1 && infra_revisions.first.match?(/\A[0-9a-f]{40}\z/),
+      'PostgreSQL local sources must share one immutable full Infra revision')
+pinned_revision = infra_revisions.first
+%w[06-data/postgresql/values-pgo.yml charts/cluster-config/templates/postgresql.yaml].each do |path|
+  _output, _error, status = Open3.capture3('git', 'cat-file', '-e', "#{pinned_revision}:#{path}", chdir: ROOT)
+  check(status.success?, "Pinned Infra revision does not contain #{path}")
+end
 check(app.dig('spec', 'sources').none? { |source| %w[cloudnative-pg plugin-barman-cloud].include?(source['chart']) },
       'PostgreSQL Application still contains a CloudNativePG/Barman chart')
 check(app.dig('spec', 'syncPolicy', 'automated', 'prune') == false,

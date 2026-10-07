@@ -19,7 +19,7 @@ spec:
         valueFiles:
           - $infra/06-data/postgresql/values-pgo.yml
     - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
-      targetRevision: 5077f8d9e1257e7dcd54ed68c66f0ccc745b53d6
+      targetRevision: 6ca730a268c1a857893672013f4425222dbd9f4c
       path: charts/cluster-config
       helm:
         releaseName: postgresql
@@ -29,7 +29,7 @@ spec:
         valueFiles:
           - $private/clusters/omv/values.yml
     - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
-      targetRevision: 5077f8d9e1257e7dcd54ed68c66f0ccc745b53d6
+      targetRevision: 6ca730a268c1a857893672013f4425222dbd9f4c
       path: 06-data/postgresql
       ref: infra
       kustomize: {}
