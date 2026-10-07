@@ -10,12 +10,14 @@ exist before the operator starts; it will be picked up in wave 3.
 | Consumer | Claim | Storage |
 | --- | --- | --- |
 | Grafana | `kube-prometheus-stack-grafana` | 2Gi, RWO, `longhorn` |
-| Prometheus | operator-created claim from `spec.storage.volumeClaimTemplate` | 20Gi, RWO, `longhorn`; retention 15d / 18GB |
+| Prometheus | operator-created claim from `spec.storage.volumeClaimTemplate` | 20Gi, RWO, `longhorn-monitoring`; two replicas on OMV/Wyse; retention 15d / 18GB |
 | Alertmanager | operator-created claim from `spec.storage.volumeClaimTemplate` | 1Gi, RWO, `longhorn` |
 
-The `longhorn` class uses three replicas, is non-default and encrypts **new** volumes
-with a separately managed key. `Retain` is not a backup: reserve disk space and
-arrange tested off-host backup/recovery separately. Operators create the
+The `longhorn` class uses three replicas. The dedicated `longhorn-monitoring`
+class uses two replicas and the `monitoring-storage` Longhorn node selector; only
+OMV and Wyse carry that Git-managed node tag. Both classes are non-default and
+encrypt **new** volumes with the separately managed key. `Retain` is not a backup:
+reserve disk space and arrange tested off-host backup/recovery separately. Operators create the
 Prometheus/Alertmanager StatefulSets and their PVCs; the Helm values define the
 corresponding CR storage templates. Grafana renders a PVC directly and uses
 `Recreate` upgrades: the old pod stops before the replacement mounts its RWO
@@ -27,13 +29,12 @@ render-time randomness from rotating the credential; no administrator value is
 committed or logged. Other exporters, rules and operator components do not need
 persistent data claims.
 
-The Pi's nominal 128 GB device is the limiting storage budget. Capacity review
-must use Longhorn's effective allocatable bytes after the OS, K3s, filesystem
-and minimum-free-space reservation. These three monitoring claims place 23Gi of
-requested data on every eligible node because `longhorn` uses three replicas.
-Together with OpenBao's six 1Gi replicas, the normal-class reservation on the
-Pi is approximately 29Gi. PostgreSQL and future consumers require
-separate budgets.
+The Prometheus claim places two copies of its requested data only on OMV and
+Wyse. Grafana and Alertmanager continue to use the normal three-replica class,
+so their combined 3Gi requested capacity still has a replica on the Pi. OpenBao
+also retains its three-node storage design. Capacity review must use Longhorn's
+effective allocatable bytes after the OS, K3s, filesystem and minimum-free-space
+reservation. PostgreSQL and future consumers require separate budgets.
 
 `PlatformPVCUsageWarning` fires at 70% and `PlatformPVCUsageCritical` at 85% for
 monitoring and OpenBao claims. At warning level, identify the claim and its
@@ -86,7 +87,11 @@ kubectl -n kube-prometheus-stack get prometheus,alertmanager
 
 If claims remain Pending or workloads fail, pause further syncs and diagnose
 StorageClass/CSI/key/host capacity and events. Do not delete PVCs, PVs, CRDs or
-the encryption key as a rollback shortcut. A rollback needs a reviewed plan for
-both Application ownership and any new data; re-enabling ephemeral values does
-not recover old data. Offline validation: `ruby tests/verify-bootstrap.rb`; the
+the encryption key as a rollback shortcut. The StorageClass change governs
+replacement claims; Kubernetes cannot change an existing PVC's immutable
+`storageClassName`. Update the installed Prometheus Longhorn volume once to two
+replicas and the same `monitoring-storage` node selector, then observe it until
+both OMV/Wyse replicas are healthy and the Pi replica has been removed. A
+rollback needs a reviewed plan for both Application ownership and any new data;
+re-enabling ephemeral values does not recover old data. Offline validation: `ruby tests/verify-bootstrap.rb`; the
 networked `ruby tests/verify-charts.rb` renders the pinned Helm sources.

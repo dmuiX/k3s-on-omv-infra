@@ -5,7 +5,7 @@ require 'json'
 require 'pathname'
 
 ROOT = File.expand_path('..', __dir__)
-INFRA_REVISION = '5077f8d9e1257e7dcd54ed68c66f0ccc745b53d6'
+INFRA_REVISION = '0f3a9a03d3747798093d6de84fe9bedf0176b9a9'
 LIVE_REVISION = 'ce6ad756dd48ef28145f836e6825a65fcafe548f'
 POSTGRES_REVISION = '6ca730a268c1a857893672013f4425222dbd9f4c'
 POSTGRES_LIVE_REVISION = '3e2ae87315f679fbb6ffc0be2342a74a43d213a6'
@@ -257,11 +257,12 @@ check(grafana_volume_ignore && grafana_volume_ignore['jsonPointers'] == ['/spec/
 check(grafana_secret_ignore && grafana_secret_ignore['jsonPointers'].sort ==
       ['/data/admin-password', '/data/admin-user'],
       'Argo must ignore only the chart-generated Grafana administrator data fields')
-{ 'prometheus' => '20Gi', 'alertmanager' => '1Gi' }.each do |component, size|
+{ 'prometheus' => ['20Gi', 'longhorn-monitoring'],
+  'alertmanager' => ['1Gi', 'longhorn'] }.each do |component, (size, storage_class)|
   spec = component == 'prometheus' ? 'prometheusSpec' : 'alertmanagerSpec'
   field = component == 'prometheus' ? 'storageSpec' : 'storage'
   claim = monitor_values.dig(component, spec, field, 'volumeClaimTemplate', 'spec')
-  check(claim['storageClassName'] == 'longhorn' && claim.dig('resources', 'requests', 'storage') == size,
+  check(claim['storageClassName'] == storage_class && claim.dig('resources', 'requests', 'storage') == size,
         "#{component} must use its right-sized Longhorn claim")
 end
 check(monitor_values.dig('prometheus', 'prometheusSpec', 'retention') == '15d' &&
@@ -293,8 +294,9 @@ check(longhorn.dig('spec', 'syncPolicy', 'syncOptions').include?('CreateNamespac
 end
 check(!longhorn.fetch('spec').key?('labels'), 'Misplaced Application labels')
 longhorn_files = Dir.glob(File.join(ROOT, '02-controllers/longhorn', '*.{yml,yaml}'))
-check(longhorn_files.map { |f| File.basename(f) }.sort == %w[app.yml storageclass-configmap.yaml values.yml],
-      'Longhorn folder must contain only its Application, values and encrypted default-class ConfigMap')
+check(longhorn_files.map { |f| File.basename(f) }.sort ==
+      %w[app.yml monitoring-storage.yaml storageclass-configmap.yaml values.yml],
+      'Longhorn folder must contain only its Application, values and reviewed storage resources')
 check(longhorn_files.none? do |f|
   YAML.load_stream(File.read(f)).compact.any? { |d| %w[HelmRelease HelmRepository].include?(d['kind']) }
 end, 'Flux leftovers remain')
@@ -305,6 +307,19 @@ check(values.dig('persistence', 'reclaimPolicy') == 'Retain', 'Unexpected volume
 check(values.dig('persistence', 'defaultClass') == false, 'Do not silently add a second default StorageClass')
 check(values.dig('service', 'ui', 'type') == 'ClusterIP', 'Longhorn UI must use the shared Gateway')
 check(values.dig('metrics', 'serviceMonitor', 'enabled'), 'Longhorn monitoring missing')
+monitoring_storage = docs('02-controllers/longhorn/monitoring-storage.yaml')
+monitoring_nodes = monitoring_storage.select { |resource| resource['kind'] == 'Node' }
+check(monitoring_nodes.map { |resource| resource.dig('metadata', 'name') }.sort == %w[omv wyse5070] &&
+      monitoring_nodes.all? { |resource| resource.dig('spec', 'tags') == ['monitoring-storage'] } &&
+      monitoring_nodes.none? { |resource| resource.dig('metadata', 'name') == 'raspi4' },
+      'Prometheus storage nodes must be restricted to OMV and Wyse')
+monitoring_class = monitoring_storage.find { |resource| resource['kind'] == 'StorageClass' }
+check(monitoring_class.dig('metadata', 'name') == 'longhorn-monitoring' &&
+      monitoring_class.dig('parameters', 'numberOfReplicas') == '2' &&
+      monitoring_class.dig('parameters', 'nodeSelector') == 'monitoring-storage' &&
+      monitoring_class.dig('parameters', 'encrypted') == 'true' &&
+      monitoring_class['reclaimPolicy'] == 'Retain',
+      'Prometheus StorageClass must use two encrypted replicas on the selected nodes')
 openbao_values = docs('03-core/openbao/values.yml').first
 check(openbao_values.dig('server', 'ha', 'enabled') && openbao_values.dig('server', 'ha', 'replicas') == 3,
       'OpenBao Raft must use three server pods')
@@ -316,7 +331,8 @@ end
 longhorn_sources = longhorn.dig('spec', 'sources')
 check(longhorn_sources.any? { |entry| entry['chart'] == 'longhorn' } &&
       longhorn_sources.any? { |entry| entry['ref'] == 'values' } &&
-      longhorn_sources.any? { |entry| entry['path'] == '02-controllers/longhorn' && entry.dig('directory', 'include') == 'storageclass-configmap.yaml' },
-      'Longhorn must combine its pinned chart, Git values and encrypted StorageClass override')
-puts 'PASS: one public root, multi-source Helm, CRD/storage wave order, three-node Longhorn and OpenBao'
+      longhorn_sources.any? { |entry| entry['path'] == '02-controllers/longhorn' &&
+        entry.dig('directory', 'include') == '{storageclass-configmap.yaml,monitoring-storage.yaml}' },
+      'Longhorn must combine its pinned chart, Git values and reviewed storage resources')
+puts 'PASS: one public root, multi-source Helm, CRD/storage wave order, selected monitoring storage and three-node OpenBao'
 puts applications.sort_by { |app| [wave(app), app.dig('metadata', 'name')] }.map { |app| "  #{wave(app)}: #{app.dig('metadata', 'name')}" }

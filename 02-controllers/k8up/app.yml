@@ -18,10 +18,10 @@ spec:
         valueFiles:
           - $values/02-controllers/k8up/values.yml
     - repoURL: "https://github.com/dmuiX/k3s-on-omv-infra.git"
-      targetRevision: 5077f8d9e1257e7dcd54ed68c66f0ccc745b53d6
+      targetRevision: 0f3a9a03d3747798093d6de84fe9bedf0176b9a9
       ref: values
     - repoURL: "https://github.com/dmuiX/k3s-on-omv-infra.git"
-      targetRevision: 5077f8d9e1257e7dcd54ed68c66f0ccc745b53d6
+      targetRevision: 0f3a9a03d3747798093d6de84fe9bedf0176b9a9
       path: 02-controllers/k8up
       directory:
         include: pdb.yaml

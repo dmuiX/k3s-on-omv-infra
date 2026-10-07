@@ -1,0 +1,57 @@
+# Prometheus metrics are intentionally stored only on the two larger nodes.
+# Longhorn node selectors match Longhorn Node tags, not Kubernetes labels.
+apiVersion: longhorn.io/v1beta2
+kind: Node
+metadata:
+  name: omv
+  namespace: longhorn
+  annotations:
+    # Longhorn initially owns spec.tags. Client-side apply safely adopts only
+    # this field while retaining controller-managed disk configuration.
+    argocd.argoproj.io/sync-options: ServerSideApply=false
+spec:
+  tags:
+    - monitoring-storage
+---
+apiVersion: longhorn.io/v1beta2
+kind: Node
+metadata:
+  name: wyse5070
+  namespace: longhorn
+  annotations:
+    argocd.argoproj.io/sync-options: ServerSideApply=false
+spec:
+  tags:
+    - monitoring-storage
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: longhorn-monitoring
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "false"
+    argocd.argoproj.io/sync-wave: "1"
+provisioner: driver.longhorn.io
+allowVolumeExpansion: true
+reclaimPolicy: Retain
+volumeBindingMode: Immediate
+parameters:
+  numberOfReplicas: "2"
+  nodeSelector: "monitoring-storage"
+  staleReplicaTimeout: "30"
+  fromBackup: ""
+  fsType: ext4
+  dataLocality: disabled
+  unmapMarkSnapChainRemoved: ignored
+  disableRevisionCounter: "true"
+  dataEngine: v1
+  backupTargetName: default
+  encrypted: "true"
+  csi.storage.k8s.io/provisioner-secret-name: longhorn-volume-encryption
+  csi.storage.k8s.io/provisioner-secret-namespace: longhorn
+  csi.storage.k8s.io/node-publish-secret-name: longhorn-volume-encryption
+  csi.storage.k8s.io/node-publish-secret-namespace: longhorn
+  csi.storage.k8s.io/node-stage-secret-name: longhorn-volume-encryption
+  csi.storage.k8s.io/node-stage-secret-namespace: longhorn
+  csi.storage.k8s.io/node-expand-secret-name: longhorn-volume-encryption
+  csi.storage.k8s.io/node-expand-secret-namespace: longhorn
