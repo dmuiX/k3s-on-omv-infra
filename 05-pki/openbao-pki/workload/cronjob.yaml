@@ -27,6 +27,11 @@ spec:
           serviceAccountName: openbao-pki-reconciler
           automountServiceAccountToken: false
           restartPolicy: Never
+          tolerations:
+            - key: workload-placement
+              operator: Equal
+              value: restricted
+              effect: NoSchedule
           securityContext:
             runAsNonRoot: true
             runAsUser: 10001

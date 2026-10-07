@@ -1,4 +1,10 @@
 # yaml-language-server: $schema=../../values-schemas/longhorn/values.schema.json
+global:
+  tolerations:
+    - key: workload-placement
+      operator: Equal
+      value: restricted
+      effect: NoSchedule
 defaultSettings:
   defaultDataPath: /var/lib/longhorn
   createDefaultDiskLabeledNodes: "false"

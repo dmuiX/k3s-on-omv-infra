@@ -9,6 +9,11 @@ serverTelemetry:
   serviceMonitor:
     enabled: true
 server:
+  tolerations:
+    - key: workload-placement
+      operator: Equal
+      value: restricted
+      effect: NoSchedule
   auditStorage:
     enabled: true
     accessMode: ReadWriteOnce

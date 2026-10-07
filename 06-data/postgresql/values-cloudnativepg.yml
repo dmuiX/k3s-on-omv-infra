@@ -1,5 +1,10 @@
 # yaml-language-server: $schema=../../values-schemas/cloudnative-pg/values.schema.json
 replicaCount: 2
+tolerations:
+  - key: workload-placement
+    operator: Equal
+    value: restricted
+    effect: NoSchedule
 config:
   clusterWide: false
 image:

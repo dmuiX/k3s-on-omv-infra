@@ -1,6 +1,11 @@
 # yaml-language-server: $schema=../../values-schemas/k8up/values.schema.json
 # Two leader-elected controllers keep reconciliation available during one node outage.
 replicaCount: 2
+tolerations:
+  - key: workload-placement
+    operator: Equal
+    value: restricted
+    effect: NoSchedule
 affinity:
   podAntiAffinity:
     requiredDuringSchedulingIgnoredDuringExecution:
@@ -19,6 +24,12 @@ k8up:
     limits:
       cpu: 500m
       memory: 512Mi
+cleanup:
+  tolerations:
+    - key: workload-placement
+      operator: Equal
+      value: restricted
+      effect: NoSchedule
 resources:
   requests:
     cpu: 20m

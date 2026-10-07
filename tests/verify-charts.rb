@@ -22,6 +22,23 @@ def find_resource(resources, kind, name)
     raise("Rendered #{kind}/#{name} not found")
 end
 
+PI_TOLERATION = {'key' => 'workload-placement', 'operator' => 'Equal',
+                 'value' => 'restricted', 'effect' => 'NoSchedule'}.freeze
+
+def pod_spec(resource)
+  case resource['kind']
+  when 'Deployment', 'StatefulSet', 'DaemonSet', 'Job'
+    resource.dig('spec', 'template', 'spec')
+  when 'CronJob'
+    resource.dig('spec', 'jobTemplate', 'spec', 'template', 'spec')
+  end
+end
+
+def permits_pi?(resource)
+  spec = pod_spec(resource)
+  spec && Array(spec['tolerations']).include?(PI_TOLERATION)
+end
+
 def render(name, env, chart_name = nil)
   app = Dir.glob(File.join(ROOT, '[0-9][0-9]-*', '*', 'app.yml'))
            .flat_map { |path| yaml_docs(File.read(path)) }
@@ -72,6 +89,22 @@ Dir.mktmpdir('infra-helm-check-') do |dir|
   check((crds + monitoring + longhorn + openbao + cert_manager + auxiliary).none? do |resource|
     %w[Application ApplicationSet].include?(resource['kind'])
   end, 'A Helm chart unexpectedly rendered a nested Argo resource')
+
+  {'cert-manager' => cert_manager, 'k8up' => k8up, 'longhorn' => longhorn,
+   'openbao' => openbao, 'vault-secrets-webhook' => secrets_webhook,
+   'cloudnative-pg' => cnpg, 'plugin-barman-cloud' => barman}.each do |component, resources|
+    workloads = resources.select { |resource| pod_spec(resource) }
+    check(!workloads.empty?, "#{component} rendered no workload to validate")
+    check(workloads.all? { |resource| permits_pi?(resource) },
+          "#{component} rendered a workload without the restricted Pi toleration")
+  end
+  node_exporter = find_resource(monitoring, 'DaemonSet', 'kube-prometheus-stack-prometheus-node-exporter')
+  pi_exclusion = node_exporter.dig('spec', 'template', 'spec', 'affinity', 'nodeAffinity',
+                                   'requiredDuringSchedulingIgnoredDuringExecution', 'nodeSelectorTerms')
+  check(Array(pi_exclusion).any? do |term|
+          Array(term['matchExpressions']).include?(
+            {'key' => 'kubernetes.io/hostname', 'operator' => 'NotIn', 'values' => ['raspi4']})
+        end, 'Monitoring node exporter does not exclude raspi4')
 
   # Public cluster resources are complete templates, but their sample defaults
   # must never create live resources unless an explicit component is selected.

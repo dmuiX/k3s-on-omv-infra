@@ -35,6 +35,11 @@ spec:
       memory: 1Gi
   affinity:
     enablePodAntiAffinity: true
+    tolerations:
+      - key: workload-placement
+        operator: Equal
+        value: restricted
+        effect: NoSchedule
     podAntiAffinityType: required
     topologyKey: kubernetes.io/hostname
     nodeAffinity:

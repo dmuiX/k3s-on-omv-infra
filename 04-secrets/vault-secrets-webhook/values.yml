@@ -1,5 +1,10 @@
 # Admission remains available when one of the three nodes is unavailable.
 replicaCount: 3
+tolerations:
+  - key: workload-placement
+    operator: Equal
+    value: restricted
+    effect: NoSchedule
 affinity:
   podAntiAffinity:
     requiredDuringSchedulingIgnoredDuringExecution:

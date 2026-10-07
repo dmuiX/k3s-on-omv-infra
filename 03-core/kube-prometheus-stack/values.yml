@@ -26,6 +26,15 @@ grafana:
   sidecar:
     dashboards:
       searchNamespace: ALL
+prometheus-node-exporter:
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: NotIn
+                values: [raspi4]
 prometheus:
   service:
     type: ClusterIP

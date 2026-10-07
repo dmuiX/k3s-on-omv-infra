@@ -11,6 +11,7 @@ ruby tests/verify-postgresql.rb # CNPG HA/storage/backup/policy and pinned chart
 PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p 'test_openbao_*.py'
 ruby tests/verify-ingress.rb     # no live-specific resources selected by the public root
 ruby tests/verify-longhorn-encryption.rb # Helm override and complete key references
+ruby tests/verify-pi-placement.rb # explicit restricted-Pi tolerations; monitoring exclusion
 ruby tests/verify-charts.rb      # pinned Helm renders + safe local templates (network)
 ```
 
