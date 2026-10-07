@@ -7,8 +7,8 @@ require 'pathname'
 ROOT = File.expand_path('..', __dir__)
 INFRA_REVISION = '1c8e6032db1ba5d170230e87d971019b50600fd5'
 LIVE_REVISION = 'ce6ad756dd48ef28145f836e6825a65fcafe548f'
-POSTGRES_REVISION = '6c0fcef8212313fc2acf91c429bb359a32af81e3'
-POSTGRES_LIVE_REVISION = 'd12ff7bdb2cbc3ed37299d69e21d3549d1687568'
+POSTGRES_REVISION = 'afdd93c686de22600180d273bcdb4fdc2af1445a'
+POSTGRES_LIVE_REVISION = '3e2ae87315f679fbb6ffc0be2342a74a43d213a6'
 
 def docs(path)
   YAML.load_stream(File.read(File.join(ROOT, path))).compact

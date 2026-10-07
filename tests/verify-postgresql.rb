@@ -113,10 +113,9 @@ check(policies.any? { |item| item.to_s.include?('kube-prometheus-stack') } &&
       policies.any? { |item| item.to_s.include?('radar') && item.to_s.include?('grafana') },
       'Monitoring or registered-consumer network paths are missing')
 operator_policy = policies.find { |item| item.dig('metadata', 'name') == 'allow-cloudnative-pg-operator' }
-check(operator_policy.dig('spec', 'ingress').any? do |rule|
-        rule.fetch('ports', []).any? { |port| port['port'] == 9443 } &&
-          rule.fetch('from', []).any? { |source| source.dig('ipBlock', 'cidr') == '0.0.0.0/0' }
-      end, 'K3s host-process API server cannot reach the CloudNativePG webhook')
+check(operator_policy.dig('spec', 'ingress').none? do |rule|
+        rule.fetch('ports', []).any? { |port| port['port'] == 9443 }
+      end, 'Public manifests must not expose the CloudNativePG webhook broadly')
 
 alerts = resource(kustomized, 'PrometheusRule', 'platform-postgres')
 alert_names = alerts.dig('spec', 'groups').flat_map { |group| group['rules'] }.map { |rule| rule['alert'] }
@@ -169,5 +168,9 @@ check(object_store.dig('spec', 'retentionPolicy') == '30d' &&
 r2_secret = resource(private_template, 'Secret', 'postgresql-r2-credentials')
 check(r2_secret.fetch('data').values.all? { |value| value.unpack1('m0').start_with?('vault:') },
       'PostgreSQL R2 Secret must contain Vault references only')
+webhook_policy = resource(private_template, 'NetworkPolicy', 'allow-k3s-api-to-cloudnative-pg-webhook')
+sources = webhook_policy.dig('spec', 'ingress', 0, 'from').map { |source| source.dig('ipBlock', 'cidr') }
+check(sources == ['192.0.2.1/32'] && webhook_policy.dig('spec', 'ingress', 0, 'ports', 0, 'port') == 9443,
+      'Webhook policy must use only explicitly configured API-server /32 sources')
 
 puts 'PASS: PostgreSQL HA, storage, TLS, roles, backups, policies, monitoring and pinned chart renders'

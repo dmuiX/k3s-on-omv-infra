@@ -94,11 +94,18 @@ check(schedule.dig('spec', 'backend', 's3', 'endpoint') == private_values.dig('b
       'Private backup values not rendered')
 postgresql = render('postgresql')
 postgresql_store = postgresql.find { |r| r['kind'] == 'ObjectStore' && r.dig('metadata', 'name') == 'platform-postgres-backups' }
+postgresql_webhook_policy = postgresql.find do |r|
+  r['kind'] == 'NetworkPolicy' && r.dig('metadata', 'name') == 'allow-k3s-api-to-cloudnative-pg-webhook'
+end
+rendered_api_cidrs = postgresql_webhook_policy&.dig('spec', 'ingress', 0, 'from')&.map do |source|
+  source.dig('ipBlock', 'cidr')
+end
 check(postgresql_store &&
       postgresql_store.dig('spec', 'configuration', 'endpointURL') == private_values.dig('postgresqlBackup', 'endpoint') &&
       postgresql_store.dig('spec', 'configuration', 'destinationPath') == "s3://#{private_values.dig('postgresqlBackup', 'bucket')}/" &&
-      postgresql.any? { |r| r['kind'] == 'Secret' && r.dig('metadata', 'name') == 'postgresql-r2-credentials' },
-      'Private PostgreSQL backup identifiers or Vault references did not render')
+      postgresql.any? { |r| r['kind'] == 'Secret' && r.dig('metadata', 'name') == 'postgresql-r2-credentials' } &&
+      rendered_api_cidrs == private_values.dig('postgresqlNetwork', 'apiServerSourceCIDRs'),
+      'Private PostgreSQL backup identifiers, Vault references or API-server CIDRs did not render')
 check(render('restore').one? { |r| r['kind'] == 'Restore' } &&
       apps.values.none? { |app| app.dig('spec', 'sources', 0, 'helm', 'parameters', 0, 'value') == 'restore' },
       'Restore must be manual-only')
