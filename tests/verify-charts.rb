@@ -79,6 +79,7 @@ Dir.mktmpdir('infra-helm-check-') do |dir|
   longhorn_index = longhorn.index { |resource| resource['kind'] == 'ConfigMap' && resource.dig('metadata', 'name') == 'longhorn-storageclass' }
   check(longhorn_index, 'Pinned Longhorn chart lost its storage-class ConfigMap')
   longhorn[longhorn_index] = longhorn_override
+  longhorn.concat(yaml_docs(File.read(File.join(ROOT, '02-controllers/longhorn', 'monitoring-storage.yaml'))))
   openbao = render('openbao', env)
   cert_manager = render('cert-manager', env)
   k8up = render('k8up', env)
@@ -246,9 +247,10 @@ Dir.mktmpdir('infra-helm-check-') do |dir|
         'Grafana upgrades must not overlap writers or block on RWO cross-node attachment')
   prometheus = find_resource(monitoring, 'Prometheus', 'kube-prometheus-stack-prometheus')
   alertmanager = find_resource(monitoring, 'Alertmanager', 'kube-prometheus-stack-alertmanager')
-  { prometheus => '20Gi', alertmanager => '1Gi' }.each do |r, size|
+  { prometheus => ['20Gi', 'longhorn-monitoring'],
+    alertmanager => ['1Gi', 'longhorn'] }.each do |r, (size, storage_class)|
     spec = r.dig('spec', 'storage', 'volumeClaimTemplate', 'spec')
-    check(spec && spec['storageClassName'] == 'longhorn' && spec.dig('resources', 'requests', 'storage') == size &&
+    check(spec && spec['storageClassName'] == storage_class && spec.dig('resources', 'requests', 'storage') == size &&
           spec['accessModes'] == ['ReadWriteOnce'], "#{r['kind']} PVC template is not on Longhorn")
   end
   check(prometheus.dig('spec', 'retention') == '15d' && prometheus.dig('spec', 'retentionSize') == '18GB',
@@ -273,7 +275,16 @@ Dir.mktmpdir('infra-helm-check-') do |dir|
   check(storage.dig('parameters', 'numberOfReplicas') == '3', 'Rendered PVC replica count is not 3')
   check(storage['reclaimPolicy'] == 'Retain', 'Rendered reclaim policy is not Retain')
   check(storage.dig('parameters', 'encrypted') == 'true', 'Effective longhorn class must encrypt new volumes')
-  check(longhorn.none? { |r| r['kind'] == 'StorageClass' }, 'Longhorn must own its class through the ConfigMap, not a competing raw manifest')
+  monitoring_storage = find_resource(longhorn, 'StorageClass', 'longhorn-monitoring')
+  check(monitoring_storage.dig('parameters', 'numberOfReplicas') == '2' &&
+        monitoring_storage.dig('parameters', 'nodeSelector') == 'monitoring-storage' &&
+        monitoring_storage.dig('parameters', 'encrypted') == 'true' &&
+        monitoring_storage['reclaimPolicy'] == 'Retain',
+        'Prometheus class must use two encrypted replicas on selected nodes')
+  monitoring_nodes = longhorn.select { |r| r['kind'] == 'Node' }
+  check(monitoring_nodes.map { |r| r.dig('metadata', 'name') }.sort == %w[omv wyse5070] &&
+        monitoring_nodes.all? { |r| r.dig('spec', 'tags') == ['monitoring-storage'] },
+        'Prometheus storage selector must include only OMV and Wyse')
   settings_cm = find_resource(longhorn, 'ConfigMap', 'longhorn-default-setting')
   settings = YAML.safe_load(settings_cm.fetch('data').fetch('default-setting.yaml'))
   check(JSON.parse(settings.fetch('default-replica-count')) == { 'v1' => '3', 'v2' => '3' },
