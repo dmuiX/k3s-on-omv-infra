@@ -46,6 +46,11 @@ check(apps.keys.sort == expected_apps.sort && apps.values.map { |app| wave(app) 
       'Default public root must own regular components and keep staged phases inactive')
 check(File.file?(VALUES), 'Private values file missing')
 private_values = YAML.load_file(VALUES)
+expected_gateway = {
+  'name' => 'traefik-gateway',
+  'namespace' => 'kube-system',
+  'listener' => 'websecure'
+}
 backup_endpoint = URI.parse(private_values.dig('backup', 'endpoint'))
 check(backup_endpoint.is_a?(URI::HTTPS) && ['', '/'].include?(backup_endpoint.path),
       'Backup endpoint must not repeat the separately configured bucket path')
@@ -78,6 +83,11 @@ rendered = {}
   next unless service
   route = docs.fetch(0)
   check(route['kind'] == 'HTTPRoute' && route.dig('spec', 'hostnames') == [private_values.dig('routes', component, 'hostname')] &&
+        route.dig('spec', 'parentRefs', 0) == {
+          'group' => 'gateway.networking.k8s.io', 'kind' => 'Gateway',
+          'name' => expected_gateway['name'], 'namespace' => expected_gateway['namespace'],
+          'sectionName' => expected_gateway['listener']
+        } &&
         route.dig('spec', 'rules', 0, 'backendRefs', 0) ==
           { 'group' => '', 'kind' => 'Service', 'name' => service, 'port' => port, 'weight' => 1 },
         "Private values did not produce the expected #{component} route")
@@ -86,9 +96,17 @@ end
 certificate = rendered.fetch(['cert-manager.io/v1', 'Certificate', 'kube-system', 'wildcard-tls'])
 issuer = rendered.fetch(['cert-manager.io/v1', 'ClusterIssuer', nil, 'cluster-issuer-prod'])
 schedule = rendered.fetch(['k8up.io/v1', 'Schedule', 'openbao', 'openbao-k8up-schedule'])
-check(certificate.dig('spec', 'dnsNames') == [private_values.dig('certificate', 'dnsName')] &&
+wildcard_name = private_values.dig('certificate', 'dnsName')
+wildcard_suffix = wildcard_name.to_s.delete_prefix('*')
+route_hosts = private_values.fetch('routes').values.map { |route| route.fetch('hostname') }
+check(wildcard_name.to_s.start_with?('*.') && route_hosts.all? do |hostname|
+        label = hostname.delete_suffix(wildcard_suffix)
+        hostname.end_with?(wildcard_suffix) && !label.empty? && !label.include?('.')
+      end, 'Every early route hostname must be covered by the one-label wildcard certificate')
+check(certificate.dig('spec', 'dnsNames') == [wildcard_name] &&
+      certificate.dig('spec', 'secretName') == 'wildcard-tls' &&
       issuer.dig('spec', 'acme', 'email') == private_values.dig('certificate', 'acmeEmail') &&
-      wave(certificate) == 1, 'Private certificate values or child wave mismatch')
+      wave(certificate) == 1, 'Private certificate values, TLS Secret, or child wave mismatch')
 check(schedule.dig('spec', 'backend', 's3', 'endpoint') == private_values.dig('backup', 'endpoint') &&
       schedule.dig('spec', 'backend', 's3', 'bucket') == private_values.dig('backup', 'bucket'),
       'Private backup values not rendered')
