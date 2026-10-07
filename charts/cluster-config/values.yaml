@@ -37,9 +37,9 @@ certificate:
 backup:
   endpoint: https://example.invalid
   bucket: replace-me
-  repoPasswordRef: vault:kv/data/k8up-repo-password#password
-  accessKeyIdRef: vault:kv/data/r2-credentials#access-key-id
-  secretAccessKeyRef: vault:kv/data/r2-credentials#secret-access-key
+  repoPasswordRef: vault:kv/data/k8up/repo-password#password
+  accessKeyIdRef: vault:kv/data/k8up/r2-credentials#access-key-id
+  secretAccessKeyRef: vault:kv/data/k8up/r2-credentials#secret-access-key
   restoreOrdinal: 0 # Schema-validated nonnegative integer; selects data-openbao-<ordinal>.
 
 postgresqlBackup:

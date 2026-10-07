@@ -95,7 +95,7 @@ nicht allein aus einem in ihm laufenden Job rekonstruiert werden.
 
 Die tatsächlichen Werte von Cloudflare-Token, K8up-Repository-Passwort und
 R2-Schlüsseln. Dafür sind OpenBao-KV-Einträge `kv/cert-manager`,
-`kv/k8up-repo-password` und `kv/r2-credentials` mit den in den Helm-
+`kv/k8up/repo-password` und `kv/k8up/r2-credentials` mit den in den Helm-
 Referenzen genannten Feldern nötig. Diese Werte bleiben außerhalb des
 öffentlichen Infra-Repos und dürfen nicht geloggt oder aus K8s Secrets
 zurückgelesen werden. Sollen sie ebenfalls aus Git stammen, wäre ein
