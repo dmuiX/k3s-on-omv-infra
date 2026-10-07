@@ -8,6 +8,7 @@ ROOT = File.expand_path('..', __dir__)
 INFRA_REVISION = '0f3a9a03d3747798093d6de84fe9bedf0176b9a9'
 LIVE_REVISION = 'ce6ad756dd48ef28145f836e6825a65fcafe548f'
 POSTGRES_REVISION = '6ca730a268c1a857893672013f4425222dbd9f4c'
+OPENBAO_BACKUP_REVISION = '28802aee67c5e4570adadfa7c1bed092fea48092'
 POSTGRES_LIVE_REVISION = '3e2ae87315f679fbb6ffc0be2342a74a43d213a6'
 
 def docs(path)
@@ -129,7 +130,8 @@ git_sources = activated_applications.flat_map do |app|
 end.compact.select { |candidate| candidate['repoURL']&.start_with?('https://github.com/dmuiX/') }
 check(git_sources.all? do |candidate|
   allowed = if candidate['repoURL'].end_with?('k3s-on-omv-infra.git')
-              [INFRA_REVISION, POSTGRES_REVISION, pki_app.dig('spec', 'source', 'targetRevision')]
+              [INFRA_REVISION, POSTGRES_REVISION, OPENBAO_BACKUP_REVISION,
+               pki_app.dig('spec', 'source', 'targetRevision')]
             else
               [LIVE_REVISION, POSTGRES_LIVE_REVISION]
             end
@@ -223,6 +225,8 @@ check(postgres_sources.count { |entry| entry['chart'] } == 1 &&
         private_values['repoURL'] == 'https://github.com/dmuiX/k3s-on-omv-live.git' &&
         private_values['ref'] == 'values', "Wrong private Helm values wiring for #{name}")
 end
+check(apps.fetch('openbao-config').dig('spec', 'sources', 0, 'targetRevision') == OPENBAO_BACKUP_REVISION,
+      'OpenBao backup configuration must pin the reviewed K8up path release')
 %w[argocd-route grafana-route longhorn-route openbao-route].each do |name|
   check(wave(apps.fetch('cert-manager-config')) <= wave(apps.fetch(name)),
         "Route #{name} must not precede wildcard certificate configuration")
