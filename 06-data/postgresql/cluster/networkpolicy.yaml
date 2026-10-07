@@ -91,14 +91,10 @@ spec:
       ports:
         - {protocol: TCP, port: 9090}
     # The Barman sidecar shares the instance Pod. Standard NetworkPolicy cannot
-    # select a container or an R2 FQDN, so only external HTTPS is permitted.
+    # select a container or an R2 FQDN, so only TCP 443 is permitted externally.
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0
-            except:
-              - 10.0.0.0/8
-              - 172.16.0.0/12
-              - 192.168.0.0/16
       ports:
         - {protocol: TCP, port: 443}
 ---
@@ -137,9 +133,10 @@ spec:
               app.kubernetes.io/name: plugin-barman-cloud
       ports:
         - {protocol: TCP, port: 9090}
+    # Kubernetes NetworkPolicy cannot select the API Service by identity.
     - to:
         - ipBlock:
-            cidr: 10.43.0.1/32
+            cidr: 0.0.0.0/0
       ports:
         - {protocol: TCP, port: 443}
 ---
@@ -165,8 +162,9 @@ spec:
       ports:
         - {protocol: TCP, port: 9090}
   egress:
+    # Kubernetes NetworkPolicy cannot select the API Service by identity.
     - to:
         - ipBlock:
-            cidr: 10.43.0.1/32
+            cidr: 0.0.0.0/0
       ports:
         - {protocol: TCP, port: 443}
