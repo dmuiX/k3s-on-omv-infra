@@ -59,9 +59,10 @@ check(cluster.dig('spec', 'certificates', 'serverTLSSecret') == 'platform-postgr
         'name' => 'barman-cloud.cloudnative-pg.io', 'isWALArchiver' => true,
         'parameters' => {'barmanObjectName' => 'platform-postgres-backups'}
       }, 'TLS or Barman plugin wiring is incomplete')
-check(cluster.dig('spec', 'postgresql', 'pg_hba').last(2) == [
+check(cluster.dig('spec', 'postgresql', 'pg_hba').first == 'hostnossl all all all reject' &&
+      cluster.dig('spec', 'postgresql', 'pg_hba').last(2) == [
         'hostssl all grafana all reject', 'hostssl all radar all reject'
-      ], 'Registered roles must fail closed when selecting another database')
+      ], 'Non-TLS and cross-database role connections must fail closed')
 
 storage = resource(kustomized, 'StorageClass', 'longhorn-postgres')
 check(storage['provisioner'] == 'driver.longhorn.io' && storage['reclaimPolicy'] == 'Retain' &&
@@ -104,6 +105,8 @@ check(backup.dig('spec', 'schedule') == '0 30 3 * * *' && backup.dig('spec', 'im
 check(kustomized.none? { |item| %w[Ingress HTTPRoute Gateway].include?(item['kind']) },
       'PostgreSQL must not have a public route')
 policies = kustomized.select { |item| item['kind'] == 'NetworkPolicy' }
+check(policies.all? { |item| item.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '0' },
+      'Network isolation must apply before the first external backup gate')
 check(policies.any? { |item| item.dig('metadata', 'name') == 'default-deny' &&
       item.dig('spec', 'policyTypes').sort == %w[Egress Ingress] }, 'PostgreSQL default deny is missing')
 check(policies.any? { |item| item.to_s.include?('kube-prometheus-stack') } &&

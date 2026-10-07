@@ -19,7 +19,7 @@ spec:
         valueFiles:
           - $values/03-core/kube-prometheus-stack/values.yml
     - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
-      targetRevision: 8ea9c97114c872e0833238665d3147d6d03de7aa
+      targetRevision: dc5cb18446ab7b4532107c12f3e5eadc5cd2ebc3
       ref: values
   syncPolicy:
     automated:

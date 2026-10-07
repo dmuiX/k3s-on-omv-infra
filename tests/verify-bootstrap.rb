@@ -7,7 +7,7 @@ require 'pathname'
 ROOT = File.expand_path('..', __dir__)
 INFRA_REVISION = '1c8e6032db1ba5d170230e87d971019b50600fd5'
 LIVE_REVISION = 'ce6ad756dd48ef28145f836e6825a65fcafe548f'
-POSTGRES_REVISION = '8ea9c97114c872e0833238665d3147d6d03de7aa'
+POSTGRES_REVISION = 'dc5cb18446ab7b4532107c12f3e5eadc5cd2ebc3'
 POSTGRES_LIVE_REVISION = 'd12ff7bdb2cbc3ed37299d69e21d3549d1687568'
 
 def docs(path)
@@ -264,6 +264,10 @@ check(monitor_values.dig('prometheusOperator', 'admissionWebhooks', 'certManager
   check(monitor_values.dig('prometheus', 'prometheusSpec', "#{kind}Selector") == {}, 'Unexpected monitor filter')
   check(monitor_values.dig('prometheus', 'prometheusSpec', "#{kind}NamespaceSelector") == {}, 'Unexpected namespace filter')
 end
+check(monitor_values.dig('prometheus', 'prometheusSpec', 'ruleSelectorNilUsesHelmValues') == false &&
+      monitor_values.dig('prometheus', 'prometheusSpec', 'ruleSelector') == {} &&
+      monitor_values.dig('prometheus', 'prometheusSpec', 'ruleNamespaceSelector') == {},
+      'Prometheus would ignore PostgreSQL rules from another namespace/release')
 
 longhorn = apps.fetch('longhorn')
 check(wave(longhorn) == 2, 'Longhorn must be in the storage bootstrap wave')
