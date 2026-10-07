@@ -44,6 +44,8 @@ class OpenBaoPkiReconcileTest(unittest.TestCase):
             with self.assertRaisesRegex(reconcile.RequestFailure, "pre-signed CA chain"):
                 reconcile.verify_prerequisites("token", entries)
         self.assertTrue(all("payload" not in call.kwargs for call in api.call_args_list))
+        self.assertEqual(api.call_args_list[1].args[0], "pki-services/issuer/default")
+        self.assertEqual(api.call_args_list[2].args[0], "pki-clients/issuer/default")
 
     def test_accepts_openbao_comma_separated_signing_usage(self):
         certificate = "-----BEGIN CERTIFICATE-----\nintermediate\n-----END CERTIFICATE-----"
