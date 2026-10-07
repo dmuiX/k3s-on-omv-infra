@@ -112,6 +112,11 @@ check(policies.any? { |item| item.dig('metadata', 'name') == 'default-deny' &&
 check(policies.any? { |item| item.to_s.include?('kube-prometheus-stack') } &&
       policies.any? { |item| item.to_s.include?('radar') && item.to_s.include?('grafana') },
       'Monitoring or registered-consumer network paths are missing')
+operator_policy = policies.find { |item| item.dig('metadata', 'name') == 'allow-cloudnative-pg-operator' }
+check(operator_policy.dig('spec', 'ingress').any? do |rule|
+        rule.fetch('ports', []).any? { |port| port['port'] == 9443 } &&
+          rule.fetch('from', []).any? { |source| source.dig('ipBlock', 'cidr') == '0.0.0.0/0' }
+      end, 'K3s host-process API server cannot reach the CloudNativePG webhook')
 
 alerts = resource(kustomized, 'PrometheusRule', 'platform-postgres')
 alert_names = alerts.dig('spec', 'groups').flat_map { |group| group['rules'] }.map { |rule| rule['alert'] }
