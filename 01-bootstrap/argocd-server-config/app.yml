@@ -13,7 +13,7 @@ spec:
   source:
     path: 01-bootstrap/argocd-server-config
     repoURL: "https://github.com/dmuiX/k3s-on-omv-infra.git"
-    targetRevision: 1c8e6032db1ba5d170230e87d971019b50600fd5
+    targetRevision: ea09c0829860af0ceff9ae21f3d37f0a319b3196
     directory:
       include: "{LimitRange.yaml,argocd-server-svc.yaml,argocd-cmd-params-cm.yml}"
   syncPolicy:
