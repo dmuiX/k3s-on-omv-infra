@@ -109,7 +109,7 @@ def verify_prerequisites(token, entries):
         mounted = mounts.get(mount + "/")
         if not mounted or mounted.get("type") != "pki":
             raise RequestFailure(f"Expected pre-existing PKI mount is missing: {mount}")
-        issuer = request(f"{mount}/issuer/default/json", token=token)
+        issuer = request(f"{mount}/issuer/default", token=token)
         data = issuer.get("data", {})
         certificate = data.get("certificate")
         chain = data.get("ca_chain")

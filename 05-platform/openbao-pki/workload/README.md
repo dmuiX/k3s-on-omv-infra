@@ -41,8 +41,8 @@ shape (exact path syntax may be entered through the OpenBao administrative UI):
 
 ```hcl
 path "sys/mounts" { capabilities = ["read"] }
-path "pki-services/issuer/default/json" { capabilities = ["read"] }
-path "pki-clients/issuer/default/json" { capabilities = ["read"] }
+path "pki-services/issuer/default" { capabilities = ["read"] }
+path "pki-clients/issuer/default" { capabilities = ["read"] }
 path "sys/policies/acl/cert-manager-pki-services-sign" { capabilities = ["create", "read", "update"] }
 path "sys/policies/acl/cert-manager-pki-clients-sign" { capabilities = ["create", "read", "update"] }
 path "pki-services/roles/services" { capabilities = ["create", "read", "update"] }
