@@ -57,9 +57,14 @@ def render(name, env, chart_name = nil)
   args.concat(['--version', source.fetch('targetRevision'), '--namespace', app.dig('spec', 'destination', 'namespace'),
                '--kube-version', '1.36.4', '--include-crds'])
   source.fetch('helm', {}).fetch('valueFiles', []).each do |path|
-    prefix = %w[$values/ $infra/].find { |candidate| path.start_with?(candidate) }
+    prefix = %w[$values/ $infra/ $snapshot-values/].find { |candidate| path.start_with?(candidate) }
     check(prefix, 'Helm values must use a reviewed Git values source')
-    args.concat(['--values', File.join(ROOT, path.delete_prefix(prefix))])
+    values_path = if prefix == '$snapshot-values/'
+                    File.join(ROOT, 'tests/fixtures/openbao-private-values.yml')
+                  else
+                    File.join(ROOT, path.delete_prefix(prefix))
+                  end
+    args.concat(['--values', values_path])
   end
   output, _stderr, status = Open3.capture3(env, *args, chdir: File.dirname(env.fetch('HELM_CACHE_HOME')))
   check(status.success?, "Helm rendering failed for #{name} (exit #{status.exitstatus}); chart diagnostics suppressed")
@@ -318,6 +323,31 @@ Dir.mktmpdir('infra-helm-check-') do |dir|
           claim.dig('spec', 'storageClassName') == 'longhorn' &&
             claim.dig('spec', 'resources', 'requests', 'storage') == '1Gi'
         }, 'OpenBao must render separate right-sized data and audit PVC templates')
+  snapshot = find_resource(openbao, 'CronJob', 'openbao-snapshot')
+  snapshot_spec = pod_spec(snapshot)
+  snapshot_container = snapshot_spec.fetch('containers').find { |candidate| candidate['name'] == 'bao-snapshot' }
+  check(snapshot.dig('spec', 'schedule') == '17 2 * * *' &&
+        snapshot.dig('spec', 'concurrencyPolicy') == 'Forbid',
+        'OpenBao native snapshot must run daily without overlapping jobs')
+  check(snapshot_spec['serviceAccountName'] == 'openbao-snapshot' &&
+        snapshot_container.fetch('image').include?('@sha256:') &&
+        snapshot_container.dig('resources', 'requests', 'memory') == '64Mi' &&
+        snapshot_container.dig('resources', 'limits', 'memory') == '256Mi',
+        'OpenBao snapshot agent identity, image or resource bounds changed')
+  snapshot_config = find_resource(openbao, 'ConfigMap', 'openbao-snapshot').fetch('data')
+  check(snapshot_config['BAO_ROLE'] == 'openbao-snapshot' &&
+        snapshot_config['BAO_SECRET_PATH'] == 'kv/openbao-snapshots/r2-credentials' &&
+        snapshot_config['S3_EXPIRE_DAYS'] == '14',
+        'OpenBao snapshot auth, credential path or retention changed')
+  snapshot_policy = find_resource(openbao, 'NetworkPolicy', 'openbao-snapshot-egress')
+  snapshot_ports = snapshot_policy.dig('spec', 'egress').flat_map { |entry| entry.fetch('ports') }
+    .map { |entry| entry['port'] }.sort
+  check(snapshot_ports == [53, 53, 443, 8200],
+        'OpenBao snapshot egress must remain limited to DNS, OpenBao and HTTPS')
+  snapshot_alerts = find_resource(openbao, 'PrometheusRule', 'openbao-snapshot')
+    .dig('spec', 'groups').flat_map { |group| group.fetch('rules') }.map { |rule| rule['alert'] }.sort
+  check(snapshot_alerts == %w[OpenBaoSnapshotJobFailed OpenBaoSnapshotStale],
+        'OpenBao snapshot failure/staleness alerts are incomplete')
   manager = find_resource(longhorn, 'DaemonSet', 'longhorn-manager')
   container = manager.dig('spec', 'template', 'spec', 'containers').find { |c| c['name'] == 'longhorn-manager' }
   check(container.dig('resources', 'requests', 'memory') == '256Mi', 'Manager memory request was ignored')

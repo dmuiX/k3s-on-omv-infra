@@ -1,0 +1,6 @@
+# Non-secret offline rendering fixture; production values come from the private repository.
+snapshotAgent:
+  config:
+    s3Host: account.example.invalid
+    s3Bucket: "'%(bucket)s.account.example.invalid'"
+    s3Uri: s3://example-openbao-backups/openbao/

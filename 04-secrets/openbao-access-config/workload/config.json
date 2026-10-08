@@ -1,11 +1,26 @@
 {
   "kv_mount": "kv",
   "human_auth_mount": "userpass",
-  "webhook_role": {
-    "name": "vault-secrets-webhook",
-    "service_account": "vault-secrets-webhook",
-    "namespace": "vault-secrets-webhook",
-    "policies": ["vault-secrets-webhook-read"],
-    "token_ttl": "1h"
-  }
+  "roles": [
+    {
+      "name": "vault-secrets-webhook",
+      "service_account": "vault-secrets-webhook",
+      "namespace": "vault-secrets-webhook",
+      "policies": ["vault-secrets-webhook-read"],
+      "allowed_predecessor_policies": ["cert-manager-cloudflare-read"],
+      "token_ttl": "1h"
+    },
+    {
+      "name": "openbao-snapshot",
+      "service_account": "openbao-snapshot",
+      "namespace": "openbao",
+      "policies": ["openbao-snapshot"],
+      "token_ttl": "15m"
+    }
+  ],
+  "managed_policies": [
+    "vault-secrets-webhook-read",
+    "human-admin",
+    "openbao-snapshot"
+  ]
 }

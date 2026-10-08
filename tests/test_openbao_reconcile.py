@@ -14,7 +14,10 @@ spec = importlib.util.spec_from_file_location("openbao_reconcile", SCRIPT)
 reconcile = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(reconcile)
 ROLE = {"name": "vault-secrets-webhook", "service_account": "vault-secrets-webhook",
-        "namespace": "vault-secrets-webhook", "policies": ["vault-secrets-webhook-read"], "token_ttl": "1h"}
+        "namespace": "vault-secrets-webhook", "policies": ["vault-secrets-webhook-read"],
+        "allowed_predecessor_policies": ["cert-manager-cloudflare-read"], "token_ttl": "1h"}
+SNAPSHOT_ROLE = {"name": "openbao-snapshot", "service_account": "openbao-snapshot",
+                 "namespace": "openbao", "policies": ["openbao-snapshot"], "token_ttl": "15m"}
 MOUNT = {"kv/": {"type": "kv", "options": {"version": "2"}}}
 
 
@@ -27,17 +30,27 @@ class ReconcileTest(unittest.TestCase):
         desired = 'path "kv/data/*" {}'
         for current_policy, role, writes in [(None, old_role, 2),
                                               ({"data": {"policy": desired}}, role_current, 0)]:
+            snapshot_role = {"data": {
+                "bound_service_account_names": ["openbao-snapshot"],
+                "bound_service_account_namespaces": ["openbao"],
+                "token_policies": ["openbao-snapshot"], "token_ttl": 900}}
             responses = [{"auth": {"client_token": "dummy-token"}}, MOUNT,
                          {"userpass/": {"type": "userpass"}}, role]
             if role == old_role:
                 responses.append({})
+            responses.append(snapshot_role)
             responses.append(current_policy)
             if current_policy is None:
                 responses.append({})
-            responses.append({"data": {"policy": 'path "sys/auth" {}'}})
+            responses.extend([
+                {"data": {"policy": 'path "sys/auth" {}'}},
+                {"data": {"policy": 'path "sys/storage/raft/snapshot" {}'}}
+            ])
             files = [io.StringIO("dummy-jwt"), io.StringIO(json.dumps({
-                "kv_mount": "kv", "human_auth_mount": "userpass", "webhook_role": ROLE})),
-                     io.StringIO(desired), io.StringIO('path "sys/auth" {}')]
+                "kv_mount": "kv", "human_auth_mount": "userpass", "roles": [ROLE, SNAPSHOT_ROLE],
+                "managed_policies": ["vault-secrets-webhook-read", "human-admin", "openbao-snapshot"]})),
+                     io.StringIO(desired), io.StringIO('path "sys/auth" {}'),
+                     io.StringIO('path "sys/storage/raft/snapshot" {}')]
             with patch.object(reconcile, "request", side_effect=responses) as api, \
                  patch("builtins.open", side_effect=files), \
                  contextlib.redirect_stdout(io.StringIO()) as stdout:
@@ -53,7 +66,8 @@ class ReconcileTest(unittest.TestCase):
                         "bound_service_account_namespaces": [ROLE["namespace"]],
                         "token_policies": ROLE["policies"], **drift}
             files = [io.StringIO("dummy-jwt"), io.StringIO(json.dumps({
-                "kv_mount": "kv", "human_auth_mount": "userpass", "webhook_role": ROLE}))]
+                "kv_mount": "kv", "human_auth_mount": "userpass", "roles": [ROLE, SNAPSHOT_ROLE],
+                "managed_policies": ["vault-secrets-webhook-read", "human-admin", "openbao-snapshot"]}))]
             responses = [{"auth": {"client_token": "dummy-token"}}, MOUNT,
                          {"userpass/": {"type": "userpass"}}, {"data": existing}]
             with self.subTest(drift=drift), patch.object(reconcile, "request", side_effect=responses) as api, \

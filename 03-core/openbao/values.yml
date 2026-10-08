@@ -79,5 +79,96 @@ server:
     limits:
       cpu: 500m
       memory: 512Mi
+snapshotAgent:
+  enabled: true
+  concurrencyPolicy: Forbid
+  schedule: "17 2 * * *"
+  restartPolicy: OnFailure
+  serviceAccount:
+    create: true
+    name: openbao-snapshot
+  image:
+    repository: ghcr.io/openbao/openbao-snapshot-agent
+    tag: "0.4.5@sha256:ef2c80770e30bba3fcf4d7911cb829607efcea7e7c1a917210c9fa1ba55a8249"
+  config:
+    s3ExpireDays: "14"
+    s3cmdExtraFlag: "--no-progress"
+    baoAuthPath: kubernetes
+    baoRole: openbao-snapshot
+    baoSecretPath: kv/openbao-snapshots/r2-credentials
+  resources:
+    requests:
+      cpu: 25m
+      memory: 64Mi
+    limits:
+      cpu: 250m
+      memory: 256Mi
+  tolerations:
+    - key: CriticalAddonsOnly
+      operator: Equal
+      value: "true"
+      effect: NoSchedule
+extraObjects:
+  - apiVersion: networking.k8s.io/v1
+    kind: NetworkPolicy
+    metadata:
+      name: openbao-snapshot-egress
+      namespace: openbao
+    spec:
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: openbao
+          app.kubernetes.io/component: snapshot-agent
+      policyTypes:
+        - Egress
+      egress:
+        - to:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: kube-system
+              podSelector:
+                matchLabels:
+                  k8s-app: kube-dns
+          ports:
+            - protocol: UDP
+              port: 53
+            - protocol: TCP
+              port: 53
+        - to:
+            - podSelector:
+                matchLabels:
+                  app.kubernetes.io/name: openbao
+                  component: server
+          ports:
+            - protocol: TCP
+              port: 8200
+        - ports:
+            - protocol: TCP
+              port: 443
+  - apiVersion: monitoring.coreos.com/v1
+    kind: PrometheusRule
+    metadata:
+      name: openbao-snapshot
+      namespace: openbao
+      labels:
+        release: kube-prometheus-stack
+    spec:
+      groups:
+        - name: openbao-snapshot
+          rules:
+            - alert: OpenBaoSnapshotStale
+              expr: absent(kube_cronjob_status_last_successful_time{namespace="openbao",cronjob="openbao-snapshot"}) or (time() - kube_cronjob_status_last_successful_time{namespace="openbao",cronjob="openbao-snapshot"} > 93600)
+              for: 15m
+              labels:
+                severity: critical
+              annotations:
+                summary: OpenBao has no successful native Raft snapshot in the last 26 hours
+            - alert: OpenBaoSnapshotJobFailed
+              expr: kube_job_status_failed{namespace="openbao",job_name=~"openbao-snapshot-.*"} > 0
+              for: 5m
+              labels:
+                severity: critical
+              annotations:
+                summary: An OpenBao native Raft snapshot job failed
 ui:
   enabled: true
