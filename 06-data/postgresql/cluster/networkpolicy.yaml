@@ -32,52 +32,27 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: allow-pgo-operator
+  name: allow-postgres
   annotations:
     argocd.argoproj.io/sync-wave: "0"
 spec:
   podSelector:
     matchLabels:
-      postgres-operator.crunchydata.com/control-plane: pgo
-  policyTypes: [Ingress, Egress]
-  ingress:
-    - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kube-prometheus-stack
-          podSelector:
-            matchLabels:
-              app.kubernetes.io/name: prometheus
-      ports:
-        - {protocol: TCP, port: 8443}
-  egress:
-    # Kubernetes NetworkPolicy cannot select the API Service by identity.
-    - to:
-        - ipBlock:
-            cidr: 0.0.0.0/0
-      ports:
-        - {protocol: TCP, port: 443}
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-platform-postgres
-  annotations:
-    argocd.argoproj.io/sync-wave: "0"
-spec:
-  podSelector:
-    matchLabels:
-      postgres-operator.crunchydata.com/cluster: platform-postgres
+      cnpg.io/cluster: platform-postgres
   policyTypes: [Ingress, Egress]
   ingress:
     - from:
         - podSelector:
             matchLabels:
-              postgres-operator.crunchydata.com/cluster: platform-postgres
+              cnpg.io/cluster: platform-postgres
       ports:
         - {protocol: TCP, port: 5432}
-        - {protocol: TCP, port: 8008}
-        - {protocol: TCP, port: 2022}
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: cloudnative-pg
+      ports:
+        - {protocol: TCP, port: 8000}
     - from:
         - namespaceSelector:
             matchLabels:
@@ -106,13 +81,86 @@ spec:
     - to:
         - podSelector:
             matchLabels:
-              postgres-operator.crunchydata.com/cluster: platform-postgres
+              cnpg.io/cluster: platform-postgres
       ports:
         - {protocol: TCP, port: 5432}
-        - {protocol: TCP, port: 8008}
-        - {protocol: TCP, port: 2022}
-    # Patroni reaches the Kubernetes API and pgBackRest reaches the R2 endpoint.
-    # NetworkPolicy cannot select either external endpoint by workload identity.
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: plugin-barman-cloud
+      ports:
+        - {protocol: TCP, port: 9090}
+    # The Barman sidecar shares the instance Pod. Standard NetworkPolicy cannot
+    # select a container or an R2 FQDN, so only TCP 443 is permitted externally.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - {protocol: TCP, port: 443}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-cloudnative-pg-operator
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: cloudnative-pg
+  policyTypes: [Ingress, Egress]
+  ingress:
+    # Webhook ingress from host-process API servers is rendered from the
+    # private cluster values as a separate NetworkPolicy with exact node CIDRs.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-prometheus-stack
+      ports:
+        - {protocol: TCP, port: 8080}
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              cnpg.io/cluster: platform-postgres
+      ports:
+        - {protocol: TCP, port: 8000}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: plugin-barman-cloud
+      ports:
+        - {protocol: TCP, port: 9090}
+    # Kubernetes NetworkPolicy cannot select the API Service by identity.
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - {protocol: TCP, port: 443}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-barman-plugin
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: plugin-barman-cloud
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              cnpg.io/cluster: platform-postgres
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: cloudnative-pg
+      ports:
+        - {protocol: TCP, port: 9090}
+  egress:
+    # Kubernetes NetworkPolicy cannot select the API Service by identity.
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0
