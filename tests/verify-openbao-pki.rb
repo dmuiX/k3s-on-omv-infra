@@ -43,7 +43,24 @@ output, stderr, result = Open3.capture3('kubectl', 'kustomize', File.join(ROOT, 
 raise "Kustomize failed: #{stderr}" unless result.success?
 resources = YAML.load_stream(output).compact
 find_all = ->(kind) { resources.select { |resource| resource['kind'] == kind } }
-check(find_all.call('Certificate').empty?, 'Certificate consumers are not part of this component')
+certificates = find_all.call('Certificate')
+check(certificates.length == 1, 'Expected only the staged OpenBao internal TLS Certificate')
+certificate = certificates.first
+check(certificate.dig('metadata', 'name') == 'openbao-internal-tls' &&
+      certificate.dig('metadata', 'namespace') == 'openbao' &&
+      certificate.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '3',
+      'OpenBao internal TLS Certificate identity, namespace or wave changed')
+check(certificate.dig('spec', 'secretName') == 'openbao-internal-tls' &&
+      certificate.dig('spec', 'duration') == '2160h' && certificate.dig('spec', 'renewBefore') == '360h' &&
+      certificate.dig('spec', 'privateKey') == {
+        'algorithm' => 'ECDSA', 'size' => 256, 'rotationPolicy' => 'Always'
+      } && certificate.dig('spec', 'usages') == ['server auth'],
+      'OpenBao internal TLS key, lifetime or usage contract changed')
+check(certificate.dig('spec', 'dnsNames') == [
+        'openbao-active-tls.openbao.svc', 'openbao-active-tls.openbao.svc.cluster.local'
+      ] && certificate.dig('spec', 'issuerRef') == {
+        'group' => 'cert-manager.io', 'kind' => 'ClusterIssuer', 'name' => 'openbao-pki-services'
+      }, 'OpenBao internal TLS DNS names or issuer changed')
 
 service_accounts = find_all.call('ServiceAccount').to_h { |resource| [resource.dig('metadata', 'name'), resource] }
 %w[openbao-pki-reconciler openbao-pki-services openbao-pki-clients].each do |name|

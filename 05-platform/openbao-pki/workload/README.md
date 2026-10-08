@@ -9,8 +9,11 @@ the GitOps bootstrap promotes the root configuration to activate this pinned
 Application; do not register it independently, switch it to a branch, or remove
 the exclusion ad hoc.
 
-The component does not contain a `Certificate`. It provides two future issuer
-profiles:
+The component provides two issuer profiles and stages one first-party consumer,
+`Certificate/openbao-internal-tls`. The certificate is issued while the existing
+HTTP listener remains available and is not mounted by OpenBao in this release.
+That staging boundary prevents a missing certificate from affecting the running
+Raft cluster:
 
 | ClusterIssuer | OpenBao signing endpoint | permitted DNS hierarchy | leaf use |
 |---|---|---|---|
@@ -71,11 +74,20 @@ the endpoint rule because this cluster evaluates Kubernetes Service traffic
 after DNAT. Keeping the CIDRs in the private values prevents LAN topology from
 leaking into this public repository.
 
-The URLs are HTTP because the existing OpenBao listener is internal HTTP.
-NetworkPolicy limits reachability but does not encrypt node/CNI traffic; do not
-activate this component where that network is untrusted. A future
-listener migration must switch both workload and ClusterIssuer URLs to HTTPS
-and add the corresponding CA bundle in the same reviewed change.
+The issuer and reconciler URLs remain HTTP because they bootstrap the certificate
+from the existing internal listener. NetworkPolicy limits reachability but does
+not encrypt node/CNI traffic; do not activate this component where that network
+is untrusted.
+
+The staged certificate contains only the two DNS names of the future
+`openbao-active-tls` Service, is valid for 90 days, renews 15 days early and uses
+an ECDSA P-256 key stored only in `Secret/openbao-internal-tls`. A later reviewed
+release may mount that Secret read-only and add a parallel TLS listener and
+active-only Service. It must not disable or repoint the HTTP issuer/reconciler
+path in the same release. Keeping that narrow bootstrap path avoids making
+OpenBao startup or certificate renewal depend circularly on the certificate it
+is trying to issue. VSO will use only the parallel TLS Service with the issuing
+CA; Kubernetes Auth remains its client identity and mTLS is not required.
 
 ## Ownership and rollback
 
@@ -89,11 +101,12 @@ The loop owns only these objects inside OpenBao:
   one-hour token lifetime and audience.
 
 Use the reviewed GitOps bootstrap rollback to disable the Argo Application and
-stop reconciliation. Because pruning can remove Kubernetes identities and
-ClusterIssuers, confirm there are still no Certificate consumers before doing
-so. OpenBao mounts, issuers, keys and CA chains remain untouched; removing the
-six managed OpenBao policy/role objects, if desired, is a separate reviewed
-administrative action.
+stop reconciliation. Pruning can remove Kubernetes identities, ClusterIssuers
+and the staged internal Certificate, so rollback must first prove that no TLS
+listener or VSO connection consumes `Secret/openbao-internal-tls`. OpenBao
+mounts, issuers, keys and CA chains remain untouched; removing the six managed
+OpenBao policy/role objects, if desired, is a separate reviewed administrative
+action.
 
 Validate offline before bootstrap activation:
 

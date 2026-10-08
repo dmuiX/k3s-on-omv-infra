@@ -7,6 +7,7 @@ resources:
   - initial-job.yaml
   - cronjob.yaml
   - issuers.yaml
+  - openbao-internal-certificate.yaml
 generatorOptions:
   annotations:
     argocd.argoproj.io/sync-wave: "-1"
