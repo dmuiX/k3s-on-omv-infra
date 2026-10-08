@@ -12,13 +12,13 @@ spec:
   project: default
   sources:
     - repoURL: https://openbao.github.io/openbao-helm
-      targetRevision: 0.29.5
+      targetRevision: 0.30.2
       chart: openbao
       helm:
         valueFiles:
           - $values/03-core/openbao/values.yml
     - repoURL: "https://github.com/dmuiX/k3s-on-omv-infra.git"
-      targetRevision: 0f3a9a03d3747798093d6de84fe9bedf0176b9a9
+      targetRevision: 572da8bbb10a062cb49e621dc10ceae349e7d785
       ref: values
   syncPolicy:
     automated:

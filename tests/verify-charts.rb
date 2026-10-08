@@ -299,6 +299,14 @@ Dir.mktmpdir('infra-helm-check-') do |dir|
   check(monitor.dig('spec', 'endpoints').all? { |e| backend.dig('spec', 'ports').any? { |p| p['name'] == e['port'] } },
         'Longhorn monitor refers to a missing metrics port')
   openbao_server = find_resource(openbao, 'StatefulSet', 'openbao')
+  openbao_container = openbao_server.dig('spec', 'template', 'spec', 'containers').find do |candidate|
+    candidate['name'] == 'openbao'
+  end
+  check(openbao_container && openbao_container['image'] ==
+        'quay.io/openbao/openbao:2.7.1@sha256:6d2b93856e3fcf7b18ad855a0b51eaba474dc8b79cf554379ea32034797d2acf',
+        'OpenBao must render the reviewed digest-pinned 2.7.1 release')
+  check(openbao_server.dig('spec', 'updateStrategy', 'type') == 'OnDelete',
+        'OpenBao upgrade must remain explicitly activated one voter at a time')
   check(openbao_server.dig('spec', 'replicas') == 3, 'OpenBao must render three Raft server pods')
   check(openbao_server.dig('spec', 'template', 'spec', 'affinity', 'podAntiAffinity',
                            'requiredDuringSchedulingIgnoredDuringExecution'),

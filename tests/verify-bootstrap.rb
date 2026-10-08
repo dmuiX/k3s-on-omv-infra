@@ -8,6 +8,7 @@ ROOT = File.expand_path('..', __dir__)
 INFRA_REVISION = '0f3a9a03d3747798093d6de84fe9bedf0176b9a9'
 LIVE_REVISION = 'ce6ad756dd48ef28145f836e6825a65fcafe548f'
 POSTGRES_REVISION = '6ca730a268c1a857893672013f4425222dbd9f4c'
+OPENBAO_REVISION = '572da8bbb10a062cb49e621dc10ceae349e7d785'
 POSTGRES_LIVE_REVISION = '3e2ae87315f679fbb6ffc0be2342a74a43d213a6'
 
 def docs(path)
@@ -87,7 +88,11 @@ helm_apps.each do |name|
   values_source = sources.find { |candidate| candidate['ref'] == 'values' }
   check(chart && chart['targetRevision'].to_s.match?(/\Av?\d+\.\d+\.\d+(?:[-+][\w.-]+)?\z/),
         "#{name} chart version is not pinned")
-  allowed_values_revisions = name == 'kube-prometheus-stack' ? [INFRA_REVISION, POSTGRES_REVISION] : [INFRA_REVISION]
+  allowed_values_revisions = case name
+                             when 'kube-prometheus-stack' then [INFRA_REVISION, POSTGRES_REVISION]
+                             when 'openbao' then [INFRA_REVISION, OPENBAO_REVISION]
+                             else [INFRA_REVISION]
+                             end
   check(values_source && values_source['repoURL'] == source['repoURL'] &&
         allowed_values_revisions.include?(values_source['targetRevision']),
         "#{name} values source is not the pinned reviewed Git revision")
@@ -129,7 +134,8 @@ git_sources = activated_applications.flat_map do |app|
 end.compact.select { |candidate| candidate['repoURL']&.start_with?('https://github.com/dmuiX/') }
 check(git_sources.all? do |candidate|
   allowed = if candidate['repoURL'].end_with?('k3s-on-omv-infra.git')
-              [INFRA_REVISION, POSTGRES_REVISION, pki_app.dig('spec', 'source', 'targetRevision')]
+              [INFRA_REVISION, POSTGRES_REVISION, OPENBAO_REVISION,
+               pki_app.dig('spec', 'source', 'targetRevision')]
             else
               [LIVE_REVISION, POSTGRES_LIVE_REVISION]
             end
