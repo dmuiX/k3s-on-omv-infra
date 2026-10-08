@@ -83,7 +83,8 @@ check(alerts.to_s.include?('ccp_backrest_') && alerts.to_s.include?('ccp_archive
       !alerts.to_s.include?('cnpg_'), 'Monitoring must use pgMonitor/pgBackRest metrics')
 
 rendered = docs(run('helm', 'template', 'postgresql', 'charts/cluster-config', '--namespace', 'postgresql',
-                    '--set', 'component=postgresql'))
+                    '--set', 'component=postgresql', '--set-json',
+                    'clusterNetwork.kubernetesApiServerEndpointCIDRs=["192.0.2.2/32","192.0.2.5/32","192.0.2.7/32"]'))
 cluster = resource(rendered, 'PostgresCluster', 'platform-postgres')
 check(cluster['apiVersion'] == 'postgres-operator.crunchydata.com/v1' &&
       cluster.dig('spec', 'postgresVersion') == 18 &&
@@ -131,6 +132,19 @@ check(users == [
       ], 'PGO must generate the two bounded application users, databases and passwords')
 check(rendered.none? { |item| item['kind'] == 'Secret' && item.dig('metadata', 'name').match?(/pguser/) },
       'Git must not pre-create PGO generated user credential Secrets')
+api_policies = rendered.select { |item| item['kind'] == 'NetworkPolicy' &&
+  item.dig('metadata', 'name').end_with?('kubernetes-api') }
+api_egress_valid = api_policies.all? do |policy|
+  policy.dig('spec', 'egress', 0, 'ports') == [{'protocol' => 'TCP', 'port' => 6443}] &&
+    policy.dig('spec', 'egress', 0, 'to').map { |peer| peer.dig('ipBlock', 'cidr') }.sort ==
+      %w[192.0.2.2/32 192.0.2.5/32 192.0.2.7/32]
+end
+check(api_policies.map { |item| item.dig('metadata', 'name') }.sort ==
+      %w[allow-pgo-kubernetes-api allow-platform-postgres-kubernetes-api] && api_egress_valid,
+      'PostgreSQL API egress must target exactly the rendered private TCP/6443 endpoints')
+check(operator_policy.dig('spec', 'egress') == [] &&
+      policies.none? { |policy| policy.to_s.include?('0.0.0.0/0') && policy.dig('metadata', 'name') == 'allow-pgo-operator' },
+      'The PGO operator policy must not retain broad TCP/443 API egress')
 backup = cluster.dig('spec', 'backups', 'pgbackrest')
 check(backup['image'].match?(/@sha256:[0-9a-f]{64}\z/) &&
       backup['manual'] == {'repoName' => 'repo1', 'options' => ['--type=full']} &&

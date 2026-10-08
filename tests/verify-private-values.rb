@@ -7,7 +7,9 @@ require 'uri'
 
 ROOT = File.expand_path('..', __dir__)
 PRIVATE = File.expand_path(ARGV.fetch(0, '../k3s-on-omv-live'), ROOT)
-BOOTSTRAP = File.expand_path(ARGV.fetch(1, '../k3s-on-omv-bootstrap/traefik/traefik-config.yml'), ROOT)
+GATEWAY_CONFIG = File.expand_path(
+  ARGV.fetch(1, '../k3s-on-omv-bootstrap/ansible/roles/k3s_cluster/templates/traefik-config.yml.j2'), ROOT
+)
 VALUES = File.join(PRIVATE, 'clusters/omv/values.yml')
 CHART = File.join(ROOT, 'charts/cluster-config')
 
@@ -93,9 +95,15 @@ rendered = {}
         "Private values did not produce the expected #{component} route")
 end
 
-pki_network_docs = render('openbao-pki-network')
-check(pki_network_docs.length == 1 && pki_network_docs.first['kind'] == 'NetworkPolicy',
-      'Private API endpoint values must render exactly one cert-manager NetworkPolicy')
+pki_network_chart = File.join(ROOT, '02-controllers/cert-manager/network-policy')
+pki_network_output, pki_network_status = Open3.capture2(
+  'helm', 'template', 'cert-manager-network-policy', pki_network_chart,
+  '--values', VALUES, err: File::NULL
+)
+pki_network_docs = YAML.load_stream(pki_network_output).compact
+check(pki_network_status.success? && pki_network_docs.length == 1 &&
+      pki_network_docs.first['kind'] == 'NetworkPolicy',
+      'Private API endpoint values must render exactly one cert-manager-owned NetworkPolicy')
 pki_network = pki_network_docs.first
 api_egress = pki_network.dig('spec', 'egress').find do |entry|
   entry.fetch('ports').map { |port| [port['protocol'], port['port']] } == [['TCP', 6443]]
@@ -132,10 +140,20 @@ postgresql_secret = postgresql.find do |resource|
 end
 repo = postgresql_cluster&.dig('spec', 'backups', 'pgbackrest', 'repos', 0, 's3')
 s3_config = postgresql_secret&.dig('stringData', 's3.conf').to_s
+expected_postgresql_region = private_values.dig('postgresqlBackup', 'region') ||
+  YAML.load_file(File.join(CHART, 'values.yaml')).dig('postgresqlBackup', 'region')
+postgresql_api_policies = postgresql.select do |resource|
+  resource['kind'] == 'NetworkPolicy' && resource.dig('metadata', 'name').end_with?('kubernetes-api')
+end
+check(postgresql_api_policies.length == 2 && postgresql_api_policies.all? do |policy|
+        policy.dig('spec', 'egress', 0, 'ports') == [{'protocol' => 'TCP', 'port' => 6443}] &&
+          policy.dig('spec', 'egress', 0, 'to').map { |peer| peer.dig('ipBlock', 'cidr') }.sort ==
+            expected_api_cidrs.sort
+      end, 'PostgreSQL API egress must use only the three private /32 endpoints')
 check(postgresql_cluster && postgresql_secret &&
       repo['endpoint'] == private_values.dig('postgresqlBackup', 'endpoint').sub(%r{\Ahttps://}, '').sub(%r{/\z}, '') &&
       repo['bucket'] == private_values.dig('postgresqlBackup', 'bucket') &&
-      repo['region'] == private_values.dig('postgresqlBackup', 'region') &&
+      repo['region'] == expected_postgresql_region &&
       s3_config.include?('vault:kv/data/postgresql/r2-credentials#access-key-id') &&
       s3_config.include?('vault:kv/data/postgresql/r2-credentials#secret-access-key'),
       'Private PostgreSQL pgBackRest identifiers or OpenBao references did not render')
@@ -144,8 +162,13 @@ check(render('restore').one? { |r| r['kind'] == 'Restore' } &&
       'Restore must be manual-only')
 check(render('none').empty?, 'Sample chart defaults must not deploy resources')
 
-check(File.file?(BOOTSTRAP), 'Pass the private host Gateway config as the second argument')
-host = YAML.safe_load(YAML.load_file(BOOTSTRAP).dig('spec', 'valuesContent'))
+check(File.file?(GATEWAY_CONFIG), 'Pass the current Traefik HelmChartConfig or template as the second argument')
+gateway_source = File.read(GATEWAY_CONFIG)
+# The bootstrap source is an Ansible template. Its image placeholders are not
+# relevant to the Gateway contract and are replaced only for local YAML parsing.
+gateway_source = gateway_source.gsub(/\{\{[^{}]+\}\}/, 'test-value')
+gateway_config = YAML.safe_load(gateway_source)
+host = YAML.safe_load(gateway_config.dig('spec', 'valuesContent'))
 listener = host.dig('gateway', 'listeners', 'websecure')
 check(listener.dig('certificateRefs', 0, 'name') == certificate.dig('spec', 'secretName') &&
       listener['hostname'] == certificate.dig('spec', 'dnsNames', 0),

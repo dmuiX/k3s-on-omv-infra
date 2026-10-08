@@ -1,5 +1,5 @@
 # Safe sample values. The live cluster loads a private values.yml instead.
-component: none # argocd, grafana, longhorn, openbao, certificates, backups, openbao-pki-network, postgresql, or restore
+component: none # argocd, grafana, longhorn, openbao, certificates, backups, postgresql, or restore
 
 gateway:
   name: traefik-gateway
@@ -43,7 +43,7 @@ backup:
   restoreOrdinal: 0 # Schema-validated nonnegative integer; selects data-openbao-<ordinal>.
 
 clusterNetwork:
-  kubernetesApiServerEndpointCIDRs: [] # Private values supply fixed IPv4 /32 endpoints.
+  kubernetesApiServerEndpointCIDRs: [] # Private values supply exactly three IPv4 /32 endpoints.
 
 postgresqlBackup:
   endpoint: https://example.invalid

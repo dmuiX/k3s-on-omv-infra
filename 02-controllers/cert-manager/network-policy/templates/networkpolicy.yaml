@@ -1,11 +1,10 @@
-{{- if eq .Values.component "openbao-pki-network" }}
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: cert-manager-openbao-pki-egress
   namespace: cert-manager
   labels:
-    app.kubernetes.io/name: openbao-pki
+    app.kubernetes.io/name: cert-manager
   annotations:
     argocd.argoproj.io/sync-wave: "-1"
 spec:
@@ -46,7 +45,7 @@ spec:
       ports:
         - protocol: TCP
           port: 443
-    # K3s evaluates Kubernetes Service traffic after DNAT on this cluster.
+    # K3s evaluates kubernetes.default.svc traffic after DNAT on this cluster.
     - to:
       {{- range required "Private K3s API endpoint CIDRs are required" .Values.clusterNetwork.kubernetesApiServerEndpointCIDRs }}
         - ipBlock:
@@ -55,4 +54,3 @@ spec:
       ports:
         - protocol: TCP
           port: 6443
-{{- end }}

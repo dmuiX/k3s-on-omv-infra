@@ -117,8 +117,12 @@ Dir.mktmpdir('infra-helm-check-') do |dir|
   # must never create live resources unless an explicit component is selected.
   local_chart = File.join(ROOT, 'charts', 'cluster-config')
   %w[none argocd grafana longhorn openbao certificates backups postgresql restore].each do |component|
-    output, status = Open3.capture2(env, HELM, 'template', "check-#{component}", local_chart,
-                                     '--set', "component=#{component}", err: File::NULL, chdir: dir)
+    args = [HELM, 'template', "check-#{component}", local_chart, '--set', "component=#{component}"]
+    if component == 'postgresql'
+      args.concat(['--set-json',
+                   'clusterNetwork.kubernetesApiServerEndpointCIDRs=["192.0.2.2/32","192.0.2.5/32","192.0.2.7/32"]'])
+    end
+    output, status = Open3.capture2(env, *args, err: File::NULL, chdir: dir)
     check(status.success?, "Local #{component} template failed; chart diagnostics suppressed")
     resources = yaml_docs(output)
     check(resources.empty? == (component == 'none'), "Unexpected default render for #{component}")
