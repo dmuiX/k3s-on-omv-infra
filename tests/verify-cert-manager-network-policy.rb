@@ -24,8 +24,12 @@ check(!short_status.success? && !invalid_status.success?,
 resources = YAML.load_stream(output).compact
 check(resources.length == 1, 'Dedicated chart must own exactly one resource')
 policy = resources.first
-check(policy['kind'] == 'NetworkPolicy' && policy.dig('metadata', 'namespace') == 'cert-manager',
-      'Dedicated chart must render a cert-manager NetworkPolicy')
+check(policy['kind'] == 'NetworkPolicy' &&
+      policy.dig('metadata', 'name') == 'cert-manager-controller-egress' &&
+      policy.dig('metadata', 'namespace') == 'cert-manager',
+      'Dedicated chart must render the uniquely owned cert-manager NetworkPolicy')
+check(policy.dig('metadata', 'name') != 'cert-manager-openbao-pki-egress',
+      'Dedicated policy must not collide with the predecessor OpenBao PKI Application')
 check(policy.dig('spec', 'podSelector', 'matchLabels') == {
         'app.kubernetes.io/name' => 'cert-manager',
         'app.kubernetes.io/component' => 'controller'
