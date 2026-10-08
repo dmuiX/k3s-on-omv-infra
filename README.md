@@ -72,8 +72,11 @@ default exclusion gates the implemented `06-data/postgresql/app.yml`; the guarde
 PKI installation activates both mandatory platform phases, and PostgreSQL then
 runs as a Wave-6 acceptance target. OpenBao PKI adds no Certificate consumers. Upstream
 controllers are Argo multi-source Applications: one version-pinned Helm/OCI chart
-plus values from this Git repository. Route, certificate and backup Applications render the local
-`charts/cluster-config` chart with private values from the live repository.
+plus values from this Git repository. Route, certificate, backup, and cert-manager PKI egress resources render the
+local `charts/cluster-config` chart with private values from the live repository.
+The private API endpoint `/32` list is required because K3s evaluates the
+cert-manager connection after Service DNAT on endpoint port 6443; no LAN address
+is committed to this public repository.
 Authored Kustomize resources remain in Git, but rendered upstream chart output
 is deliberately not vendored. The encrypted Longhorn StorageClass ConfigMap is
 an explicit final Argo source overriding the chart resource that Longhorn
@@ -91,7 +94,8 @@ This cannot depend on OpenBao, which is installed by that sync: seed the Git
 credential and child-Application health customization in a separately approved
 bootstrap. Secrets such as Cloudflare tokens and backup passwords live
 in OpenBao, not Git. The public templates use non-secret `vault:` references;
-the private values file contains identifiers, not credentials.
+the private values file contains identifiers and private network endpoints, not
+credentials.
 The root and child Applications' automation and pruning settings require review before deployment.
 The Grafana subchart creates its initial random administrator Secret in-cluster.
 Argo ignores only the generated `admin-user` and `admin-password` data fields so

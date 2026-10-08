@@ -52,8 +52,14 @@ check(!root_selects.call(pki_path) && !root_selects.call(postgresql_path),
       'Staged platform Applications must remain inactive before their bootstrap gates pass')
 pki_app = docs(pki_path).first
 postgresql_app = docs(postgresql_path).first
-check(pki_app.dig('spec', 'source', 'targetRevision').to_s.match?(/\A[0-9a-f]{40}\z/),
-      'Staged OpenBao PKI workload must remain immutably pinned')
+pki_sources = pki_app.dig('spec', 'sources')
+check(pki_sources&.length == 3 && pki_sources.all? do |candidate|
+        candidate['targetRevision'].to_s.match?(/\A[0-9a-f]{40}\z/)
+      end, 'Staged OpenBao PKI workload and private values must remain immutably pinned')
+check(pki_sources.count { |candidate| candidate['repoURL'].end_with?('k3s-on-omv-infra.git') } == 2 &&
+      pki_sources.one? { |candidate| candidate['repoURL'].end_with?('k3s-on-omv-live.git') &&
+        candidate['ref'] == 'values' && !candidate.key?('path') },
+      'Staged OpenBao PKI must render its API peers from the private values source')
 check(postgresql_app.fetch('spec').fetch('sources').all? do |candidate|
         !candidate['repoURL']&.start_with?('https://github.com/dmuiX/') ||
           candidate['targetRevision'].to_s.match?(/\A[0-9a-f]{40}\z/)
@@ -142,10 +148,13 @@ git_sources = activated_applications.flat_map do |app|
 end.compact.select { |candidate| candidate['repoURL']&.start_with?('https://github.com/dmuiX/') }
 check(git_sources.all? do |candidate|
   allowed = if candidate['repoURL'].end_with?('k3s-on-omv-infra.git')
-              [INFRA_REVISION, POSTGRES_REVISION, OPENBAO_REVISION,
-               pki_app.dig('spec', 'source', 'targetRevision')]
+              [INFRA_REVISION, POSTGRES_REVISION, OPENBAO_REVISION] +
+                pki_sources.select { |source| source['repoURL'].end_with?('k3s-on-omv-infra.git') }
+                           .map { |source| source['targetRevision'] }
             else
-              [LIVE_REVISION, POSTGRES_LIVE_REVISION, OPENBAO_LIVE_REVISION]
+              [LIVE_REVISION, POSTGRES_LIVE_REVISION, OPENBAO_LIVE_REVISION] +
+                pki_sources.select { |source| source['repoURL'].end_with?('k3s-on-omv-live.git') }
+                           .map { |source| source['targetRevision'] }
             end
   allowed.include?(candidate['targetRevision'])
 end, 'Every owned Git child source must use its reviewed immutable revision')
