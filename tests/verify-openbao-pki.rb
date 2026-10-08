@@ -53,7 +53,7 @@ check(certificate.dig('metadata', 'name') == 'openbao-internal-tls' &&
 check(certificate.dig('spec', 'secretName') == 'openbao-internal-tls' &&
       certificate.dig('spec', 'duration') == '2160h' && certificate.dig('spec', 'renewBefore') == '360h' &&
       certificate.dig('spec', 'privateKey') == {
-        'algorithm' => 'ECDSA', 'size' => 256, 'rotationPolicy' => 'Always'
+        'algorithm' => 'RSA', 'size' => 2048, 'rotationPolicy' => 'Always'
       } && certificate.dig('spec', 'usages') == ['server auth'],
       'OpenBao internal TLS key, lifetime or usage contract changed')
 check(certificate.dig('spec', 'dnsNames') == [

@@ -81,7 +81,8 @@ is untrusted.
 
 The staged certificate contains only the two DNS names of the future
 `openbao-active-tls` Service, is valid for 90 days, renews 15 days early and uses
-an ECDSA P-256 key stored only in `Secret/openbao-internal-tls`. A later reviewed
+an RSA-2048 key matching the constrained OpenBao signing role and stored only in
+`Secret/openbao-internal-tls`. A later reviewed
 release may mount that Secret read-only and add a parallel TLS listener and
 active-only Service. It must not disable or repoint the HTTP issuer/reconciler
 path in the same release. Keeping that narrow bootstrap path avoids making
