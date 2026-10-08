@@ -13,9 +13,19 @@ application_path = '05-platform/openbao-pki/application.yml'
 app = YAML.load_file(File.join(ROOT, application_path))
 check(File.basename(application_path) == 'application.yml', 'Staged Application filename changed')
 check(app.dig('metadata', 'name') == 'openbao-pki', 'Wrong mandatory PKI Application identity')
-check(app.dig('spec', 'source', 'path') == '05-platform/openbao-pki/workload', 'Wrong workload source')
-revision = app.dig('spec', 'source', 'targetRevision').to_s
-check(revision.match?(/\A[0-9a-f]{40}\z/), 'Mandatory PKI workload revision must remain immutable')
+sources = app.dig('spec', 'sources')
+workload_source = sources&.find { |source| source['path'] == '05-platform/openbao-pki/workload' }
+network_source = sources&.find { |source| source['path'] == 'charts/cluster-config' }
+private_source = sources&.find { |source| source['ref'] == 'values' }
+check(workload_source && network_source && private_source && sources.length == 3,
+      'PKI must combine its public workload/network template with one private values source')
+revision = workload_source['targetRevision'].to_s
+check(revision.match?(/\A[0-9a-f]{40}\z/) && network_source['targetRevision'] == revision,
+      'Mandatory PKI workload and network template revisions must remain immutable and equal')
+check(network_source.dig('helm', 'valueFiles') == ['$values/clusters/omv/values.yml'] &&
+      network_source.dig('helm', 'parameters', 0) == {'name' => 'component', 'value' => 'openbao-pki-network'} &&
+      private_source['repoURL'].end_with?('k3s-on-omv-live.git') && !private_source.key?('path'),
+      'PKI NetworkPolicy must render only from the private values ref')
 cert_manager_values = YAML.load_file(File.join(ROOT, '02-controllers/cert-manager/values.yml'))
 check(cert_manager_values['clusterResourceNamespace'] == 'cert-manager',
       'ClusterIssuer ServiceAccount references must resolve in cert-manager')
