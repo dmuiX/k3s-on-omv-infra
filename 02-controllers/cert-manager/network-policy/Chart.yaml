@@ -1,0 +1,5 @@
+apiVersion: v2
+name: cert-manager-network-policy
+description: Private-endpoint egress policy for the cert-manager controller
+version: 0.1.0
+type: application
