@@ -26,7 +26,7 @@ spec:
         valueFiles:
           - $infra/06-data/postgresql/values-barman.yml
     - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
-      targetRevision: 6ca730a268c1a857893672013f4425222dbd9f4c
+      targetRevision: d463cf98c7cbc67e0426bdf3d67268dccbf48031
       path: charts/cluster-config
       helm:
         releaseName: postgresql
@@ -36,7 +36,7 @@ spec:
         valueFiles:
           - $private/clusters/omv/values.yml
     - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
-      targetRevision: 6ca730a268c1a857893672013f4425222dbd9f4c
+      targetRevision: d463cf98c7cbc67e0426bdf3d67268dccbf48031
       path: 06-data/postgresql
       ref: infra
       kustomize: {}
