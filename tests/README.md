@@ -4,6 +4,7 @@ Run from the infra repository:
 
 ```sh
 ruby tests/verify-bootstrap.rb   # multi-source Helm, waves, values, storage constraints
+ruby tests/verify-cert-manager-network-policy.rb # wave-2 ownership and exact private API egress
 ruby tests/verify-application-health.rb # child sync/health gating (requires Lua)
 ruby tests/verify-openbao-access.rb # dedicated SA, Git-managed ACL, job/loop render
 ruby tests/verify-openbao-pki.rb # mandatory staged gate, PKI identities/RBAC/issuers render
@@ -38,11 +39,12 @@ The same public root owns all regular child Applications. Mandatory OpenBao PKI
 is explicitly selected by the root include but safely excluded by default until
 the external-root ceremony and guarded installation pass. Its Application is
 already pinned; the GitOps bootstrap then promotes the root configuration to
-activate it rather than registering it independently. PostgreSQL is implemented
-as the same guarded Wave-6 phase and becomes mandatory with PKI activation. Tests
-verify both the inactive default inventory and the activated Wave-5/6 cohorts.
-Controller charts and public values remain here; route, certificate and backup
-identifiers remain in the private values repository.
+activate it rather than registering it independently. PostgreSQL remains an
+independently gated Wave-6 phase and must not become active with PKI alone. Tests
+verify both the inactive default inventory and independently activated Wave-5/6
+cohorts. Controller charts and public values remain here; route, certificate,
+backup, and private Kubernetes API endpoint values remain in the private values
+repository.
 With that checkout, run `ruby tests/verify-private-values.rb`
 (also requires Helm and the host Traefik configuration). It renders the local
 chart with the real values without printing private identifiers or Secret data.

@@ -45,7 +45,9 @@ check(permits_pi?(yaml('06-data/postgresql/values-pgo.yml')['tolerations']),
       'PGO operator cannot use raspi4')
 postgres_output, postgres_status = Open3.capture2(
   'helm', 'template', 'postgresql', File.join(ROOT, 'charts/cluster-config'),
-  '--namespace', 'postgresql', '--set', 'component=postgresql', err: File::NULL)
+  '--namespace', 'postgresql', '--set', 'component=postgresql', '--set-json',
+  'clusterNetwork.kubernetesApiServerEndpointCIDRs=["192.0.2.2/32","192.0.2.5/32","192.0.2.7/32"]',
+  err: File::NULL)
 check(postgres_status.success?, 'Crunchy PostgreSQL template did not render')
 postgres = YAML.load_stream(postgres_output).compact.find { |item| item['kind'] == 'PostgresCluster' }
 check(postgres && permits_pi?(postgres.dig('spec', 'instances', 0, 'tolerations')),

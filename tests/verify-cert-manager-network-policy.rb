@@ -13,6 +13,14 @@ output, status = Open3.capture2('helm', 'template', 'cert-manager-network-policy
                                 '--set-json', 'clusterNetwork.kubernetesApiServerEndpointCIDRs=["192.0.2.2/32","192.0.2.5/32","192.0.2.7/32"]',
                                 err: File::NULL)
 check(status.success?, 'Dedicated cert-manager NetworkPolicy chart did not render')
+_, short_status = Open3.capture2('helm', 'template', 'invalid', CHART,
+                                 '--set-json', 'clusterNetwork.kubernetesApiServerEndpointCIDRs=["192.0.2.2/32","192.0.2.5/32"]',
+                                 err: File::NULL)
+_, invalid_status = Open3.capture2('helm', 'template', 'invalid', CHART,
+                                   '--set-json', 'clusterNetwork.kubernetesApiServerEndpointCIDRs=["192.0.2.2/32","192.0.2.5/32","999.0.2.7/32"]',
+                                   err: File::NULL)
+check(!short_status.success? && !invalid_status.success?,
+      'Dedicated chart must require exactly three valid IPv4 /32 endpoints')
 resources = YAML.load_stream(output).compact
 check(resources.length == 1, 'Dedicated chart must own exactly one resource')
 policy = resources.first

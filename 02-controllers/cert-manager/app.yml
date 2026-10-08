@@ -18,8 +18,18 @@ spec:
         valueFiles:
           - $values/02-controllers/cert-manager/values.yml
     - repoURL: "https://github.com/dmuiX/k3s-on-omv-infra.git"
-      targetRevision: 0f3a9a03d3747798093d6de84fe9bedf0176b9a9
+      targetRevision: b251db63968d14ddd44775a630a05fc56e9e2895
       ref: values
+    - repoURL: "https://github.com/dmuiX/k3s-on-omv-infra.git"
+      targetRevision: b251db63968d14ddd44775a630a05fc56e9e2895
+      path: 02-controllers/cert-manager/network-policy
+      helm:
+        releaseName: cert-manager-network-policy
+        valueFiles:
+          - $private/clusters/omv/values.yml
+    - repoURL: https://github.com/dmuiX/k3s-on-omv-live.git
+      targetRevision: 2f41ae33586f87e818a304f57b3bd895c896d294
+      ref: private
   syncPolicy:
     automated:
       prune: true

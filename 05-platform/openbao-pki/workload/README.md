@@ -63,8 +63,9 @@ key and `issuing-certificates` usage) and reconciles the six owned objects befor
 the ClusterIssuers are applied. The hourly CronJob repairs drift. Its
 NetworkPolicy denies reconciler ingress and permits it only cluster DNS and
 TCP/8200 to the active OpenBao server pods. The cert-manager controller policy
-is rendered separately by `charts/cluster-config` with endpoint CIDRs from the
-private live values. It preserves DNS, external TCP/443 and TCP/8200 to active
+belongs to the wave-2 cert-manager Application and is rendered from
+`02-controllers/cert-manager/network-policy` with endpoint CIDRs from the
+private Live values. It preserves DNS, external TCP/443 and TCP/8200 to active
 OpenBao, then permits TCP/6443 only to those private `/32` endpoints. K3s needs
 the endpoint rule because this cluster evaluates Kubernetes Service traffic
 after DNAT. Keeping the CIDRs in the private values prevents LAN topology from

@@ -68,15 +68,18 @@ external-root ceremony and guarded installation have passed. Its workload source
 is already pinned to an immutable commit. After those gates pass, the GitOps
 bootstrap activates the pinned Application by promoting the root configuration;
 do not register it independently or remove the safety gate ad hoc. The same
-default exclusion gates the implemented `06-data/postgresql/app.yml`; the guarded
-PKI installation activates both mandatory platform phases, and PostgreSQL then
-runs as a Wave-6 acceptance target. OpenBao PKI adds no Certificate consumers. Upstream
+default exclusion independently gates `06-data/postgresql/app.yml`; PKI activation
+must not activate PostgreSQL. Database activation requires its separate TLS, VSO,
+backup/restore, failover, and connectivity acceptance gates. OpenBao PKI adds no
+Certificate consumers. Upstream
 controllers are Argo multi-source Applications: one version-pinned Helm/OCI chart
-plus values from this Git repository. Route, certificate, backup, and cert-manager PKI egress resources render the
-local `charts/cluster-config` chart with private values from the live repository.
-The private API endpoint `/32` list is required because K3s evaluates the
-cert-manager connection after Service DNAT on endpoint port 6443; no LAN address
-is committed to this public repository.
+plus values from this Git repository. Route, certificate, and backup resources render the local
+`charts/cluster-config` chart with private values from the live repository. The
+cert-manager Application separately owns
+`02-controllers/cert-manager/network-policy`, which renders its private API
+endpoint `/32` list from the same Live values in wave 2. K3s evaluates that
+connection after Service DNAT on endpoint port 6443; no LAN address is committed
+to this public repository.
 Authored Kustomize resources remain in Git, but rendered upstream chart output
 is deliberately not vendored. The encrypted Longhorn StorageClass ConfigMap is
 an explicit final Argo source overriding the chart resource that Longhorn

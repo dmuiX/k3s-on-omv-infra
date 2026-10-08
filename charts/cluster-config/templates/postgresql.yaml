@@ -146,4 +146,48 @@ spec:
         resources:
           requests: {cpu: 25m, memory: 32Mi}
           limits: {cpu: 150m, memory: 128Mi}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-pgo-kubernetes-api
+  namespace: postgresql
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  podSelector:
+    matchLabels:
+      postgres-operator.crunchydata.com/control-plane: pgo
+  policyTypes: [Egress]
+  egress:
+    - to:
+      {{- range required "Private K3s API endpoint CIDRs are required" .Values.clusterNetwork.kubernetesApiServerEndpointCIDRs }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+      {{- end }}
+      ports:
+        - protocol: TCP
+          port: 6443
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-platform-postgres-kubernetes-api
+  namespace: postgresql
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  podSelector:
+    matchLabels:
+      postgres-operator.crunchydata.com/cluster: platform-postgres
+  policyTypes: [Egress]
+  egress:
+    - to:
+      {{- range required "Private K3s API endpoint CIDRs are required" .Values.clusterNetwork.kubernetesApiServerEndpointCIDRs }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+      {{- end }}
+      ports:
+        - protocol: TCP
+          port: 6443
 {{- end }}

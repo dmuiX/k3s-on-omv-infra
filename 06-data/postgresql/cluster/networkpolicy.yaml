@@ -50,13 +50,8 @@ spec:
               app.kubernetes.io/name: prometheus
       ports:
         - {protocol: TCP, port: 8443}
-  egress:
-    # Kubernetes NetworkPolicy cannot select the API Service by identity.
-    - to:
-        - ipBlock:
-            cidr: 0.0.0.0/0
-      ports:
-        - {protocol: TCP, port: 443}
+  # A separately rendered policy owns private K3s API endpoint egress.
+  egress: []
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -111,8 +106,8 @@ spec:
         - {protocol: TCP, port: 5432}
         - {protocol: TCP, port: 8008}
         - {protocol: TCP, port: 2022}
-    # Patroni reaches the Kubernetes API and pgBackRest reaches the R2 endpoint.
-    # NetworkPolicy cannot select either external endpoint by workload identity.
+    # pgBackRest reaches the R2 endpoint over HTTPS. A separately rendered
+    # policy owns Patroni's private K3s API endpoint egress on TCP 6443.
     - to:
         - ipBlock:
             cidr: 0.0.0.0/0

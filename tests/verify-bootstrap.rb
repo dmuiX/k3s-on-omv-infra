@@ -52,22 +52,30 @@ check(!root_selects.call(pki_path) && !root_selects.call(postgresql_path),
       'Staged platform Applications must remain inactive before their bootstrap gates pass')
 pki_app = docs(pki_path).first
 postgresql_app = docs(postgresql_path).first
-pki_sources = pki_app.dig('spec', 'sources')
-check(pki_sources&.length == 3 && pki_sources.all? do |candidate|
-        candidate['targetRevision'].to_s.match?(/\A[0-9a-f]{40}\z/)
-      end, 'Staged OpenBao PKI workload and private values must remain immutably pinned')
-check(pki_sources.count { |candidate| candidate['repoURL'].end_with?('k3s-on-omv-infra.git') } == 2 &&
-      pki_sources.one? { |candidate| candidate['repoURL'].end_with?('k3s-on-omv-live.git') &&
-        candidate['ref'] == 'values' && !candidate.key?('path') },
-      'Staged OpenBao PKI must render its API peers from the private values source')
+check(pki_app.dig('spec', 'source', 'path') == '05-platform/openbao-pki/workload' &&
+      pki_app.dig('spec', 'source', 'targetRevision').to_s.match?(/\A[0-9a-f]{40}\z/),
+      'Staged OpenBao PKI workload must remain a single immutable source')
+cert_manager_sources = apps.fetch('cert-manager').dig('spec', 'sources')
+cert_manager_network_source = cert_manager_sources.find do |candidate|
+  candidate['path'] == '02-controllers/cert-manager/network-policy'
+end
+cert_manager_private_source = cert_manager_sources.find { |candidate| candidate['ref'] == 'private' }
+check(cert_manager_network_source && cert_manager_private_source &&
+      cert_manager_network_source.dig('helm', 'valueFiles') == ['$private/clusters/omv/values.yml'] &&
+      cert_manager_network_source['targetRevision'].to_s.match?(/\A[0-9a-f]{40}\z/) &&
+      cert_manager_private_source['targetRevision'].to_s.match?(/\A[0-9a-f]{40}\z/) &&
+      !cert_manager_private_source.key?('path'),
+      'cert-manager must own its immutable private-endpoint NetworkPolicy source')
 check(postgresql_app.fetch('spec').fetch('sources').all? do |candidate|
         !candidate['repoURL']&.start_with?('https://github.com/dmuiX/') ||
           candidate['targetRevision'].to_s.match?(/\A[0-9a-f]{40}\z/)
       end, 'Staged PostgreSQL Git sources must remain immutably pinned')
-activated_applications = applications + [pki_app, postgresql_app]
-activated_apps = activated_applications.to_h { |app| [app.dig('metadata', 'name'), app] }
-check(activated_apps.size == activated_applications.size,
-      'Bootstrap activation must not introduce a duplicate Application name')
+pki_activated_applications = applications + [pki_app]
+pki_activated_apps = pki_activated_applications.to_h { |app| [app.dig('metadata', 'name'), app] }
+fully_activated_applications = pki_activated_applications + [postgresql_app]
+fully_activated_apps = fully_activated_applications.to_h { |app| [app.dig('metadata', 'name'), app] }
+check(fully_activated_apps.size == fully_activated_applications.size,
+      'Staged activation must not introduce a duplicate Application name')
 # Public Applications own all resources; only their real value overrides are private.
 app_files.group_by { |path| File.dirname(path) }.each do |dir, paths|
   relative = Pathname.new(dir).relative_path_from(Pathname.new(ROOT)).each_filename.to_a
@@ -98,6 +106,7 @@ helm_apps.each do |name|
   allowed_values_revisions = case name
                              when 'kube-prometheus-stack' then [INFRA_REVISION, POSTGRES_REVISION]
                              when 'openbao' then [INFRA_REVISION, OPENBAO_REVISION]
+                             when 'cert-manager' then [INFRA_REVISION, cert_manager_network_source['targetRevision']]
                              else [INFRA_REVISION]
                              end
   check(values_source && values_source['repoURL'] == source['repoURL'] &&
@@ -142,19 +151,23 @@ check(apps.fetch('openbao-access-config').dig('spec', 'source', 'path') == '04-s
         "Editor schema invalid or not a values schema: #{chart}")
 end
 
-git_sources = activated_applications.flat_map do |app|
+git_sources = fully_activated_applications.flat_map do |app|
   spec = app.fetch('spec')
   spec['sources'] || [spec['source']]
 end.compact.select { |candidate| candidate['repoURL']&.start_with?('https://github.com/dmuiX/') }
+check(git_sources.select { |candidate| candidate['repoURL'].end_with?('k3s-on-omv-infra.git') }
+                 .map { |candidate| candidate['targetRevision'] }.uniq.all? do |revision|
+        system('git', '-C', ROOT, 'cat-file', '-e', "#{revision}^{commit}",
+               out: File::NULL, err: File::NULL)
+      end, 'Every Infra child pin must resolve to a local reviewed commit object')
 check(git_sources.all? do |candidate|
   allowed = if candidate['repoURL'].end_with?('k3s-on-omv-infra.git')
-              [INFRA_REVISION, POSTGRES_REVISION, OPENBAO_REVISION] +
-                pki_sources.select { |source| source['repoURL'].end_with?('k3s-on-omv-infra.git') }
-                           .map { |source| source['targetRevision'] }
+              [INFRA_REVISION, POSTGRES_REVISION, OPENBAO_REVISION,
+               pki_app.dig('spec', 'source', 'targetRevision'),
+               cert_manager_network_source['targetRevision']]
             else
-              [LIVE_REVISION, POSTGRES_LIVE_REVISION, OPENBAO_LIVE_REVISION] +
-                pki_sources.select { |source| source['repoURL'].end_with?('k3s-on-omv-live.git') }
-                           .map { |source| source['targetRevision'] }
+              [LIVE_REVISION, POSTGRES_LIVE_REVISION, OPENBAO_LIVE_REVISION,
+               cert_manager_private_source['targetRevision']]
             end
   allowed.include?(candidate['targetRevision'])
 end, 'Every owned Git child source must use its reviewed immutable revision')
@@ -206,9 +219,13 @@ expected_default = %w[argocd-config argocd-route grafana-route kube-prometheus-s
                       openbao-route vault-secrets-webhook]
 check(apps.keys.sort == expected_default.sort,
       'Default public root must own regular Applications and keep staged platform phases inactive')
-expected_activated = expected_default + %w[openbao-pki postgresql]
-check(activated_apps.keys.sort == expected_activated.sort,
-      'GitOps bootstrap activation must add mandatory OpenBao PKI and PostgreSQL Applications')
+expected_pki_activated = expected_default + %w[openbao-pki]
+check(pki_activated_apps.keys.sort == expected_pki_activated.sort &&
+      !pki_activated_apps.key?('postgresql'),
+      'OpenBao PKI activation must not implicitly activate PostgreSQL')
+expected_fully_activated = expected_pki_activated + %w[postgresql]
+check(fully_activated_apps.keys.sort == expected_fully_activated.sort,
+      'PostgreSQL must remain available only through its independent activation gate')
 expected_by_wave = {
   1 => %w[argocd-config monitoring-crds],
   2 => %w[cert-manager k8up longhorn],
@@ -217,18 +234,18 @@ expected_by_wave = {
   5 => %w[argocd-route cert-manager-config grafana-route longhorn-route openbao-pki openbao-route],
   6 => %w[openbao-config postgresql]
 }
-actual_by_wave = activated_applications.group_by { |app| wave(app) }.transform_values do |items|
+actual_by_wave = fully_activated_applications.group_by { |app| wave(app) }.transform_values do |items|
   items.map { |app| app.dig('metadata', 'name') }.sort
 end
 check(actual_by_wave == expected_by_wave.transform_values(&:sort),
       'Activated Applications must stay in their independent wave cohorts; no same-wave ordering is assumed')
-check(wave(activated_apps.fetch('openbao-access-config')) < wave(activated_apps.fetch('openbao-pki')) &&
-      wave(activated_apps.fetch('cert-manager')) < wave(activated_apps.fetch('openbao-pki')) &&
-      wave(activated_apps.fetch('openbao')) < wave(activated_apps.fetch('openbao-pki')),
+check(wave(pki_activated_apps.fetch('openbao-access-config')) < wave(pki_activated_apps.fetch('openbao-pki')) &&
+      wave(pki_activated_apps.fetch('cert-manager')) < wave(pki_activated_apps.fetch('openbao-pki')) &&
+      wave(pki_activated_apps.fetch('openbao')) < wave(pki_activated_apps.fetch('openbao-pki')),
       'OpenBao PKI activation must follow its controller, OpenBao and access bootstrap phases')
-check(wave(activated_apps.fetch('openbao-pki')) < wave(activated_apps.fetch('postgresql')),
-      'PostgreSQL must follow the mandatory OpenBao PKI phase')
-postgres_sources = activated_apps.fetch('postgresql').dig('spec', 'sources')
+check(wave(fully_activated_apps.fetch('openbao-pki')) < wave(fully_activated_apps.fetch('postgresql')),
+      'Separately activated PostgreSQL must follow the mandatory OpenBao PKI phase')
+postgres_sources = fully_activated_apps.fetch('postgresql').dig('spec', 'sources')
 check(postgres_sources.count { |entry| entry['chart'] } == 1 &&
       postgres_sources.any? { |entry| entry['chart'] == 'pgo' && entry['targetRevision'] == '6.0.3' } &&
       postgres_sources.any? { |entry| entry['path'] == '06-data/postgresql' && entry['ref'] == 'infra' } &&
