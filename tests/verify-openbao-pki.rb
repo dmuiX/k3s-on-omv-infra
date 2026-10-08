@@ -90,8 +90,8 @@ check(config.fetch('mounts').map { |entry| entry['allowed_domains'] } ==
       [['svc', 'svc.cluster.local'], ['clients.cluster.local']], 'DNS profiles are too broad')
 
 policies = find_all.call('NetworkPolicy').to_h { |resource| [resource.dig('metadata', 'name'), resource] }
-check(policies.keys.sort == %w[cert-manager-openbao-pki-egress openbao-pki-reconciler],
-      'Expected exactly the reconciler and cert-manager egress policies')
+check(policies.keys == ['openbao-pki-reconciler'],
+      'The public PKI workload must own only the reconciler policy; cert-manager endpoint peers render from private values')
 policy = policies.fetch('openbao-pki-reconciler')
 check(policy.dig('metadata', 'namespace') == 'openbao' && policy.dig('spec', 'ingress') == [],
       'Reconciler ingress must be denied')
@@ -99,18 +99,6 @@ check(policy.dig('spec', 'podSelector', 'matchLabels') == { 'app.kubernetes.io/n
       'NetworkPolicy must select only the reconciler')
 ports = policy.dig('spec', 'egress').flat_map { |entry| entry.fetch('ports') }.map { |port| port['port'] }.sort
 check(ports == [53, 53, 8200], 'Reconciler egress is not limited to DNS and OpenBao')
-controller_policy = policies.fetch('cert-manager-openbao-pki-egress')
-check(controller_policy.dig('metadata', 'namespace') == 'cert-manager' &&
-      controller_policy.dig('spec', 'policyTypes') == ['Egress'],
-      'cert-manager policy must be egress-only')
-check(controller_policy.dig('spec', 'podSelector', 'matchLabels') == {
-        'app.kubernetes.io/name' => 'cert-manager', 'app.kubernetes.io/component' => 'controller'
-      }, 'cert-manager policy selects the wrong pods')
-controller_ports = controller_policy.dig('spec', 'egress').flat_map { |entry| entry.fetch('ports') }
-  .map { |port| port['port'] }.sort
-check(controller_ports == [53, 53, 443, 8200],
-      'cert-manager egress must retain only DNS/HTTPS and add OpenBao')
-
 [find_all.call('Job').fetch(0), find_all.call('CronJob').fetch(0)].each do |workload|
   pod = workload['kind'] == 'Job' ? workload.dig('spec', 'template') : workload.dig('spec', 'jobTemplate', 'spec', 'template')
   spec = pod.fetch('spec')

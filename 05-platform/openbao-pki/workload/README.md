@@ -62,10 +62,13 @@ The initial Argo sync hook verifies prerequisites (including a usable signing
 key and `issuing-certificates` usage) and reconciles the six owned objects before
 the ClusterIssuers are applied. The hourly CronJob repairs drift. Its
 NetworkPolicy denies reconciler ingress and permits it only cluster DNS and
-TCP/8200 to the active OpenBao server pods. A separate egress-only policy for
-the cert-manager controller preserves DNS and TCP/443 for its Kubernetes/ACME
-traffic while adding only TCP/8200 to active OpenBao. Neither policy selects
-OpenBao server pods as its subject.
+TCP/8200 to the active OpenBao server pods. The cert-manager controller policy
+is rendered separately by `charts/cluster-config` with endpoint CIDRs from the
+private live values. It preserves DNS, external TCP/443 and TCP/8200 to active
+OpenBao, then permits TCP/6443 only to those private `/32` endpoints. K3s needs
+the endpoint rule because this cluster evaluates Kubernetes Service traffic
+after DNAT. Keeping the CIDRs in the private values prevents LAN topology from
+leaking into this public repository.
 
 The URLs are HTTP because the existing OpenBao listener is internal HTTP.
 NetworkPolicy limits reachability but does not encrypt node/CNI traffic; do not

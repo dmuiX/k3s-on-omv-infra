@@ -93,6 +93,19 @@ rendered = {}
         "Private values did not produce the expected #{component} route")
 end
 
+pki_network_docs = render('openbao-pki-network')
+check(pki_network_docs.length == 1 && pki_network_docs.first['kind'] == 'NetworkPolicy',
+      'Private API endpoint values must render exactly one cert-manager NetworkPolicy')
+pki_network = pki_network_docs.first
+api_egress = pki_network.dig('spec', 'egress').find do |entry|
+  entry.fetch('ports').map { |port| [port['protocol'], port['port']] } == [['TCP', 6443]]
+end
+expected_api_cidrs = private_values.dig('clusterNetwork', 'kubernetesApiServerEndpointCIDRs')
+check(api_egress && expected_api_cidrs&.length == 3 &&
+      api_egress.fetch('to').map { |peer| peer.dig('ipBlock', 'cidr') }.sort == expected_api_cidrs.sort &&
+      expected_api_cidrs.all? { |cidr| cidr.match?(/\A(?:[0-9]{1,3}\.){3}[0-9]{1,3}\/32\z/) },
+      'cert-manager API egress must use only the three private /32 endpoints')
+
 certificate = rendered.fetch(['cert-manager.io/v1', 'Certificate', 'kube-system', 'wildcard-tls'])
 issuer = rendered.fetch(['cert-manager.io/v1', 'ClusterIssuer', nil, 'cluster-issuer-prod'])
 schedule = rendered.fetch(['k8up.io/v1', 'Schedule', 'openbao', 'openbao-k8up-schedule'])
@@ -142,6 +155,7 @@ identifiers = private_values.fetch('routes').values.map { |r| r.fetch('hostname'
 identifiers += [private_values.dig('certificate', 'dnsName'), private_values.dig('certificate', 'acmeEmail'),
                 private_values.dig('backup', 'endpoint'), private_values.dig('backup', 'bucket'),
                 private_values.dig('postgresqlBackup', 'endpoint'), private_values.dig('postgresqlBackup', 'bucket')]
+identifiers += expected_api_cidrs
 files = Dir.glob(File.join(ROOT, '{[0-9][0-9]-*,charts,docs,tests}', '**', '*.{md,yml,yaml,rb,tpl,py,json,hcl}'), File::FNM_EXTGLOB)
 files += [File.join(ROOT, 'README.md'), File.join(ROOT, 'infra.yml')]
 files.uniq.each do |path|
