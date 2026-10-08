@@ -11,13 +11,20 @@ spec:
     namespace: postgresql
   project: default
   sources:
-    - repoURL: registry.developers.crunchydata.com/crunchydata
-      targetRevision: 6.0.3
-      chart: pgo
+    - repoURL: https://cloudnative-pg.github.io/charts
+      targetRevision: 0.29.1
+      chart: cloudnative-pg
       helm:
-        releaseName: pgo
+        releaseName: cloudnative-pg
         valueFiles:
-          - $infra/06-data/postgresql/values-pgo.yml
+          - $infra/06-data/postgresql/values-cloudnativepg.yml
+    - repoURL: https://cloudnative-pg.github.io/charts
+      targetRevision: 0.8.1
+      chart: plugin-barman-cloud
+      helm:
+        releaseName: plugin-barman-cloud
+        valueFiles:
+          - $infra/06-data/postgresql/values-barman.yml
     - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
       targetRevision: 6ca730a268c1a857893672013f4425222dbd9f4c
       path: charts/cluster-config
@@ -42,8 +49,8 @@ spec:
         pod-security.kubernetes.io/enforce: restricted
         pod-security.kubernetes.io/audit: restricted
         pod-security.kubernetes.io/warn: restricted
-    # Migration release: retain legacy CNPG/Barman resources until live PGO
-    # backup, restore, PITR and failover acceptance authorizes a cleanup release.
+    # Keep pruning disabled through CNPG backup, restore, PITR, failover and
+    # application-connectivity acceptance. Cleanup is a separate release.
     automated:
       prune: false
       selfHeal: true
@@ -65,3 +72,11 @@ spec:
       kind: CustomResourceDefinition
       jsonPointers:
         - /status
+    - group: admissionregistration.k8s.io
+      kind: ValidatingWebhookConfiguration
+      jqPathExpressions:
+        - .webhooks[]?.clientConfig.caBundle
+    - group: admissionregistration.k8s.io
+      kind: MutatingWebhookConfiguration
+      jqPathExpressions:
+        - .webhooks[]?.clientConfig.caBundle

@@ -152,10 +152,12 @@ check(wave(health) <= applications.map { |app| wave(app) }.min,
 health_keys = health.fetch('data').keys
 check(health_keys.include?('resource.customizations.health.argoproj.io_Application'),
       'Root cannot wait for child Application health')
-check(health_keys.include?('resource.customizations.health.postgres-operator.crunchydata.com_PostgresCluster'),
-      'Missing Argo health gate for Crunchy PostgresCluster')
-check(health_keys.none? { |key| key.include?('cnpg.io') },
-      'CloudNativePG/Barman health gates must be retired')
+%w[Cluster DatabaseRole Database ScheduledBackup Backup].each do |kind|
+  check(health_keys.include?("resource.customizations.health.postgresql.cnpg.io_#{kind}"),
+        "Missing Argo health gate for CloudNativePG #{kind}")
+end
+check(health_keys.include?('resource.customizations.health.barmancloud.cnpg.io_ObjectStore'),
+      'Missing Argo health gate for the Barman ObjectStore')
 crd_app = apps.fetch('monitoring-crds')
 monitoring = apps.fetch('kube-prometheus-stack')
 %w[longhorn cert-manager kube-prometheus-stack openbao vault-secrets-webhook].each do |name|
@@ -206,8 +208,9 @@ check(wave(activated_apps.fetch('openbao-access-config')) < wave(activated_apps.
 check(wave(activated_apps.fetch('openbao-pki')) < wave(activated_apps.fetch('postgresql')),
       'PostgreSQL must follow the mandatory OpenBao PKI phase')
 postgres_sources = activated_apps.fetch('postgresql').dig('spec', 'sources')
-check(postgres_sources.count { |entry| entry['chart'] } == 1 &&
-      postgres_sources.any? { |entry| entry['chart'] == 'pgo' && entry['targetRevision'] == '6.0.3' } &&
+check(postgres_sources.count { |entry| entry['chart'] } == 2 &&
+      postgres_sources.any? { |entry| entry['chart'] == 'cloudnative-pg' && entry['targetRevision'] == '0.29.1' } &&
+      postgres_sources.any? { |entry| entry['chart'] == 'plugin-barman-cloud' && entry['targetRevision'] == '0.8.1' } &&
       postgres_sources.any? { |entry| entry['path'] == '06-data/postgresql' && entry['ref'] == 'infra' } &&
       postgres_sources.any? { |entry| entry['path'] == 'charts/cluster-config' } &&
       postgres_sources.any? { |entry| entry['ref'] == 'private' },

@@ -3,10 +3,14 @@ kind: Kustomization
 namespace: postgresql
 resources:
   - cluster/storageclass.yaml
+  - cluster/certificates.yaml
+  - cluster/cluster.yaml
+  - cluster/backup.yaml
   - cluster/networkpolicy.yaml
   - cluster/controller-pdbs.yaml
+  - databases/grafana.yaml
+  - databases/radar.yaml
   - monitoring/alerts.yaml
-  - monitoring/podmonitor.yaml
 labels:
   - pairs:
       app.kubernetes.io/part-of: postgresql-platform
