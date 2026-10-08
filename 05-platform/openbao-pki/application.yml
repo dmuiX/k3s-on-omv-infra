@@ -17,7 +17,7 @@ spec:
   source:
     repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
     # Reviewed workload commit; update explicitly when promoting PKI changes.
-    targetRevision: b7bda8a15c517c6fa22f4b728f783ceb34167fc1
+    targetRevision: 4be136dc58bb441be895e745f4d2acac916c220f
     path: 05-platform/openbao-pki/workload
   syncPolicy:
     automated:
