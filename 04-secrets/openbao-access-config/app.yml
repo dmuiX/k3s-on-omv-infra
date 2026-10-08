@@ -12,7 +12,7 @@ spec:
   project: default
   source:
     repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
-    targetRevision: 0f3a9a03d3747798093d6de84fe9bedf0176b9a9
+    targetRevision: 4d18067735ac2796b8edbbaa54f2db5fa05eff9c
     path: 04-secrets/openbao-access-config/workload
   syncPolicy:
     automated:
