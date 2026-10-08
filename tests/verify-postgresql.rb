@@ -31,6 +31,10 @@ check(application.dig('spec', 'syncPolicy', 'automated', 'prune') == false,
       'PostgreSQL pruning must remain disabled until live acceptance and cleanup')
 kustomized = docs(run('kubectl', 'kustomize', '06-data/postgresql'))
 cluster = resource(kustomized, 'Cluster', 'platform-postgres')
+server_certificate = resource(kustomized, 'Certificate', 'platform-postgres-server')
+check(server_certificate.dig('spec', 'privateKey') == {
+        'algorithm' => 'RSA', 'size' => 2048, 'rotationPolicy' => 'Always'
+      }, 'PostgreSQL server certificate must match the RSA-only OpenBao service role')
 check(cluster.dig('spec', 'instances') == 3, 'PostgreSQL must have exactly three instances')
 check(cluster.dig('spec', 'imageName').match?(/:18\.6-system-bookworm@sha256:[0-9a-f]{64}\z/),
       'PostgreSQL 18.6 system image must be digest pinned')
