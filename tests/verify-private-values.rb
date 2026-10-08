@@ -7,7 +7,9 @@ require 'uri'
 
 ROOT = File.expand_path('..', __dir__)
 PRIVATE = File.expand_path(ARGV.fetch(0, '../k3s-on-omv-live'), ROOT)
-BOOTSTRAP = File.expand_path(ARGV.fetch(1, '../k3s-on-omv-bootstrap/traefik/traefik-config.yml'), ROOT)
+GATEWAY_CONFIG = File.expand_path(
+  ARGV.fetch(1, '../k3s-on-omv-bootstrap/ansible/roles/k3s_cluster/templates/traefik-config.yml.j2'), ROOT
+)
 VALUES = File.join(PRIVATE, 'clusters/omv/values.yml')
 CHART = File.join(ROOT, 'charts/cluster-config')
 
@@ -160,8 +162,13 @@ check(render('restore').one? { |r| r['kind'] == 'Restore' } &&
       'Restore must be manual-only')
 check(render('none').empty?, 'Sample chart defaults must not deploy resources')
 
-check(File.file?(BOOTSTRAP), 'Pass the private host Gateway config as the second argument')
-host = YAML.safe_load(YAML.load_file(BOOTSTRAP).dig('spec', 'valuesContent'))
+check(File.file?(GATEWAY_CONFIG), 'Pass the current Traefik HelmChartConfig or template as the second argument')
+gateway_source = File.read(GATEWAY_CONFIG)
+# The bootstrap source is an Ansible template. Its image placeholders are not
+# relevant to the Gateway contract and are replaced only for local YAML parsing.
+gateway_source = gateway_source.gsub(/\{\{[^{}]+\}\}/, 'test-value')
+gateway_config = YAML.safe_load(gateway_source)
+host = YAML.safe_load(gateway_config.dig('spec', 'valuesContent'))
 listener = host.dig('gateway', 'listeners', 'websecure')
 check(listener.dig('certificateRefs', 0, 'name') == certificate.dig('spec', 'secretName') &&
       listener['hostname'] == certificate.dig('spec', 'dnsNames', 0),

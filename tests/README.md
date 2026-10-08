@@ -1,11 +1,11 @@
-# Offline checks
+# Local checks
 
 Run from the infra repository:
 
 ```sh
 ruby tests/verify-bootstrap.rb   # multi-source Helm, waves, values, storage constraints
 ruby tests/verify-cert-manager-network-policy.rb # wave-2 ownership and exact private API egress
-ruby tests/verify-application-health.rb # child sync/health gating (requires Lua)
+ruby tests/verify-application-health.rb # child sync/health gating (Lua, or pinned npx fallback)
 ruby tests/verify-openbao-access.rb # dedicated SA, Git-managed ACL, job/loop render
 ruby tests/verify-openbao-pki.rb # mandatory staged gate, PKI identities/RBAC/issuers render
 ruby tests/verify-postgresql.rb # Crunchy PGO HA/storage/backup/policy and pinned chart renders
@@ -17,9 +17,11 @@ ruby tests/verify-charts.rb      # pinned Helm renders + safe local templates (n
 ```
 
 The ordinary Ruby/Python checks need this repository; the OpenBao equivalence
-check also calls `kubectl kustomize` locally, and the Application-health test
-requires a Lua interpreter (or `LUA=/path/to/lua`) so syntax/fixtures cannot be
-silently skipped. They need no kubeconfig or cluster.
+check also calls `kubectl kustomize` locally. The Application-health test uses a
+local Lua interpreter when available and otherwise executes the pinned
+`fengari-node-cli@0.1.0` fallback through `npx`; the first fallback run may need
+registry access. `LUA=/path/to/lua` overrides automatic selection. They need no
+kubeconfig or cluster.
 The chart test additionally needs Helm and network access. It renders each pinned
 upstream chart with the Git values in an isolated temporary Helm cache, applies
 the same final Longhorn ConfigMap override as Argo, and validates the result.
@@ -45,9 +47,11 @@ verify both the inactive default inventory and independently activated Wave-5/6
 cohorts. Controller charts and public values remain here; route, certificate,
 backup, and private Kubernetes API endpoint values remain in the private values
 repository.
-With that checkout, run `ruby tests/verify-private-values.rb`
-(also requires Helm and the host Traefik configuration). It renders the local
-chart with the real values without printing private identifiers or Secret data.
+With sibling Live and Bootstrap checkouts, run
+`ruby tests/verify-private-values.rb`. It uses the current Bootstrap Traefik
+HelmChartConfig template by default; an alternate rendered config or template
+may be passed as the second argument. It renders the local chart with the real
+values without printing private identifiers or Secret data.
 
 Before any live sync, separately review: initial Argo CD read-only Git access
 (the private repo cannot bootstrap its own credential through OpenBao), Argo CD

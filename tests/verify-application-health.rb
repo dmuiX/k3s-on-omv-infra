@@ -1,5 +1,5 @@
 #!/usr/bin/env ruby
-# Offline contract for the Argo CD child-Application health Lua script.
+# Local contract for the Argo CD child-Application health Lua script.
 require 'yaml'
 require 'open3'
 
@@ -49,12 +49,19 @@ def lua_literal(value)
   end
 end
 
-lua_bin = ENV['LUA'] || %w[lua lua5.4 lua5.3 luajit].find { |name| system('which', name, out: File::NULL, err: File::NULL) }
-abort 'Lua is required to parse and execute the Application health fixtures (set LUA=/path/to/lua)' unless lua_bin
+lua_bin = ENV['LUA'] || %w[lua lua5.4 lua5.3 luajit].find do |name|
+  system('which', name, out: File::NULL, err: File::NULL)
+end
+lua_command = if lua_bin
+                [lua_bin]
+              elsif system('which', 'npx', out: File::NULL, err: File::NULL)
+                %w[npx --yes --package fengari-node-cli@0.1.0 fengari]
+              end
+abort 'Lua fixtures require Lua or npx (set LUA=/path/to/lua to override)' unless lua_command
 fixtures.each do |input, expected|
   program = "local function evaluate(obj)\n#{lua}\nend\n" \
             "local result = evaluate(#{lua_literal(input)})\nio.write(result.status)\n"
-  stdout, stderr, status = Open3.capture3(lua_bin, '-e', program)
+  stdout, stderr, status = Open3.capture3(*lua_command, '-e', program)
   raise "Lua health test failed: #{stderr}" unless status.success?
   raise "Expected #{expected}, got #{stdout} for #{input.inspect}" unless stdout == expected
 end
@@ -99,7 +106,7 @@ script = config.fetch('data').fetch(postgres_key)
 platform_fixtures.each do |input, expected|
   program = "local function evaluate(obj)\n#{script}\nend\n" \
             "local result = evaluate(#{lua_literal_with_scalars(input)})\nio.write(result.status)\n"
-  stdout, stderr, status = Open3.capture3(lua_bin, '-e', program)
+  stdout, stderr, status = Open3.capture3(*lua_command, '-e', program)
   raise "Lua platform health test failed for #{postgres_key}: #{stderr}" unless status.success?
   raise "Expected #{expected}, got #{stdout} for #{postgres_key}" unless stdout == expected
 end
