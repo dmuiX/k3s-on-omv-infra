@@ -18,10 +18,10 @@ spec:
         valueFiles:
           - $values/02-controllers/cert-manager/values.yml
     - repoURL: "https://github.com/dmuiX/k3s-on-omv-infra.git"
-      targetRevision: a1bce0b75625658922bb6dc3a88b3592de2d558d
+      targetRevision: 526a26fb09529b9e808d4e4963f0ea94e8fea465
       ref: values
     - repoURL: "https://github.com/dmuiX/k3s-on-omv-infra.git"
-      targetRevision: a1bce0b75625658922bb6dc3a88b3592de2d558d
+      targetRevision: 526a26fb09529b9e808d4e4963f0ea94e8fea465
       path: 02-controllers/cert-manager/network-policy
       helm:
         releaseName: cert-manager-network-policy
