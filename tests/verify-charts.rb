@@ -3,6 +3,7 @@
 # Generated Secrets stay in memory and are never printed.
 require 'yaml'
 require 'json'
+require 'base64'
 require 'open3'
 require 'tmpdir'
 
@@ -136,6 +137,15 @@ Dir.mktmpdir('infra-helm-check-') do |dir|
         check(secret.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '-1',
               "Backup Secret/#{name} must sync before its Schedule")
       end
+      repository_secret = find_resource(resources, 'Secret', 'k8up-repo-password')
+      r2_secret = find_resource(resources, 'Secret', 'r2-credentials')
+      check(Base64.decode64(repository_secret.dig('data', 'password')) ==
+              'vault:kv/data/k8up/repository-password#password' &&
+            Base64.decode64(r2_secret.dig('data', 'access-key-id')) ==
+              'vault:kv/data/k8up/r2-credentials#access-key-id' &&
+            Base64.decode64(r2_secret.dig('data', 'secret-access-key')) ==
+              'vault:kv/data/k8up/r2-credentials#secret-access-key',
+            'K8up Secrets must use the canonical dedicated OpenBao paths')
       check(schedule.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '0',
             'Backup Schedule must sync after its Secrets')
     end

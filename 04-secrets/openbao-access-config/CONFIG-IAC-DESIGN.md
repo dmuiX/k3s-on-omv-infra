@@ -100,8 +100,10 @@ nicht allein aus einem in ihm laufenden Job rekonstruiert werden.
 
 Die tatsächlichen Werte von Cloudflare-Token, K8up-Repository-Passwort und
 R2-Schlüsseln. Dafür sind OpenBao-KV-Einträge `kv/cert-manager`,
-`kv/k8up-repo-password`, `kv/r2-credentials` und für den nativen Snapshot
-Agent `kv/openbao-snapshots/r2-credentials` nötig. Der letzte Eintrag enthält
+`kv/k8up/repository-password`, `kv/k8up/r2-credentials` und für den nativen
+Snapshot Agent `kv/openbao-snapshots/r2-credentials` nötig. Die K8up-Einträge
+werden über die geschützte Bootstrap-Aktion create-once erzeugt oder nach
+ausdrücklicher Auswahl aus exakten Legacy-Einträgen übernommen. Der letzte Eintrag enthält
 exakt `AWS_ACCESS_KEY_ID` und `AWS_SECRET_ACCESS_KEY`; der Agent liest nur
 dieses Objekt. Diese Werte bleiben außerhalb des
 öffentlichen Infra-Repos und dürfen nicht geloggt oder aus K8s Secrets

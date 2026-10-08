@@ -120,11 +120,13 @@ and mount references (KV v2 and userpass are verified, not recreated by the loop
 anyone permitted to create and read a webhook-selected Kubernetes Secret may
 request any KV v2 value under `kv/`.
 
-Before enabling the K8up Schedule, create the `k8up-repo-password` and
-`r2-credentials` entries in OpenBao's KV v2 engine at UI paths
-`kv/k8up-repo-password` and `kv/r2-credentials`. They need the fields
-`password`, and `access-key-id` plus `secret-access-key`, respectively.
-Enter credential values only in the OpenBao UI, never in Git, commands or logs.
+Before enabling any K8up Schedule, run the Bootstrap repository's guarded
+`gitops_bootstrap_action=k8up-credentials`. It create-once maintains
+`kv/k8up/repository-password#password` and the dedicated
+`kv/k8up/r2-credentials` fields `access-key-id` and `secret-access-key`.
+Exact legacy entries may be reused only after an explicit interactive choice;
+new R2 values are read through hidden prompts and never enter Git, command
+arguments, files, Kubernetes staging Secrets, or logs.
 
 The existing webhook role has only the Cloudflare read policy. The bootstrap
 attaches the stable `vault-secrets-webhook-read` ACL name to that role once;
