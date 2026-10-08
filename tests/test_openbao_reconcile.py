@@ -17,7 +17,8 @@ ROLE = {"name": "vault-secrets-webhook", "service_account": "vault-secrets-webho
         "namespace": "vault-secrets-webhook", "policies": ["vault-secrets-webhook-read"],
         "allowed_predecessor_policies": ["cert-manager-cloudflare-read"], "token_ttl": "1h"}
 SNAPSHOT_ROLE = {"name": "openbao-snapshot", "service_account": "openbao-snapshot",
-                 "namespace": "openbao", "policies": ["openbao-snapshot"], "token_ttl": "15m"}
+                 "namespace": "openbao", "policies": ["openbao-snapshot"], "token_ttl": "15m",
+                 "token_no_default_policy": True}
 MOUNT = {"kv/": {"type": "kv", "options": {"version": "2"}}}
 
 
@@ -33,7 +34,8 @@ class ReconcileTest(unittest.TestCase):
             snapshot_role = {"data": {
                 "bound_service_account_names": ["openbao-snapshot"],
                 "bound_service_account_namespaces": ["openbao"],
-                "token_policies": ["openbao-snapshot"], "token_ttl": 900}}
+                "token_policies": ["openbao-snapshot"], "token_ttl": 900,
+                "token_no_default_policy": True}}
             responses = [{"auth": {"client_token": "dummy-token"}}, MOUNT,
                          {"userpass/": {"type": "userpass"}}, role]
             if role == old_role:
@@ -136,6 +138,15 @@ class ReconcileTest(unittest.TestCase):
                 reconcile.reconcile_role("dummy-token", {**ROLE, "token_ttl": ttl})
             self.assertEqual(api.call_count, 1)
             self.assertNotIn("payload", api.call_args.kwargs)
+
+    def test_snapshot_role_disables_default_policy(self):
+        existing = {"bound_service_account_names": ["openbao-snapshot"],
+                    "bound_service_account_namespaces": ["openbao"],
+                    "token_policies": ["openbao-snapshot"], "token_ttl": 900,
+                    "token_no_default_policy": False}
+        with patch.object(reconcile, "request", side_effect=[{"data": existing}, {}]) as api:
+            reconcile.reconcile_role("dummy-token", SNAPSHOT_ROLE)
+        self.assertIs(api.call_args.kwargs["payload"]["token_no_default_policy"], True)
 
     def test_preserves_explicit_token_lifetime_limit(self):
         existing = {"bound_service_account_names": [ROLE["service_account"]],

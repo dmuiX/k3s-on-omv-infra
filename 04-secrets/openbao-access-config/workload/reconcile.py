@@ -115,7 +115,11 @@ def reconcile_role(token, role):
     if set(policies) - set(desired) - allowed_predecessors:
         raise RequestFailure(f"Kubernetes role {role['name']} contains unexpected policies; refusing to overwrite")
     current_ttl = str(existing.get("token_ttl", existing.get("ttl", 0)))
-    if response is not None and set(policies) == set(desired) and current_ttl == str(expected_seconds):
+    desired_no_default = role.get("token_no_default_policy")
+    no_default_current = (desired_no_default is None or
+                          existing.get("token_no_default_policy") is desired_no_default)
+    if (response is not None and set(policies) == set(desired) and
+            current_ttl == str(expected_seconds) and no_default_current):
         print(f"Kubernetes role current: {role['name']}")
         return
     # Retain existing non-policy role settings when adopting the prior role.
@@ -126,6 +130,8 @@ def reconcile_role(token, role):
         "token_ttl": role["token_ttl"],
     }
     payload.update(preserved_role_settings(existing))
+    if desired_no_default is not None:
+        payload["token_no_default_policy"] = desired_no_default
     request(endpoint, token=token, payload=payload)
     print(f"Kubernetes role reconciled: {role['name']}")
 

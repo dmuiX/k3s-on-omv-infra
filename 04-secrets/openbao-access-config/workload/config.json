@@ -15,7 +15,8 @@
       "service_account": "openbao-snapshot",
       "namespace": "openbao",
       "policies": ["openbao-snapshot"],
-      "token_ttl": "15m"
+      "token_ttl": "15m",
+      "token_no_default_policy": true
     }
   ],
   "managed_policies": [

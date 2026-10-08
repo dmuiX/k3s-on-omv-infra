@@ -27,7 +27,7 @@ raise 'Unexpected webhook identity' unless roles.dig('vault-secrets-webhook', 's
                                              role_config['kv_mount'] == 'kv' && role_config['human_auth_mount'] == 'userpass'
 raise 'Unexpected snapshot identity' unless roles.fetch('openbao-snapshot') == {
   'name' => 'openbao-snapshot', 'service_account' => 'openbao-snapshot', 'namespace' => 'openbao',
-  'policies' => ['openbao-snapshot'], 'token_ttl' => '15m'
+  'policies' => ['openbao-snapshot'], 'token_ttl' => '15m', 'token_no_default_policy' => true
 }
 raise 'Unexpected managed policies' unless role_config.fetch('managed_policies').sort ==
                                            %w[human-admin openbao-snapshot vault-secrets-webhook-read]
