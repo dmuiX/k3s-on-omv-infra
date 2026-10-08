@@ -9,7 +9,7 @@ app = YAML.load_file(File.join(root, '04-secrets/openbao-access-config', 'app.ym
 raise 'Wrong OpenBao config Application wave' unless app.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '4'
 raise 'Unexpected Argo Kustomize source' unless app.dig('spec', 'source') == {
   'repoURL' => 'https://github.com/dmuiX/k3s-on-omv-infra.git',
-  'targetRevision' => '0f3a9a03d3747798093d6de84fe9bedf0176b9a9',
+  'targetRevision' => '712c40098802fc761bec45ed3704defc977ba595',
   'path' => '04-secrets/openbao-access-config/workload'
 }
 output, stderr, result = Open3.capture3('kubectl', 'kustomize', File.join(root, '04-secrets/openbao-access-config', 'workload'))
@@ -20,11 +20,24 @@ sa = find.call('ServiceAccount')
 raise 'Dedicated SA not configured' unless sa.dig('metadata', 'name') == 'openbao-access-config' && sa['automountServiceAccountToken'] == false
 config = find.call('ConfigMap')
 raise 'ConfigMap must precede the initial Job' unless config.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '-1'
-raise 'Expected Git-managed webhook/human policies, role and reconciler' unless config.fetch('data').keys.sort == %w[config.json human-admin.hcl reconcile.py vault-secrets-webhook-read.hcl]
+raise 'Expected Git-managed policies, roles and reconciler' unless config.fetch('data').keys.sort == %w[config.json human-admin.hcl openbao-snapshot.hcl reconcile.py vault-secrets-webhook-read.hcl]
 role_config = JSON.parse(config.dig('data', 'config.json'))
-raise 'Unexpected webhook identity' unless role_config.dig('webhook_role', 'service_account') == 'vault-secrets-webhook' &&
+roles = role_config.fetch('roles').to_h { |role| [role.fetch('name'), role] }
+raise 'Unexpected webhook identity' unless roles.dig('vault-secrets-webhook', 'service_account') == 'vault-secrets-webhook' &&
                                              role_config['kv_mount'] == 'kv' && role_config['human_auth_mount'] == 'userpass'
+raise 'Unexpected snapshot identity' unless roles.fetch('openbao-snapshot') == {
+  'name' => 'openbao-snapshot', 'service_account' => 'openbao-snapshot', 'namespace' => 'openbao',
+  'policies' => ['openbao-snapshot'], 'token_ttl' => '15m', 'token_no_default_policy' => true
+}
+raise 'Unexpected managed policies' unless role_config.fetch('managed_policies').sort ==
+                                           %w[human-admin openbao-snapshot vault-secrets-webhook-read]
 raise 'Unexpected webhook policy' unless config.dig('data', 'vault-secrets-webhook-read.hcl').include?('path "kv/data/*"')
+snapshot_acl = config.dig('data', 'openbao-snapshot.hcl')
+raise 'Snapshot ACL is broader than native snapshot and one credential object' unless
+  snapshot_acl.scan(/^path /).length == 2 &&
+  snapshot_acl.include?('path "sys/storage/raft/snapshot"') &&
+  snapshot_acl.include?('path "kv/data/openbao-snapshots/r2-credentials"') &&
+  snapshot_acl.scan('capabilities = ["read"]').length == 2
 policy = find.call('NetworkPolicy')
 raise 'Wrong NetworkPolicy selector' unless policy.dig('spec', 'podSelector', 'matchLabels', 'app.kubernetes.io/name') == 'openbao-access-config'
 raise 'Unrestricted ingress' unless policy.dig('spec', 'ingress') == []

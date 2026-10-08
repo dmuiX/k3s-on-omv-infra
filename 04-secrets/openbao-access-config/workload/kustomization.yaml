@@ -18,3 +18,4 @@ configMapGenerator:
       - config.json
       - vault-secrets-webhook-read.hcl=policies/vault-secrets-webhook-read.hcl
       - human-admin.hcl=policies/human-admin.hcl
+      - openbao-snapshot.hcl=policies/openbao-snapshot.hcl

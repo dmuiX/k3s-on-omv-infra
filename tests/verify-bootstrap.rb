@@ -8,8 +8,9 @@ ROOT = File.expand_path('..', __dir__)
 INFRA_REVISION = '0f3a9a03d3747798093d6de84fe9bedf0176b9a9'
 LIVE_REVISION = 'ce6ad756dd48ef28145f836e6825a65fcafe548f'
 POSTGRES_REVISION = '6ca730a268c1a857893672013f4425222dbd9f4c'
-OPENBAO_REVISION = '572da8bbb10a062cb49e621dc10ceae349e7d785'
+OPENBAO_REVISION = '712c40098802fc761bec45ed3704defc977ba595'
 POSTGRES_LIVE_REVISION = '3e2ae87315f679fbb6ffc0be2342a74a43d213a6'
+OPENBAO_LIVE_REVISION = 'da4b8dabdf4983933f9beb47e36ddebea389045f'
 
 def docs(path)
   YAML.load_stream(File.read(File.join(ROOT, path))).compact
@@ -97,8 +98,15 @@ helm_apps.each do |name|
         allowed_values_revisions.include?(values_source['targetRevision']),
         "#{name} values source is not the pinned reviewed Git revision")
   chart.fetch('helm', {}).fetch('valueFiles', []).each do |path|
-    check(path.start_with?('$values/') && File.file?(File.join(ROOT, path.delete_prefix('$values/'))),
-          "#{name} references a missing Git values file")
+    if path.start_with?('$snapshot-values/')
+      private_source = sources.find { |candidate| candidate['ref'] == 'snapshot-values' }
+      check(name == 'openbao' && path == '$snapshot-values/clusters/omv/openbao-values.yml' &&
+            private_source && private_source['targetRevision'] == OPENBAO_LIVE_REVISION,
+            'OpenBao snapshot values must use the dedicated immutable private source')
+    else
+      check(path.start_with?('$values/') && File.file?(File.join(ROOT, path.delete_prefix('$values/'))),
+            "#{name} references a missing Git values file")
+    end
   end
 end
 upstream_dirs = %w[01-bootstrap/monitoring-crds 02-controllers/cert-manager 02-controllers/k8up 02-controllers/longhorn
@@ -137,7 +145,7 @@ check(git_sources.all? do |candidate|
               [INFRA_REVISION, POSTGRES_REVISION, OPENBAO_REVISION,
                pki_app.dig('spec', 'source', 'targetRevision')]
             else
-              [LIVE_REVISION, POSTGRES_LIVE_REVISION]
+              [LIVE_REVISION, POSTGRES_LIVE_REVISION, OPENBAO_LIVE_REVISION]
             end
   allowed.include?(candidate['targetRevision'])
 end, 'Every owned Git child source must use its reviewed immutable revision')

@@ -17,9 +17,13 @@ spec:
       helm:
         valueFiles:
           - $values/03-core/openbao/values.yml
+          - $snapshot-values/clusters/omv/openbao-values.yml
     - repoURL: "https://github.com/dmuiX/k3s-on-omv-infra.git"
-      targetRevision: 572da8bbb10a062cb49e621dc10ceae349e7d785
+      targetRevision: 712c40098802fc761bec45ed3704defc977ba595
       ref: values
+    - repoURL: "https://github.com/dmuiX/k3s-on-omv-live.git"
+      targetRevision: da4b8dabdf4983933f9beb47e36ddebea389045f
+      ref: snapshot-values
   syncPolicy:
     automated:
       prune: true

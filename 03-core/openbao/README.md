@@ -39,6 +39,31 @@ required before enabling the cert-manager-managed listener because it adds the
 listener-scoped `tls_auto_reload` facility. The upgrade release itself does not
 add, remove or change any listener.
 
+## Native Raft snapshots
+
+The chart's official snapshot agent creates an application-consistent native
+Raft snapshot daily at `02:17 UTC` and uploads it directly to the private R2
+object prefix. Jobs cannot overlap, run with bounded resources and use only the
+dedicated `openbao-snapshot` ServiceAccount. Its 15-minute OpenBao token can read
+only `sys/storage/raft/snapshot` and the exact credential object
+`kv/openbao-snapshots/r2-credentials`. That KV-v2 object must contain exactly the
+externally issued fields `AWS_ACCESS_KEY_ID` and `AWS_SECRET_ACCESS_KEY`; never
+put either value in Git or command arguments.
+
+The agent retains 14 days and emits no progress stream. NetworkPolicy limits it
+to cluster DNS, the OpenBao API and outbound HTTPS. Prometheus alerts when a job
+fails or no successful snapshot is observed for 26 hours. Before activation,
+create the R2 credential object through a protected human/admin path, configure
+R2 permissions for only the snapshot prefix, and enable object-lock or an
+independent protected copy so an OpenBao compromise cannot erase every backup.
+A successful upload is not restore acceptance: test native Raft restoration in
+a separate isolated recovery exercise.
+
+The excluded `06-data/openbao-backups` K8up application is legacy desired state
+and must not be activated for OpenBao. It snapshots mounted files rather than
+using OpenBao's native consistency boundary. K8up remains appropriate for other
+eligible workloads.
+
 The StatefulSet deliberately retains `OnDelete`; an Argo sync updates the pod
 template but does not restart a Raft voter. Treat activation as a guarded live
 maintenance operation:

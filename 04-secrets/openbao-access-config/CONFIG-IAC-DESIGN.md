@@ -7,9 +7,13 @@
   Weitere Berechtigungen durch Git-Review an dieser HCL-Datei ändern.
 - `04-secrets/openbao-access-config/workload/policies/human-admin.hcl`: die
   Git-verwaltete Policy für einen persönlichen Admin, nicht für den Webhook.
+- `04-secrets/openbao-access-config/workload/policies/openbao-snapshot.hcl`:
+  ausschließlich nativer Raft-Snapshot-Read und Read auf das dedizierte
+  R2-Credential-Objekt `kv/data/openbao-snapshots/r2-credentials`.
 - `04-secrets/openbao-access-config/workload/config.json`: KV-Mount `kv/`,
-  `userpass/`-Auth-Mount und Kubernetes-Auth-Rolle `vault-secrets-webhook`
-  (gebundener ServiceAccount, Namespace, Policy-Namen, Token-TTL). Die TTL muss
+  `userpass/`-Auth-Mount sowie getrennte Kubernetes-Auth-Rollen für
+  `vault-secrets-webhook` und `openbao-snapshot` (jeweils exakt gebundener
+  ServiceAccount, Namespace, Policy-Namen und Token-TTL). Die TTL muss
   eine positive ganze Dauer mit `s`, `m` oder `h` sein; Null würde OpenBaos
   Mount-/System-Standard übernehmen und wird vor API-Zugriffen abgelehnt. Initial-Job
   und 15-Minuten-CronJob verifizieren KV v2 und `userpass/` und gleichen
@@ -67,8 +71,9 @@ führt zum Abbruch; dessen Konfiguration vor dem nächsten Lauf separat prüfen 
 freigeben, statt den Bootstrap fälschlich als erfolgreich zu behandeln. Es richtet
 die eng gefasste Policy `openbao-access-config-writer`, die Kubernetes-Auth-
 Rolle `openbao-access-config` (nur ServiceAccount
-`openbao/openbao-access-config`), die Git-Policies für Webhook und
-`human-admin` sowie die Webhook-Rolle ein. Vor den Policy-/Rollen-Schreibzugriffen
+`openbao/openbao-access-config`), die Git-Policies für Webhook,
+`human-admin` und native Snapshots sowie die beiden getrennten Rollen für
+Webhook und Snapshot Agent ein. Vor den Policy-/Rollen-Schreibzugriffen
 prüft es bei beiden vorhandenen Kubernetes-Rollen die exakten ServiceAccount-
 und Namespace-Bindungen; abweichende Bindungen oder Namespace-Selektoren
 führen zum Abbruch statt zu einer unbeabsichtigten Rechteerweiterung.
@@ -95,8 +100,10 @@ nicht allein aus einem in ihm laufenden Job rekonstruiert werden.
 
 Die tatsächlichen Werte von Cloudflare-Token, K8up-Repository-Passwort und
 R2-Schlüsseln. Dafür sind OpenBao-KV-Einträge `kv/cert-manager`,
-`kv/k8up-repo-password` und `kv/r2-credentials` mit den in den Helm-
-Referenzen genannten Feldern nötig. Diese Werte bleiben außerhalb des
+`kv/k8up-repo-password`, `kv/r2-credentials` und für den nativen Snapshot
+Agent `kv/openbao-snapshots/r2-credentials` nötig. Der letzte Eintrag enthält
+exakt `AWS_ACCESS_KEY_ID` und `AWS_SECRET_ACCESS_KEY`; der Agent liest nur
+dieses Objekt. Diese Werte bleiben außerhalb des
 öffentlichen Infra-Repos und dürfen nicht geloggt oder aus K8s Secrets
 zurückgelesen werden. Sollen sie ebenfalls aus Git stammen, wäre ein
 **separat** überprüfter Verschlüsselungs- und Key-Recovery-Pfad (z. B. SOPS)
@@ -124,5 +131,7 @@ konkurrieren; nach dem Rollout den nächsten erfolgreichen Cron-Lauf prüfen.
 Rollback: Automation anhalten, letzten geprüften Git-Stand wiederherstellen,
 Bootstrap-/Rollenänderungen nur nach separatem Review zurücknehmen. Das
 Löschen der Argo-App löscht weder OpenBao-Policies noch Secrets. Vor Vertrauen
-in K8up unbedingt den unabhängigen Restore testen; OpenBao darf nicht allein
-von einem Backup abhängen, dessen Schlüssel in OpenBao liegen.
+in den nativen Snapshot Agent unbedingt den unabhängigen Restore testen;
+OpenBao darf nicht allein von einem Backup abhängen, dessen R2-Schlüssel nur in
+OpenBao liegen. Der ausgeschlossene alte K8up-PVC-Entwurf ist kein Ersatz für
+einen nativen Raft-Snapshot und darf nicht aktiviert werden.
