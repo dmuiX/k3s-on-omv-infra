@@ -11,7 +11,8 @@ INFRA_REVISION = '0f3a9a03d3747798093d6de84fe9bedf0176b9a9'
 BACKUP_CHART_REVISION = '25e8fb5ccfd62a6c55ea90a2ebc51f164e7240f2'
 LIVE_REVISION = 'ce6ad756dd48ef28145f836e6825a65fcafe548f'
 POSTGRES_REVISION = '6ca730a268c1a857893672013f4425222dbd9f4c'
-OPENBAO_REVISION = '712c40098802fc761bec45ed3704defc977ba595'
+OPENBAO_REVISION = '05a77589dc40749e198c74cd41508abcdc782781'
+OPENBAO_ACCESS_REVISION = '712c40098802fc761bec45ed3704defc977ba595'
 LONGHORN_REVISION = '80bc6721ee47c323212dfc425b997876e679ef89'
 POSTGRES_LIVE_REVISION = '3e2ae87315f679fbb6ffc0be2342a74a43d213a6'
 OPENBAO_LIVE_REVISION = 'da4b8dabdf4983933f9beb47e36ddebea389045f'
@@ -168,7 +169,7 @@ check(git_sources.select { |candidate| candidate['repoURL'].end_with?('k3s-on-om
 check(git_sources.all? do |candidate|
   allowed = if candidate['repoURL'].end_with?('k3s-on-omv-infra.git')
               [INFRA_REVISION, BACKUP_CHART_REVISION, POSTGRES_REVISION, OPENBAO_REVISION,
-               pki_app.dig('spec', 'source', 'targetRevision'),
+               OPENBAO_ACCESS_REVISION, pki_app.dig('spec', 'source', 'targetRevision'),
                cert_manager_network_source['targetRevision'], LONGHORN_REVISION]
             else
               [LIVE_REVISION, POSTGRES_LIVE_REVISION, OPENBAO_LIVE_REVISION,
@@ -426,6 +427,12 @@ check(monitoring_class.dig('metadata', 'name') == 'longhorn-monitoring' &&
 openbao_values = docs('03-core/openbao/values.yml').first
 check(openbao_values.dig('server', 'ha', 'enabled') && openbao_values.dig('server', 'ha', 'replicas') == 3,
       'OpenBao Raft must use three server pods')
+pinned_openbao_values, pinned_openbao_error, pinned_openbao_status = Open3.capture3(
+  'git', '-C', ROOT, 'show', "#{OPENBAO_REVISION}:03-core/openbao/values.yml"
+)
+check(pinned_openbao_status.success? && pinned_openbao_error.empty? &&
+      pinned_openbao_values.include?('bootstrap.k3s-on-omv.dev/snapshot-profile: native-r2-v1'),
+      'Pinned OpenBao values must identify native snapshot Job provenance')
 %w[dataStorage auditStorage].each do |storage|
   check(openbao_values.dig('server', storage, 'storageClass') == 'longhorn' &&
         openbao_values.dig('server', storage, 'size') == '1Gi',
