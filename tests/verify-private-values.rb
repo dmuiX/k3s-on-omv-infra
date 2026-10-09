@@ -2,7 +2,10 @@
 # Optional offline integration check. Requires the private values checkout + Helm.
 # Never prints rendered Secret data or private identifiers.
 require 'yaml'
+require 'base64'
+require 'fileutils'
 require 'open3'
+require 'tmpdir'
 require 'uri'
 
 ROOT = File.expand_path('..', __dir__)
@@ -21,13 +24,35 @@ def wave(app)
   Integer(app.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') || 0)
 end
 
-def render(component)
-  output, status = Open3.capture2('helm', 'template', "check-#{component}", CHART,
+def render_chart(component, chart)
+  output, status = Open3.capture2('helm', 'template', "check-#{component}", chart,
                                   '--set', "component=#{component}", '--values', VALUES, err: File::NULL)
   check(status.success?, "Failed to render #{component} with private values; diagnostics suppressed")
   YAML.load_stream(output).compact
 rescue Errno::ENOENT
   abort 'Helm is required: ruby tests/verify-private-values.rb'
+end
+
+def render(component, revision = nil)
+  return render_chart(component, CHART) unless revision
+
+  Dir.mktmpdir('cluster-config-pin-') do |directory|
+    paths, error, status = Open3.capture3(
+      'git', '-C', ROOT, 'ls-tree', '-r', '--name-only', revision, '--', 'charts/cluster-config'
+    )
+    check(status.success? && error.empty? && !paths.empty?,
+          "Pinned cluster-config chart #{revision} is unavailable")
+    paths.lines(chomp: true).each do |path|
+      contents, show_error, show_status = Open3.capture3(
+        'git', '-C', ROOT, 'show', "#{revision}:#{path}"
+      )
+      check(show_status.success? && show_error.empty?, "Pinned chart file #{path} is unavailable")
+      destination = File.join(directory, path)
+      FileUtils.mkdir_p(File.dirname(destination))
+      File.binwrite(destination, contents)
+    end
+    render_chart(component, File.join(directory, 'charts/cluster-config'))
+  end
 end
 
 root = YAML.load_file(File.join(ROOT, 'infra.yml'))
@@ -75,7 +100,7 @@ rendered = {}
         values_source['repoURL'] == 'https://github.com/dmuiX/k3s-on-omv-live.git' &&
         values_source['ref'] == 'values' && !values_source.key?('path'),
         "#{name} must render the public chart with private Git values")
-  docs = render(component)
+  docs = render(component, chart_source['targetRevision'])
   check(!docs.empty?, "No rendered resource for #{component}")
   docs.each do |doc|
     key = [doc['apiVersion'], doc['kind'], doc.dig('metadata', 'namespace'), doc.dig('metadata', 'name')]
@@ -117,6 +142,8 @@ check(api_egress && expected_api_cidrs&.length == 3 &&
 certificate = rendered.fetch(['cert-manager.io/v1', 'Certificate', 'kube-system', 'wildcard-tls'])
 issuer = rendered.fetch(['cert-manager.io/v1', 'ClusterIssuer', nil, 'cluster-issuer-prod'])
 schedule = rendered.fetch(['k8up.io/v1', 'Schedule', 'openbao', 'openbao-k8up-schedule'])
+repo_password = rendered.fetch(['v1', 'Secret', 'openbao', 'k8up-repo-password'])
+r2_credentials = rendered.fetch(['v1', 'Secret', 'openbao', 'r2-credentials'])
 wildcard_name = private_values.dig('certificate', 'dnsName')
 wildcard_suffix = wildcard_name.to_s.delete_prefix('*')
 route_hosts = private_values.fetch('routes').values.map { |route| route.fetch('hostname') }
@@ -131,6 +158,13 @@ check(certificate.dig('spec', 'dnsNames') == [wildcard_name] &&
 check(schedule.dig('spec', 'backend', 's3', 'endpoint') == private_values.dig('backup', 'endpoint') &&
       schedule.dig('spec', 'backend', 's3', 'bucket') == private_values.dig('backup', 'bucket'),
       'Private backup values not rendered')
+check(Base64.strict_decode64(repo_password.dig('data', 'password')) ==
+        'vault:kv/data/k8up/repository-password#password' &&
+      Base64.strict_decode64(r2_credentials.dig('data', 'access-key-id')) ==
+        'vault:kv/data/k8up/r2-credentials#access-key-id' &&
+      Base64.strict_decode64(r2_credentials.dig('data', 'secret-access-key')) ==
+        'vault:kv/data/k8up/r2-credentials#secret-access-key',
+      'Pinned backup chart must consume only canonical K8up credential paths')
 postgresql = render('postgresql')
 postgresql_cluster = postgresql.find do |resource|
   resource['kind'] == 'PostgresCluster' && resource.dig('metadata', 'name') == 'platform-postgres'

@@ -8,6 +8,7 @@ require 'tmpdir'
 
 ROOT = File.expand_path('..', __dir__)
 INFRA_REVISION = '0f3a9a03d3747798093d6de84fe9bedf0176b9a9'
+BACKUP_CHART_REVISION = '25e8fb5ccfd62a6c55ea90a2ebc51f164e7240f2'
 LIVE_REVISION = 'ce6ad756dd48ef28145f836e6825a65fcafe548f'
 POSTGRES_REVISION = '6ca730a268c1a857893672013f4425222dbd9f4c'
 OPENBAO_REVISION = '712c40098802fc761bec45ed3704defc977ba595'
@@ -166,7 +167,7 @@ check(git_sources.select { |candidate| candidate['repoURL'].end_with?('k3s-on-om
       end, 'Every Infra child pin must resolve to a local reviewed commit object')
 check(git_sources.all? do |candidate|
   allowed = if candidate['repoURL'].end_with?('k3s-on-omv-infra.git')
-              [INFRA_REVISION, POSTGRES_REVISION, OPENBAO_REVISION,
+              [INFRA_REVISION, BACKUP_CHART_REVISION, POSTGRES_REVISION, OPENBAO_REVISION,
                pki_app.dig('spec', 'source', 'targetRevision'),
                cert_manager_network_source['targetRevision'], LONGHORN_REVISION]
             else
@@ -264,6 +265,7 @@ check(postgres_sources.count { |entry| entry['chart'] } == 1 &&
   check(wave(app) == stage && chart['path'] == 'charts/cluster-config' &&
         chart.dig('helm', 'parameters', 0) == { 'name' => 'component', 'value' => component } &&
         chart.dig('helm', 'valueFiles') == ['$values/clusters/omv/values.yml'] &&
+        (name != 'openbao-config' || chart['targetRevision'] == BACKUP_CHART_REVISION) &&
         private_values['repoURL'] == 'https://github.com/dmuiX/k3s-on-omv-live.git' &&
         private_values['ref'] == 'values', "Wrong private Helm values wiring for #{name}")
 end
