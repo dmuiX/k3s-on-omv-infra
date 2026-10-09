@@ -9,7 +9,7 @@ ROOT = File.expand_path('..', __dir__)
 INFRA_REVISION = '0f3a9a03d3747798093d6de84fe9bedf0176b9a9'
 BACKUP_CHART_REVISION = '25e8fb5ccfd62a6c55ea90a2ebc51f164e7240f2'
 LIVE_REVISION = 'ce6ad756dd48ef28145f836e6825a65fcafe548f'
-POSTGRES_REVISION = '6ca730a268c1a857893672013f4425222dbd9f4c'
+POSTGRES_REVISION = '96ae74b53976199217399914e3ee09cdb9e3f27e'
 OPENBAO_REVISION = '05a77589dc40749e198c74cd41508abcdc782781'
 PLATFORM_REVISION = 'c1e894afae1b84710dec8b2bfff698bff35c06e0'
 LONGHORN_REVISION = PLATFORM_REVISION
@@ -82,6 +82,12 @@ end
 check(postgres_infra_sources.length == 2 &&
       postgres_infra_sources.all? { |candidate| candidate['targetRevision'] == POSTGRES_REVISION },
       'All same-repository PostgreSQL sources must share the reviewed implementation commit')
+%w[06-data/postgresql/cluster/cluster.yaml 06-data/postgresql/values-cloudnativepg.yml
+   06-data/postgresql/values-barman.yml charts/cluster-config/templates/postgresql.yaml].each do |path|
+  check(system('git', '-C', ROOT, 'cat-file', '-e', "#{POSTGRES_REVISION}:#{path}",
+               out: File::NULL, err: File::NULL),
+        "PostgreSQL implementation commit does not contain #{path}")
+end
 # Public Applications own all resources; only their real value overrides are private.
 app_files.group_by { |path| File.dirname(path) }.each do |dir, paths|
   relative = Pathname.new(dir).relative_path_from(Pathname.new(ROOT)).each_filename.to_a
