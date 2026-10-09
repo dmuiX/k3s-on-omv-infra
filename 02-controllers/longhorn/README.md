@@ -14,9 +14,10 @@ the wildcard certificate is ready.
 - `storageclass-configmap.yaml`: reviewed final Argo source overriding the chart's
   `longhorn-storageclass` ConfigMap; the normal `longhorn` class encrypts new
   volumes by default. No passphrase or Kubernetes Secret is committed here.
-- `monitoring-storage.yaml`: encrypted two-replica Prometheus class plus the
-  `monitoring-storage` Longhorn node tag on OMV and Wyse. Its partial Node
-  resources use client-side apply so controller-owned disk fields remain intact.
+- `monitoring-storage.yaml`: encrypted two-replica Prometheus class plus fully
+  declared Longhorn Node resources for OMV and Wyse. Each node has the
+  `monitoring-storage` tag and a schedulable `/var/lib/longhorn` filesystem disk,
+  including when Argo creates the Node resource before Longhorn does.
 - The public route template selects `longhorn-frontend:80` through the K3s
   Gateway; only the real hostname value comes from private Git.
 
@@ -90,8 +91,10 @@ OpenBao cluster merely to change the underlying storage encryption.
 - StorageClass `longhorn` is **not default**. Existing K3s `local-path` remains the
   default; consumers opt into Longhorn with `storageClassName: longhorn`.
 - StorageClass `longhorn-monitoring` is also non-default. It uses two replicas
-  selected onto the Git-managed `monitoring-storage` Longhorn tags on OMV and
-  Wyse, excluding the Pi from Prometheus metrics storage.
+  selected onto the Git-managed `monitoring-storage` Longhorn Nodes on OMV and
+  Wyse. Their schedulable `/var/lib/longhorn` disks are declared in Git so fresh
+  installs cannot create tagged nodes with empty disk maps. The Pi remains
+  excluded from Prometheus metrics storage.
 - UI Service: **ClusterIP**, because the shared Gateway provides LAN/VPN access.
 - Pod Security `privileged` labels target the Longhorn namespace through Argo's
   `managedNamespaceMetadata` and `CreateNamespace=true`, not Application `spec.labels`.
@@ -106,8 +109,9 @@ Raft pod to three creates four additional PVCs (data and audit for each new pod)
 neither pod placement nor Raft quorum is proven just by changing a value. Verify
 disk capacity, resource budgets, CSI availability and Raft membership during rollout.
 The current `createDefaultDiskLabeledNodes: "false"` permits default disk
-creation on joining nodes; do not assume Pi/Wyse storage will remain excluded
-without changing that policy.
+creation on joining nodes. OMV and Wyse have explicit Git-managed disks for
+monitoring placement; do not assume storage on other joining nodes will remain
+excluded without changing that policy.
 
 ## Mandatory checks before deployment
 
