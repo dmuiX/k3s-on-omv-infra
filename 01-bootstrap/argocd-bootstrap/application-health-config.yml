@@ -97,8 +97,10 @@ data:
       end
     end
     if diskCount == 0 then return hs end
-    local nodeReady = obj.status.conditions ~= nil and obj.status.conditions.Ready ~= nil and
-      obj.status.conditions.Ready.status == "True"
+    local nodeReady = false
+    for _, condition in ipairs(obj.status.conditions or {}) do
+      if condition.type == "Ready" and condition.status == "True" then nodeReady = true end
+    end
     if not nodeReady then
       hs.message = "Waiting for Longhorn node readiness"
       return hs

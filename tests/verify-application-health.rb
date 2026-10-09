@@ -119,7 +119,7 @@ healthy_longhorn_node = {
     'disks' => {'default-disk-id' => {'allowScheduling' => true}}
   },
   'status' => {
-    'conditions' => {'Ready' => {'status' => 'True'}},
+    'conditions' => [{'type' => 'Ready', 'status' => 'True'}],
     'diskStatus' => {
       'default-disk-id' => {
         'diskUUID' => 'present',
@@ -140,7 +140,7 @@ longhorn_fixtures = [
   [healthy_longhorn_node.merge('spec' => healthy_longhorn_node['spec'].merge('disks' => {})), 'Progressing'],
   [healthy_longhorn_node.merge('status' => healthy_longhorn_node['status'].merge('diskStatus' => {})), 'Progressing'],
   [healthy_longhorn_node.merge('status' => healthy_longhorn_node['status'].merge(
-    'conditions' => {'Ready' => {'status' => 'False'}})), 'Progressing']
+    'conditions' => [{'type' => 'Ready', 'status' => 'False'}])), 'Progressing']
 ]
 longhorn_script = config.fetch('data').fetch(longhorn_key)
 longhorn_fixtures.each do |input, expected|
