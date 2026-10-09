@@ -49,6 +49,9 @@ spec:
       - CreateNamespace=true
       - ServerSideApply=true
       - RespectIgnoreDifferences=true
+      # A fresh sync creates Longhorn Node CRs; retry only remaining drift after
+      # the manager adopts them, because its webhook refuses redundant patches.
+      - ApplyOutOfSyncOnly=true
   ignoreDifferences:
     - group: apiextensions.k8s.io
       kind: CustomResourceDefinition
