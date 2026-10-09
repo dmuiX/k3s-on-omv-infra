@@ -4,6 +4,7 @@ require 'yaml'
 require 'json'
 require 'pathname'
 require 'open3'
+require 'tmpdir'
 
 ROOT = File.expand_path('..', __dir__)
 INFRA_REVISION = '0f3a9a03d3747798093d6de84fe9bedf0176b9a9'
@@ -374,6 +375,7 @@ wait_container = wait_pod.dig('containers', 0)
 kubeconfig = wait_config.dig('data', 'kubeconfig')
 api_projection = wait_pod.fetch('volumes').find { |volume| volume['name'] == 'kube-api-access' }
 projected_sources = api_projection.dig('projected', 'sources')
+wait_script = wait_container.fetch('args', []).first
 check(wait_job.dig('metadata', 'annotations', 'argocd.argoproj.io/hook') == 'Sync' &&
       wait_job.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '1' &&
       wait_job.dig('spec', 'backoffLimit') == 0 &&
@@ -386,10 +388,31 @@ check(wait_job.dig('metadata', 'annotations', 'argocd.argoproj.io/hook') == 'Syn
       kubeconfig.include?('tokenFile: /run/kube-api/token') &&
       projected_sources.any? { |source| source.dig('serviceAccountToken', 'path') == 'token' } &&
       projected_sources.any? { |source| source.dig('configMap', 'name') == 'kube-root-ca.crt' } &&
-      wait_container.fetch('args', []).first.include?('--kubeconfig=/run/kube-api/kubeconfig') &&
+      wait_script.include?('--kubeconfig=/run/kube-api/kubeconfig') &&
       wait_role.dig('rules', 0) == {'apiGroups' => ['longhorn.io'], 'resources' => ['nodes'], 'verbs' => ['get']} &&
-      wait_container.dig('args', 0).include?('omv wyse5070'),
-      'A bounded authenticated least-privilege wave-1 hook must wait for manager-owned OMV/Wyse disks')
+      wait_script.include?('omv wyse5070') &&
+      wait_script.include?("--output=go-template='{{len .spec.disks}}'") &&
+      !wait_script.include?('.spec.disks[*]'),
+      'A bounded authenticated least-privilege wave-1 hook must count manager-owned OMV/Wyse disk maps')
+Dir.mktmpdir('longhorn-manager-wait-') do |directory|
+  fake_k3s = File.join(directory, 'k3s')
+  File.write(fake_k3s, <<~'SH')
+    #!/bin/sh
+    case "$*" in
+      *'--output=go-template={{len .spec.disks}}'*) printf '1' ;;
+      *) exit 42 ;;
+    esac
+  SH
+  File.chmod(0o700, fake_k3s)
+  bounded_script = wait_script
+    .sub('while [ "$attempts" -lt 120 ]', 'while [ "$attempts" -lt 1 ]')
+    .gsub('sleep 5', 'sleep 0')
+  _stdout, stderr, status = Open3.capture3(
+    {'PATH' => "#{directory}:#{ENV.fetch('PATH', '/usr/bin:/bin')}"},
+    '/bin/sh', '-ec', bounded_script
+  )
+  check(status.success?, "Longhorn disk-map wait hook rejected non-empty map counts: #{stderr}")
+end
 monitoring_class = monitoring_storage.find { |resource| resource['kind'] == 'StorageClass' }
 check(monitoring_class.dig('metadata', 'name') == 'longhorn-monitoring' &&
       monitoring_class.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '3' &&

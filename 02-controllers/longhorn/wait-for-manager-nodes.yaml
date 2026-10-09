@@ -111,17 +111,26 @@ spec:
               while [ "$attempts" -lt 120 ]; do
                 complete=true
                 for node in omv wyse5070; do
-                  disk_paths="$(
+                  if ! disk_count="$(
                     k3s kubectl --kubeconfig=/run/kube-api/kubeconfig \
                       --request-timeout=10s --cache-dir=/tmp --namespace longhorn \
                       get nodes.longhorn.io "$node" \
-                      --output=jsonpath='{range .spec.disks[*]}{.path}{"\n"}{end}' \
-                      2>/dev/null || true
-                  )"
-                  if [ -z "$disk_paths" ]; then
+                      --output=go-template='{{len .spec.disks}}'
+                  )"; then
+                    echo "Longhorn node $node is not readable yet." >&2
                     complete=false
                     break
                   fi
+                  case "$disk_count" in
+                    ''|*[!0-9]*)
+                      echo "Longhorn node $node returned an invalid disk count." >&2
+                      exit 1
+                      ;;
+                    0)
+                      complete=false
+                      break
+                      ;;
+                  esac
                 done
                 if [ "$complete" = true ]; then
                   exit 0
