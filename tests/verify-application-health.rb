@@ -110,4 +110,44 @@ platform_fixtures.each do |input, expected|
   raise "Lua platform health test failed for #{postgres_key}: #{stderr}" unless status.success?
   raise "Expected #{expected}, got #{stdout} for #{postgres_key}" unless stdout == expected
 end
-puts "PASS: Argo health Lua (#{fixtures.length} Application + #{platform_fixtures.length} PostgresCluster cases)"
+
+longhorn_key = 'resource.customizations.health.longhorn.io_Node'
+healthy_longhorn_node = {
+  'metadata' => {'name' => 'omv'},
+  'spec' => {
+    'name' => 'omv', 'allowScheduling' => true, 'tags' => ['monitoring-storage'],
+    'disks' => {'default-disk-id' => {'allowScheduling' => true}}
+  },
+  'status' => {
+    'conditions' => {'Ready' => {'status' => 'True'}},
+    'diskStatus' => {
+      'default-disk-id' => {
+        'diskUUID' => 'present',
+        'conditions' => [
+          {'type' => 'Ready', 'status' => 'True'},
+          {'type' => 'Schedulable', 'status' => 'True'}
+        ]
+      }
+    }
+  }
+}
+longhorn_fixtures = [
+  [{}, 'Progressing'],
+  [healthy_longhorn_node, 'Healthy'],
+  [healthy_longhorn_node.merge('spec' => healthy_longhorn_node['spec'].merge('name' => 'wrong')), 'Degraded'],
+  [healthy_longhorn_node.merge('spec' => healthy_longhorn_node['spec'].merge('allowScheduling' => false)), 'Degraded'],
+  [healthy_longhorn_node.merge('spec' => healthy_longhorn_node['spec'].merge('tags' => [])), 'Degraded'],
+  [healthy_longhorn_node.merge('spec' => healthy_longhorn_node['spec'].merge('disks' => {})), 'Progressing'],
+  [healthy_longhorn_node.merge('status' => healthy_longhorn_node['status'].merge('diskStatus' => {})), 'Progressing'],
+  [healthy_longhorn_node.merge('status' => healthy_longhorn_node['status'].merge(
+    'conditions' => {'Ready' => {'status' => 'False'}})), 'Progressing']
+]
+longhorn_script = config.fetch('data').fetch(longhorn_key)
+longhorn_fixtures.each do |input, expected|
+  program = "local function evaluate(obj)\n#{longhorn_script}\nend\n" \
+            "local result = evaluate(#{lua_literal_with_scalars(input)})\nio.write(result.status)\n"
+  stdout, stderr, status = Open3.capture3(*lua_command, '-e', program)
+  raise "Lua platform health test failed for #{longhorn_key}: #{stderr}" unless status.success?
+  raise "Expected #{expected}, got #{stdout} for #{longhorn_key}" unless stdout == expected
+end
+puts "PASS: Argo health Lua (#{fixtures.length} Application + #{platform_fixtures.length} PostgresCluster + #{longhorn_fixtures.length} Longhorn Node cases)"

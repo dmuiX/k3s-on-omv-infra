@@ -6,18 +6,12 @@ metadata:
   name: omv
   namespace: longhorn
   annotations:
-    # These nodes can be created by Argo before Longhorn's node controller.
-    # Declare the schedulable disk explicitly so fresh installs do not leave
-    # the selected monitoring nodes without usable storage.
+    # Wait for the wave-0 manager to create the full Node and default disk, then
+    # adopt only the required identity and monitoring tag client-side.
+    argocd.argoproj.io/sync-wave: "1"
     argocd.argoproj.io/sync-options: ServerSideApply=false
 spec:
   name: omv
-  allowScheduling: true
-  disks:
-    default-disk:
-      path: /var/lib/longhorn
-      allowScheduling: true
-      diskType: filesystem
   tags:
     - monitoring-storage
 ---
@@ -27,15 +21,10 @@ metadata:
   name: wyse5070
   namespace: longhorn
   annotations:
+    argocd.argoproj.io/sync-wave: "1"
     argocd.argoproj.io/sync-options: ServerSideApply=false
 spec:
   name: wyse5070
-  allowScheduling: true
-  disks:
-    default-disk:
-      path: /var/lib/longhorn
-      allowScheduling: true
-      diskType: filesystem
   tags:
     - monitoring-storage
 ---
@@ -45,7 +34,7 @@ metadata:
   name: longhorn-monitoring
   annotations:
     storageclass.kubernetes.io/is-default-class: "false"
-    argocd.argoproj.io/sync-wave: "1"
+    argocd.argoproj.io/sync-wave: "2"
 provisioner: driver.longhorn.io
 allowVolumeExpansion: true
 reclaimPolicy: Retain

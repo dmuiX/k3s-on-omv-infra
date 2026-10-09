@@ -50,6 +50,62 @@ data:
       hs.message = "Waiting for child Application health"
     end
     return hs
+  resource.customizations.health.longhorn.io_Node: |
+    local hs = {status = "Progressing", message = "Waiting for a schedulable Longhorn node disk"}
+    if obj.metadata == nil or obj.spec == nil or obj.status == nil then return hs end
+    if obj.spec.name ~= obj.metadata.name then
+      hs.status = "Degraded"
+      hs.message = "Longhorn node identity does not match metadata.name"
+      return hs
+    end
+    if obj.spec.allowScheduling ~= true then
+      hs.status = "Degraded"
+      hs.message = "Longhorn node scheduling is disabled"
+      return hs
+    end
+    local tagged = false
+    for _, tag in ipairs(obj.spec.tags or {}) do
+      if tag == "monitoring-storage" then tagged = true end
+    end
+    if not tagged then
+      hs.status = "Degraded"
+      hs.message = "Longhorn monitoring-storage tag is missing"
+      return hs
+    end
+    local diskCount = 0
+    for diskName, disk in pairs(obj.spec.disks or {}) do
+      diskCount = diskCount + 1
+      if disk.allowScheduling ~= true then
+        hs.status = "Degraded"
+        hs.message = "Longhorn disk " .. diskName .. " is not schedulable"
+        return hs
+      end
+      local diskStatus = (obj.status.diskStatus or {})[diskName]
+      if diskStatus == nil or diskStatus.diskUUID == nil or diskStatus.diskUUID == "" then
+        hs.message = "Waiting for Longhorn disk " .. diskName .. " status"
+        return hs
+      end
+      local ready = false
+      local schedulable = false
+      for _, condition in ipairs(diskStatus.conditions or {}) do
+        if condition.type == "Ready" and condition.status == "True" then ready = true end
+        if condition.type == "Schedulable" and condition.status == "True" then schedulable = true end
+      end
+      if not ready or not schedulable then
+        hs.message = "Waiting for Longhorn disk " .. diskName .. " readiness"
+        return hs
+      end
+    end
+    if diskCount == 0 then return hs end
+    local nodeReady = obj.status.conditions ~= nil and obj.status.conditions.Ready ~= nil and
+      obj.status.conditions.Ready.status == "True"
+    if not nodeReady then
+      hs.message = "Waiting for Longhorn node readiness"
+      return hs
+    end
+    hs.status = "Healthy"
+    hs.message = "Longhorn monitoring node and disks are schedulable"
+    return hs
   resource.customizations.health.postgres-operator.crunchydata.com_PostgresCluster: |
     local hs = {status = "Progressing", message = "Waiting for Crunchy Postgres reconciliation"}
     if obj.status == nil or obj.metadata == nil then return hs end

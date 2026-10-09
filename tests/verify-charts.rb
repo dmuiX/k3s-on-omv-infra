@@ -305,8 +305,9 @@ Dir.mktmpdir('infra-helm-check-') do |dir|
         monitoring_nodes.all? do |r|
           r.dig('spec', 'name') == r.dig('metadata', 'name') &&
             r.dig('spec', 'tags') == ['monitoring-storage'] &&
-            !r.dig('metadata', 'annotations').key?('argocd.argoproj.io/sync-wave')
-        end, 'Prometheus storage Nodes need exact Longhorn identities and must precede the StorageClass')
+            r.dig('spec').keys.sort == %w[name tags] &&
+            r.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '1'
+        end, 'Prometheus storage Nodes must adopt manager-created disks in wave 1')
   settings_cm = find_resource(longhorn, 'ConfigMap', 'longhorn-default-setting')
   settings = YAML.safe_load(settings_cm.fetch('data').fetch('default-setting.yaml'))
   check(JSON.parse(settings.fetch('default-replica-count')) == { 'v1' => '3', 'v2' => '3' },

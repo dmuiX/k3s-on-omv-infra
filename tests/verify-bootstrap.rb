@@ -356,20 +356,14 @@ monitoring_nodes = monitoring_storage.select { |resource| resource['kind'] == 'N
 check(monitoring_nodes.map { |resource| resource.dig('metadata', 'name') }.sort == %w[omv wyse5070] &&
       monitoring_nodes.all? do |resource|
         resource.dig('spec', 'name') == resource.dig('metadata', 'name') &&
-          resource.dig('spec', 'allowScheduling') == true &&
           resource.dig('spec', 'tags') == ['monitoring-storage'] &&
-          resource.dig('spec', 'disks') == {
-            'default-disk' => {
-              'path' => '/var/lib/longhorn',
-              'allowScheduling' => true,
-              'diskType' => 'filesystem'
-            }
-          } &&
-          !resource.dig('metadata', 'annotations').key?('argocd.argoproj.io/sync-wave')
+          resource.dig('spec').keys.sort == %w[name tags] &&
+          resource.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '1'
       end && monitoring_nodes.none? { |resource| resource.dig('metadata', 'name') == 'raspi4' },
-      'Prometheus storage Nodes need exact identities and schedulable disks on OMV and Wyse')
+      'Prometheus storage Nodes must adopt manager-created disks in wave 1')
 monitoring_class = monitoring_storage.find { |resource| resource['kind'] == 'StorageClass' }
 check(monitoring_class.dig('metadata', 'name') == 'longhorn-monitoring' &&
+      monitoring_class.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '2' &&
       monitoring_class.dig('parameters', 'numberOfReplicas') == '2' &&
       monitoring_class.dig('parameters', 'nodeSelector') == 'monitoring-storage' &&
       monitoring_class.dig('parameters', 'encrypted') == 'true' &&
