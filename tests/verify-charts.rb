@@ -350,8 +350,10 @@ Dir.mktmpdir('infra-helm-check-') do |dir|
   snapshot_spec = pod_spec(snapshot)
   snapshot_container = snapshot_spec.fetch('containers').find { |candidate| candidate['name'] == 'bao-snapshot' }
   check(snapshot.dig('spec', 'schedule') == '17 2 * * *' &&
-        snapshot.dig('spec', 'concurrencyPolicy') == 'Forbid',
-        'OpenBao native snapshot must run daily without overlapping jobs')
+        snapshot.dig('spec', 'concurrencyPolicy') == 'Forbid' &&
+        snapshot.dig('spec', 'jobTemplate', 'metadata', 'annotations',
+                     'bootstrap.k3s-on-omv.dev/snapshot-profile') == 'native-r2-v1',
+        'OpenBao native snapshot must run daily with explicit immutable job provenance')
   check(snapshot_spec['serviceAccountName'] == 'openbao-snapshot' &&
         snapshot_container.fetch('image').include?('@sha256:') &&
         snapshot_container.dig('resources', 'requests', 'memory') == '64Mi' &&

@@ -87,6 +87,9 @@ snapshotAgent:
   serviceAccount:
     create: true
     name: openbao-snapshot
+  job:
+    annotations:
+      bootstrap.k3s-on-omv.dev/snapshot-profile: native-r2-v1
   image:
     repository: ghcr.io/openbao/openbao-snapshot-agent
     tag: "0.4.5@sha256:ef2c80770e30bba3fcf4d7911cb829607efcea7e7c1a917210c9fa1ba55a8249"
