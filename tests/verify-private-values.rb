@@ -59,16 +59,19 @@ root = YAML.load_file(File.join(ROOT, 'infra.yml'))
 public_url = root.dig('spec', 'source', 'repoURL')
 directory = root.dig('spec', 'source', 'directory')
 include_pattern = directory.fetch('include')
-check(!directory.key?('exclude'), 'Steady-state root must not carry mutable exclusion state')
+exclude_pattern = directory.fetch('exclude')
+check(exclude_pattern == '06-data/postgresql/app.yml',
+      'Root must carry only the fixed PostgreSQL activation exclusion')
 apps = Dir.glob(File.join(ROOT, '[0-9][0-9]-*', '*', '{*app.yml,application.yml}'), File::FNM_EXTGLOB).map do |path|
   relative = path.delete_prefix(ROOT + '/')
-  YAML.load_file(path) if File.fnmatch(include_pattern, relative, File::FNM_EXTGLOB)
+  YAML.load_file(path) if File.fnmatch(include_pattern, relative, File::FNM_EXTGLOB) &&
+                          !File.fnmatch(exclude_pattern, relative, File::FNM_EXTGLOB)
 end.compact.to_h { |app| [app.dig('metadata', 'name'), app] }
 expected_apps = %w[argocd-config argocd-route grafana-route kube-prometheus-stack monitoring-crds
                    cert-manager cert-manager-config k8up longhorn longhorn-route openbao openbao-config
-                   openbao-pki openbao-route postgresql vault-secrets-webhook]
+                   openbao-pki openbao-route vault-secrets-webhook]
 check(apps.keys.sort == expected_apps.sort && apps.values.map { |app| wave(app) }.uniq.sort == [1, 2, 3, 4, 5, 6],
-      'Public root must own the complete steady-state inventory')
+      'Public root must own the steady-state inventory except separately activated PostgreSQL')
 check(File.file?(VALUES), 'Private values file missing')
 private_values = YAML.load_file(VALUES)
 expected_gateway = {
@@ -164,31 +167,22 @@ check(Base64.strict_decode64(repo_password.dig('data', 'password')) ==
         'vault:kv/data/k8up/r2-credentials#secret-access-key',
       'Pinned backup chart must consume only canonical K8up credential paths')
 postgresql = render('postgresql')
-postgresql_cluster = postgresql.find do |resource|
-  resource['kind'] == 'PostgresCluster' && resource.dig('metadata', 'name') == 'platform-postgres'
+postgresql_store = postgresql.find { |r| r['kind'] == 'ObjectStore' && r.dig('metadata', 'name') == 'platform-postgres-backups' }
+postgresql_webhook_policy = postgresql.find do |r|
+  r['kind'] == 'NetworkPolicy' && r.dig('metadata', 'name') == 'allow-k3s-api-to-cloudnative-pg-webhook'
 end
-postgresql_secret = postgresql.find do |resource|
-  resource['kind'] == 'Secret' && resource.dig('metadata', 'name') == 'platform-postgres-pgbackrest'
+rendered_api_cidrs = postgresql_webhook_policy&.dig('spec', 'ingress', 0, 'from')&.map do |source|
+  source.dig('ipBlock', 'cidr')
 end
-repo = postgresql_cluster&.dig('spec', 'backups', 'pgbackrest', 'repos', 0, 's3')
-s3_config = postgresql_secret&.dig('stringData', 's3.conf').to_s
-expected_postgresql_region = private_values.dig('postgresqlBackup', 'region') ||
-  YAML.load_file(File.join(CHART, 'values.yaml')).dig('postgresqlBackup', 'region')
-postgresql_api_policies = postgresql.select do |resource|
-  resource['kind'] == 'NetworkPolicy' && resource.dig('metadata', 'name').end_with?('kubernetes-api')
-end
-check(postgresql_api_policies.length == 2 && postgresql_api_policies.all? do |policy|
-        policy.dig('spec', 'egress', 0, 'ports') == [{'protocol' => 'TCP', 'port' => 6443}] &&
-          policy.dig('spec', 'egress', 0, 'to').map { |peer| peer.dig('ipBlock', 'cidr') }.sort ==
-            expected_api_cidrs.sort
-      end, 'PostgreSQL API egress must use only the three private /32 endpoints')
-check(postgresql_cluster && postgresql_secret &&
-      repo['endpoint'] == private_values.dig('postgresqlBackup', 'endpoint').sub(%r{\Ahttps://}, '').sub(%r{/\z}, '') &&
-      repo['bucket'] == private_values.dig('postgresqlBackup', 'bucket') &&
-      repo['region'] == expected_postgresql_region &&
-      s3_config.include?('vault:kv/data/postgresql/r2-credentials#access-key-id') &&
-      s3_config.include?('vault:kv/data/postgresql/r2-credentials#secret-access-key'),
-      'Private PostgreSQL pgBackRest identifiers or OpenBao references did not render')
+check(postgresql_store &&
+      postgresql_store.dig('spec', 'configuration', 'endpointURL') == private_values.dig('postgresqlBackup', 'endpoint') &&
+      postgresql_store.dig('spec', 'configuration', 'destinationPath') == "s3://#{private_values.dig('postgresqlBackup', 'bucket')}/" &&
+      postgresql.none? { |r| r['kind'] == 'Secret' } &&
+      postgresql_store.dig('spec', 'configuration', 's3Credentials', 'accessKeyId', 'name') == 'postgresql-r2-credentials' &&
+      postgresql_store.dig('spec', 'configuration', 's3Credentials', 'region', 'key') == 'AWS_REGION' &&
+      private_values.dig('postgresqlBackup', 'region').to_s.length.positive? &&
+      rendered_api_cidrs == private_values.dig('postgresqlNetwork', 'apiServerSourceCIDRs'),
+      'Private PostgreSQL backup identifiers, VSO Secret contract or API-server CIDRs did not render')
 check(render('restore').one? { |r| r['kind'] == 'Restore' } &&
       apps.values.none? { |app| app.dig('spec', 'sources', 0, 'helm', 'parameters', 0, 'value') == 'restore' },
       'Restore must be manual-only')

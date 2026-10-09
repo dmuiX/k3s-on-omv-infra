@@ -32,8 +32,13 @@ root = docs('infra.yml').first
 source = root.fetch('spec').fetch('source')
 directory = source.fetch('directory')
 include_pattern = directory.fetch('include')
-check(!directory.key?('exclude'), 'Steady-state root must not carry mutable exclusion state')
-root_selects = ->(path) { File.fnmatch(include_pattern, path, File::FNM_EXTGLOB) }
+exclude_pattern = directory.fetch('exclude')
+check(exclude_pattern == '06-data/postgresql/app.yml',
+      'Root must carry only the fixed PostgreSQL activation exclusion')
+root_selects = lambda do |path|
+  File.fnmatch(include_pattern, path, File::FNM_EXTGLOB) &&
+    !File.fnmatch(exclude_pattern, path, File::FNM_EXTGLOB)
+end
 app_files = Dir.glob(File.join(ROOT, '*', '*', '{*app.yml,application.yml}'), File::FNM_EXTGLOB).select do |path|
   root_selects.call(path.delete_prefix(ROOT + '/'))
 end
@@ -44,10 +49,14 @@ check(apps.size == applications.size, 'Duplicate Application names')
 
 pki_path = '05-platform/openbao-pki/application.yml'
 postgresql_path = '06-data/postgresql/app.yml'
-check(root_selects.call(pki_path) && root_selects.call(postgresql_path),
-      'Steady-state root must discover both OpenBao PKI and PostgreSQL')
+check(root_selects.call(pki_path) && !root_selects.call(postgresql_path),
+      'Root must discover OpenBao PKI while leaving PostgreSQL separately activated')
 pki_app = apps.fetch('openbao-pki')
-postgresql_app = apps.fetch('postgresql')
+postgresql_app = docs(postgresql_path).first
+activated_applications = applications + [postgresql_app]
+activated_apps = activated_applications.to_h { |app| [app.dig('metadata', 'name'), app] }
+check(activated_apps.size == activated_applications.size,
+      'Separate PostgreSQL activation must not introduce a duplicate Application name')
 check(pki_app.dig('spec', 'source') == {
         'repoURL' => source['repoURL'], 'targetRevision' => PLATFORM_REVISION,
         'path' => '05-platform/openbao-pki/workload'
@@ -67,6 +76,12 @@ check(postgresql_app.fetch('spec').fetch('sources').all? do |candidate|
         !candidate['repoURL']&.start_with?('https://github.com/dmuiX/') ||
           candidate['targetRevision'].to_s.match?(/\A[0-9a-f]{40}\z/)
       end, 'PostgreSQL Git sources must remain immutably pinned')
+postgres_infra_sources = postgresql_app.fetch('spec').fetch('sources').select do |candidate|
+  candidate['repoURL'] == source['repoURL']
+end
+check(postgres_infra_sources.length == 2 &&
+      postgres_infra_sources.all? { |candidate| candidate['targetRevision'] == POSTGRES_REVISION },
+      'All same-repository PostgreSQL sources must share the reviewed implementation commit')
 # Public Applications own all resources; only their real value overrides are private.
 app_files.group_by { |path| File.dirname(path) }.each do |dir, paths|
   relative = Pathname.new(dir).relative_path_from(Pathname.new(ROOT)).each_filename.to_a
@@ -200,9 +215,11 @@ check(wave(apps.fetch('openbao')) < wave(apps.fetch('vault-secrets-webhook')), '
 check(wave(apps.fetch('argocd-config')) == 1, 'Existing Argo CD server configuration must be wave 1')
 expected_apps = %w[argocd-config argocd-route grafana-route kube-prometheus-stack monitoring-crds cert-manager
                    cert-manager-config k8up longhorn longhorn-route openbao openbao-config openbao-pki
-                   openbao-route postgresql vault-secrets-webhook]
+                   openbao-route vault-secrets-webhook]
 check(apps.keys.sort == expected_apps.sort,
-      'Public root must own the complete steady-state Application inventory')
+      'Public root must own the steady-state inventory except separately activated PostgreSQL')
+check(activated_apps.keys.sort == (expected_apps + ['postgresql']).sort,
+      'Separate activation must add only the PostgreSQL Application')
 expected_by_wave = {
   1 => %w[argocd-config monitoring-crds],
   2 => %w[cert-manager k8up longhorn],
@@ -211,7 +228,7 @@ expected_by_wave = {
   5 => %w[argocd-route cert-manager-config grafana-route longhorn-route openbao-pki openbao-route],
   6 => %w[openbao-config postgresql]
 }
-actual_by_wave = applications.group_by { |app| wave(app) }.transform_values do |items|
+actual_by_wave = activated_applications.group_by { |app| wave(app) }.transform_values do |items|
   items.map { |app| app.dig('metadata', 'name') }.sort
 end
 check(actual_by_wave == expected_by_wave.transform_values(&:sort),
@@ -219,11 +236,12 @@ check(actual_by_wave == expected_by_wave.transform_values(&:sort),
 check(wave(apps.fetch('cert-manager')) < wave(apps.fetch('openbao-pki')) &&
       wave(apps.fetch('openbao')) < wave(apps.fetch('openbao-pki')),
       'OpenBao PKI must follow cert-manager and OpenBao')
-check(wave(apps.fetch('openbao-pki')) < wave(apps.fetch('postgresql')),
+check(wave(apps.fetch('openbao-pki')) < wave(postgresql_app),
       'PostgreSQL must follow the OpenBao PKI phase')
-postgres_sources = apps.fetch('postgresql').dig('spec', 'sources')
-check(postgres_sources.count { |entry| entry['chart'] } == 1 &&
-      postgres_sources.any? { |entry| entry['chart'] == 'pgo' && entry['targetRevision'] == '6.0.3' } &&
+postgres_sources = postgresql_app.dig('spec', 'sources')
+check(postgres_sources.count { |entry| entry['chart'] } == 2 &&
+      postgres_sources.any? { |entry| entry['chart'] == 'cloudnative-pg' && entry['targetRevision'] == '0.29.1' } &&
+      postgres_sources.any? { |entry| entry['chart'] == 'plugin-barman-cloud' && entry['targetRevision'] == '0.8.1' } &&
       postgres_sources.any? { |entry| entry['path'] == '06-data/postgresql' && entry['ref'] == 'infra' } &&
       postgres_sources.any? { |entry| entry['path'] == 'charts/cluster-config' } &&
       postgres_sources.any? { |entry| entry['ref'] == 'private' },

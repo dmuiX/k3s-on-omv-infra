@@ -26,11 +26,14 @@ check(cert_manager_values['clusterResourceNamespace'] == 'cert-manager',
 
 root = YAML.load_file(File.join(ROOT, 'infra.yml'))
 directory = root.dig('spec', 'source', 'directory')
-check(!directory.key?('exclude'), 'Root must not carry mutable exclusion state')
-check(File.fnmatch(directory.fetch('include'), application_path, File::FNM_EXTGLOB),
+check(directory.fetch('exclude') == '06-data/postgresql/app.yml',
+      'Root must carry only the fixed PostgreSQL activation exclusion')
+check(File.fnmatch(directory.fetch('include'), application_path, File::FNM_EXTGLOB) &&
+      !File.fnmatch(directory.fetch('exclude'), application_path, File::FNM_EXTGLOB),
       'Root must discover OpenBao PKI in steady state')
-check(File.fnmatch(directory.fetch('include'), '06-data/postgresql/app.yml', File::FNM_EXTGLOB),
-      'Root must discover PostgreSQL in steady state')
+check(File.fnmatch(directory.fetch('include'), '06-data/postgresql/app.yml', File::FNM_EXTGLOB) &&
+      File.fnmatch(directory.fetch('exclude'), '06-data/postgresql/app.yml', File::FNM_EXTGLOB),
+      'Root must leave PostgreSQL separately activated')
 
 output, stderr, result = Open3.capture3('kubectl', 'kustomize', File.join(ROOT, '05-platform/openbao-pki/workload'))
 raise "Kustomize failed: #{stderr}" unless result.success?

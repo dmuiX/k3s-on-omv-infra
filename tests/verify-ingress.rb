@@ -25,15 +25,20 @@ root = YAML.load_file(File.join(ROOT, 'infra.yml'))
 source = root.fetch('spec').fetch('source')
 check(source.fetch('path') == '.' && source.dig('directory', 'recurse'), 'Public root must discover reusable Applications')
 include_pattern = source.dig('directory', 'include')
-check(!source.fetch('directory').key?('exclude'), 'Public root must not use mutable exclusion state')
-root_selects = ->(path) { File.fnmatch(include_pattern, path, File::FNM_EXTGLOB) }
+exclude_pattern = source.fetch('directory').fetch('exclude')
+check(exclude_pattern == '06-data/postgresql/app.yml',
+      'Public root must use only the fixed PostgreSQL activation exclusion')
+root_selects = lambda do |path|
+  File.fnmatch(include_pattern, path, File::FNM_EXTGLOB) &&
+    !File.fnmatch(exclude_pattern, path, File::FNM_EXTGLOB)
+end
 %w[01-bootstrap/argocd-bootstrap/application-health-config.yml 01-bootstrap/monitoring-crds/app.yml
    02-controllers/longhorn/app.yml 03-core/kube-prometheus-stack/app.yml 03-core/openbao/app.yml].each do |path|
   check(root_selects.call(path), "Public root excludes #{path}")
 end
 check(root_selects.call('05-platform/openbao-pki/application.yml') &&
-      root_selects.call('06-data/postgresql/app.yml'),
-      'Steady-state root must select OpenBao PKI and PostgreSQL')
+      !root_selects.call('06-data/postgresql/app.yml'),
+      'Root must select OpenBao PKI and leave PostgreSQL separately activated')
 
 apps = documents.select { |doc| doc['kind'] == 'Application' }
 apps.each do |app|

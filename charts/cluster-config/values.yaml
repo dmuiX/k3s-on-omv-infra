@@ -42,12 +42,12 @@ backup:
   secretAccessKeyRef: vault:kv/data/k8up/r2-credentials#secret-access-key
   restoreOrdinal: 0 # Schema-validated nonnegative integer; selects data-openbao-<ordinal>.
 
-clusterNetwork:
-  kubernetesApiServerEndpointCIDRs: [] # Private values supply exactly three IPv4 /32 endpoints.
-
 postgresqlBackup:
   endpoint: https://example.invalid
   bucket: replace-me-postgresql
   region: auto
-  accessKeyIdRef: vault:kv/data/postgresql/r2-credentials#access-key-id
-  secretAccessKeyRef: vault:kv/data/postgresql/r2-credentials#secret-access-key
+
+postgresqlNetwork:
+  # Safe documentation-only address. Live values list each K3s server as /32.
+  apiServerSourceCIDRs:
+    - 192.0.2.1/32

@@ -38,7 +38,7 @@ External-DNS. It uses Argo CD (already installed) for these applications:
 └── openbao/                early UI routes, usable when wildcard TLS becomes ready
 06-data/
 ├── openbao-backups/        OpenBao backup schedule
-├── postgresql/             central Crunchy PGO HA platform
+├── postgresql/             separately activated CloudNativePG HA platform
 └── redis/                  dormant Redis operator preparation (`application.yml`)
 ```
 
@@ -59,11 +59,12 @@ shares wave 1 with other Applications: **seed and verify it separately before a
 first root sync**. Changing the existing Argo CD backend to HTTP also requires a
 controlled `argocd-server` restart; plan that before enabling its external route.
 
-`infra.yml` is the **one** Argo CD root for the complete steady-state
-Application inventory, including
-[`05-platform/openbao-pki/`](05-platform/openbao-pki/workload/README.md) and
-`06-data/postgresql`. It has no mutable exclusion list or separate activation
-state. Ansible must complete OpenBao initialization, seal/custody handling, PKI
+`infra.yml` is the **one** Argo CD root for the steady-state Application
+inventory, including
+[`05-platform/openbao-pki/`](05-platform/openbao-pki/workload/README.md).
+PostgreSQL remains a separately activated wave-6 GitOps Application through the
+fixed `06-data/postgresql/app.yml` root exclusion; there is no mutable Ansible
+rollout state. Ansible must complete OpenBao initialization, seal/custody handling, PKI
 ceremony, API configuration, and interactive secret entry before Argo applies
 the dependent Kubernetes resources. The PKI Application owns only cert-manager
 identities/RBAC, ClusterIssuers, and the internal Certificate. Upstream

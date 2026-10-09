@@ -1,0 +1,37 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: DatabaseRole
+metadata:
+  name: radar
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  cluster:
+    name: platform-postgres
+  name: radar
+  login: true
+  superuser: false
+  createdb: false
+  createrole: false
+  replication: false
+  inherit: true
+  # Budget: two future Radar replicas x five pool connections plus two
+  # migration/maintenance connections. The app-side pool must remain <=5/pod.
+  connectionLimit: 12
+  databaseRoleReclaimPolicy: retain
+  passwordSecret:
+    name: radar-db-credentials
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: radar
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  cluster:
+    name: platform-postgres
+  name: radar
+  owner: radar
+  allowConnections: true
+  connectionLimit: 12
+  databaseReclaimPolicy: retain

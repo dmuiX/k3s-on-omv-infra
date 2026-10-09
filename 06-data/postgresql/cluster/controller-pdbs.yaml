@@ -1,11 +1,25 @@
 apiVersion: policy/v1
 kind: PodDisruptionBudget
 metadata:
-  name: pgo
+  name: cloudnative-pg
   annotations:
     argocd.argoproj.io/sync-wave: "0"
 spec:
-  minAvailable: 2
+  minAvailable: 1
   selector:
     matchLabels:
-      postgres-operator.crunchydata.com/control-plane: pgo
+      app.kubernetes.io/name: cloudnative-pg
+      app.kubernetes.io/instance: cloudnative-pg
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: plugin-barman-cloud
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: plugin-barman-cloud
+      app.kubernetes.io/instance: plugin-barman-cloud

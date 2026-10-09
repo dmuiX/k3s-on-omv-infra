@@ -7,7 +7,7 @@ ruby tests/verify-bootstrap.rb   # multi-source Helm, waves, values, storage con
 ruby tests/verify-cert-manager-network-policy.rb # wave-2 ownership and exact private API egress
 ruby tests/verify-application-health.rb # minimal child Application health passthrough (Lua or pinned npx fallback)
 ruby tests/verify-openbao-pki.rb # native PKI identities/RBAC/issuers/certificate render
-ruby tests/verify-postgresql.rb # Crunchy PGO HA/storage/backup/policy and pinned chart renders
+ruby tests/verify-postgresql.rb # CNPG HA/storage/backup/policy and pinned chart renders
 ruby tests/verify-ingress.rb     # no live-specific resources selected by the public root
 ruby tests/verify-longhorn-encryption.rb # Helm override and complete key references
 ruby tests/verify-pi-placement.rb # explicit restricted-Pi tolerations; monitoring exclusion
@@ -38,9 +38,10 @@ Raft server pods with two PVC templates each, and three replicas for new Longhor
 volumes. They do not change existing volume replica counts or prove placement
 and recovery.
 
-The public root owns the complete steady-state child Application inventory,
-including OpenBao PKI and PostgreSQL, without an exclusion list. Tests assert
-that no custom in-cluster OpenBao polling reconciler remains and that the PKI
+The public root owns the steady-state child Application inventory, including
+OpenBao PKI. PostgreSQL remains separately activated through one fixed root
+exclusion rather than mutable Ansible rollout state. Tests assert that no custom
+in-cluster OpenBao polling reconciler remains and that the PKI
 Application renders only cert-manager identities/RBAC, ClusterIssuers, and the
 internal Certificate. OpenBao API configuration and ceremony belong to Ansible.
 Controller charts and public values remain here; route, certificate, backup,

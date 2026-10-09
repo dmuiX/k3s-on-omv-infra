@@ -1,97 +1,111 @@
 # Central PostgreSQL platform
 
-`Application/postgresql` is the single Wave-6 owner for Crunchy Postgres for
-Kubernetes (PGO) and `PostgresCluster/platform-postgres`. It is activated only
-by the guarded bootstrap data stage; the public root does not enable it.
+`Application/postgresql` is the single Wave-6 owner for CloudNativePG, the
+Barman Cloud plugin and the central `platform-postgres` cluster. The bootstrap
+root keeps this Application excluded permanently. After the mandatory PKI and
+secret prerequisites pass, activate the tracked Application separately without
+editing the root exclusion or recording mutable rollout state in Ansible.
 
-## Pinned stack
+## Activation ownership
 
-- PGO Helm chart `6.0.3` with three leader-elected controllers.
-- PostgreSQL `18.6` on the pinned Crunchy UBI 9 image.
-- pgBackRest on the pinned Crunchy UBI 9 image.
-- pgMonitor exporter on the pinned Crunchy UBI 9 image.
+An operator with Argo CD administration access owns the Application lifecycle.
+After fresh approval for the target cluster, activate or update it from a reviewed
+checkout with the declarative manifest:
 
-The controller and every related workload image are digest pinned. PGO's CRDs
-come from the pinned OCI chart.
-
-## Topology and availability
-
-The cluster has three PostgreSQL instances. Hard hostname anti-affinity and
-node affinity place one instance on each of `omv`, `wyse5070`, and `raspi4`.
-The Pi's `CriticalAddonsOnly=true:NoSchedule` taint is tolerated explicitly.
-
-Patroni uses one synchronous standby:
-
-```yaml
-synchronous_mode: true
-synchronous_mode_strict: false
-synchronous_node_count: 1
+```sh
+kubectl apply --server-side --field-manager=postgresql-activation \
+  -f 06-data/postgresql/app.yml
 ```
 
-Normal commits therefore wait for one standby. Non-strict mode deliberately
-allows the primary to continue when neither standby is available. This favors
-availability in severe degradation and can lose the latest transactions if the
-remaining primary then fails. Do not change this trade-off implicitly.
+The fixed root exclusion remains unchanged. Re-run the same command for reviewed
+Application-spec updates. Decommissioning requires a separate data-retention and
+cleanup plan; do not remove the Application as an activation toggle.
 
-PGDATA uses 5 GiB encrypted, strict-local, single-replica Longhorn volumes.
-PostgreSQL streaming replication supplies database HA; Longhorn does not copy
-these volumes. The `Retain` StorageClass preserves PVC data across accidental
-claim deletion. K8up excludes all generated PostgreSQL PVCs.
+## Fixed release and topology
 
-## Users and credentials
+- CloudNativePG chart `0.29.1`, operator `1.30.1`.
+- Barman Cloud plugin chart `0.8.1`, plugin `0.15.1`.
+- PostgreSQL `18.6` system image on Debian Bookworm.
+- Every runtime image is pinned to its multi-platform OCI index digest; the
+  indexes contain Linux `amd64` and `arm64` manifests.
+- Three instances, hard hostname anti-affinity and one `5Gi` encrypted
+  `longhorn-postgres` RWO claim per instance.
+- `longhorn-postgres` uses one strict-local Longhorn block replica. PostgreSQL
+  streaming replication, not Longhorn replication, supplies database HA.
+- Quorum synchronous replication is `ANY 1` with `dataDurability: preferred`.
+  The current primary may continue asynchronously when both standbys are lost;
+  the corresponding alert marks loss of the RPO-0 guarantee.
 
-PGO declaratively creates the `grafana` and `radar` roles and databases. It
-generates and owns their passwords and Kubernetes Secrets:
+The permitted hostnames are `omv`, `wyse5070` and `raspi4`. Strict locality binds
+the sole Longhorn replica to the scheduled database pod. Before productive data,
+verify that each host's effective Longhorn default disk is the intended SSD;
+local rendering cannot prove physical media or Longhorn placement.
 
-- `platform-postgres-pguser-grafana`
-- `platform-postgres-pguser-radar`
+## Credentials and access
 
-The Secrets contain PGO's standard connection fields, including `user`,
-`password`, `dbname`, `host`, `port`, and `uri`. They exist only in the
-`postgresql` namespace. A workload in another namespace must receive a
-least-privilege copied Secret as part of that workload's own reviewed GitOps
-release; Kubernetes cannot mount a Secret across namespaces. Neither an
-operator nor a human should read or transcribe the password.
+Secret values are never stored here. OpenBao KV remains their source of truth,
+and HashiCorp VSO must materialize ordinary namespace-local Kubernetes Secrets
+before this Application is activated:
 
-PGO manages its internal TLS certificates. All client rules reject plaintext
-first and use `scram-sha-256` over TLS. There is no public Gateway route.
+- `grafana-db-credentials` as `kubernetes.io/basic-auth`, with `username` and
+  `password`, for `DatabaseRole/grafana`;
+- `radar-db-credentials` as `kubernetes.io/basic-auth`, with `username` and
+  `password`, for `DatabaseRole/radar`;
+- `postgresql-r2-credentials` as `Opaque`, with `ACCESS_KEY_ID`,
+  `ACCESS_SECRET_KEY` and `AWS_REGION`, for
+  `ObjectStore/platform-postgres-backups`. Credentials come from OpenBao;
+  VSO renders the non-secret region from private Git into the destination
+  because the Barman API exposes it only through a Secret key selector.
 
-The old OpenBao entries for Grafana and Radar are not inputs to this cluster.
-Keep them until PGO and the consuming applications have been accepted; retire
-them separately afterward.
+The existing guarded Bootstrap role creates missing Grafana and Radar passwords
+once in OpenBao with KV-v2 `cas=0`; CNPG does not generate or rotate them. VSO
+owns the destination Secrets, and neither this Kustomization nor the private
+values repository may contain `vault:` placeholders or credential values.
 
-## Backups
+The R2 endpoint and dedicated PostgreSQL bucket are non-secret identifiers in the
+private live values repository. PostgreSQL does not reuse K8up's bucket,
+credentials or Restic repository.
 
-pgBackRest continuously archives WAL to the dedicated Cloudflare R2 bucket and
-runs a full backup daily at 03:30. Thirty full backup sets are retained. R2
-endpoint, bucket, and region come from the private values repository.
+Grafana has a 25-connection role/database budget: two planned replicas with at
+most 10 pool connections each and five migration/maintenance connections. Radar
+has a 12-connection budget: two planned replicas with at most five pool
+connections each and two migration/maintenance connections. Their application
+tickets must enforce those per-pod pool limits.
 
-R2 API credentials cannot be generated by PGO. The Vault Secrets Webhook
-materializes them directly into `Secret/platform-postgres-pgbackrest` from:
+CloudNativePG 1.30.1 does not expose database-level `CONNECT` grants in the
+`Database` API. Ordered `pg_hba` rules therefore allow each registered role only
+its own database and reject that role for every other database. Native
+`DatabaseRole` and `Database` resources still own role/database creation; no
+imperative SQL bootstrap is used. Both resources retain data and roles when a
+manifest is removed.
 
-```text
-kv/postgresql/r2-credentials#access-key-id
-kv/postgresql/r2-credentials#secret-access-key
+Only the stable `platform-postgres-rw.postgresql.svc` service is an application
+write endpoint. There is no Gateway, Ingress, NodePort or LoadBalancer.
+
+## Backup and recovery boundary
+
+The Barman plugin archives WAL continuously to dedicated Cloudflare R2 storage;
+`archive_timeout=5min` bounds WAL switching during quiet periods. A base backup
+runs daily at `03:30`, the first backup starts immediately, and retention is 30
+days. Every generated cluster object inherits `k8up.io/backup: "false"`, so K8up
+must not back up PGDATA.
+
+Argo exposes only generic child Application health; it does not add custom health
+checks for CloudNativePG or Barman resources. Missing VSO-owned Secrets still
+fail closed rather than silently creating alternate credentials. Before treating
+the platform as ready, explicitly verify cluster, role, database, scheduled
+backup and Barman recovery-window status. This is required in addition to Argo
+sync/health and is not proof of restore, failover, storage placement, TLS or
+RPO/RTO. Follow
+[`docs/postgresql-maintenance.md`](../../docs/postgresql-maintenance.md) for live
+acceptance and maintenance.
+
+## Local checks
+
+```sh
+ruby tests/verify-postgresql.rb
+ruby tests/verify-bootstrap.rb
+ruby tests/verify-charts.rb
 ```
 
-No intermediate Kubernetes Secret or plaintext value is stored in Git.
-
-Argo health requires all three instances, reconciled users/databases, Patroni,
-and a successfully created pgBackRest R2 stanza. It does **not** claim that an R2 backup
-or restore has succeeded. Backup, restore, PITR, and failover acceptance are
-separate live procedures in `docs/postgresql-maintenance.md`.
-
-## Migration boundary
-
-PGO cannot adopt CloudNativePG custom resources or PVCs. During a migration
-with productive data, deploy PGO side by side, perform a logical or approved
-physical migration, then validate applications, failover, backup, restore, and
-PITR. Preserve the CloudNativePG PVCs and Barman objects/backups until that
-acceptance is complete.
-
-This migration release sets Argo automated pruning to `false`. It applies PGO
-but deliberately leaves previously tracked CloudNativePG/Barman resources in
-the cluster; the Application can remain `OutOfSync` because those resources are
-pending prune. This repository switched before productive data or an accepted
-backup set existed, but a later reviewed cleanup release may restore pruning
-only after live PGO acceptance and explicit custody approval.
+These commands render manifests and pinned charts without contacting Kubernetes.
