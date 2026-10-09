@@ -330,8 +330,8 @@ longhorn = apps.fetch('longhorn')
 check(wave(longhorn) == 2, 'Longhorn must be in the storage bootstrap wave')
 check(longhorn.dig('spec', 'destination', 'namespace') == 'longhorn', 'Wrong Longhorn namespace')
 check(longhorn.dig('spec', 'syncPolicy', 'syncOptions').include?('CreateNamespace=true'), 'Longhorn namespace is not created')
-check(longhorn.dig('spec', 'syncPolicy', 'syncOptions').include?('ApplyOutOfSyncOnly=true'),
-      'Longhorn must not reapply already-synced controller-owned Node resources during retries')
+check(!longhorn.dig('spec', 'syncPolicy', 'syncOptions').include?('ApplyOutOfSyncOnly=true'),
+      'Longhorn sync must repair every drifted resource instead of hiding invalid Node contracts')
 %w[enforce audit warn].each do |policy|
   check(longhorn.dig('spec', 'syncPolicy', 'managedNamespaceMetadata', 'labels', "pod-security.kubernetes.io/#{policy}") == 'privileged',
         'Longhorn Pod Security labels must target its namespace')
@@ -355,10 +355,11 @@ monitoring_storage = docs('02-controllers/longhorn/monitoring-storage.yaml')
 monitoring_nodes = monitoring_storage.select { |resource| resource['kind'] == 'Node' }
 check(monitoring_nodes.map { |resource| resource.dig('metadata', 'name') }.sort == %w[omv wyse5070] &&
       monitoring_nodes.all? do |resource|
-        resource.dig('spec', 'tags') == ['monitoring-storage'] &&
-          resource.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '1'
+        resource.dig('spec', 'name') == resource.dig('metadata', 'name') &&
+          resource.dig('spec', 'tags') == ['monitoring-storage'] &&
+          !resource.dig('metadata', 'annotations').key?('argocd.argoproj.io/sync-wave')
       end && monitoring_nodes.none? { |resource| resource.dig('metadata', 'name') == 'raspi4' },
-      'Prometheus storage tags must wait for Longhorn to create OMV and Wyse Node CRs')
+      'Prometheus storage Nodes need exact Longhorn identities in wave 0 on OMV and Wyse')
 monitoring_class = monitoring_storage.find { |resource| resource['kind'] == 'StorageClass' }
 check(monitoring_class.dig('metadata', 'name') == 'longhorn-monitoring' &&
       monitoring_class.dig('parameters', 'numberOfReplicas') == '2' &&
