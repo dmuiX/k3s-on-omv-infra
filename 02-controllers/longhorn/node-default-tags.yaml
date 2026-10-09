@@ -1,0 +1,19 @@
+# Longhorn reads this annotation when it creates its own Node custom resources.
+# Server-side apply keeps this manifest metadata-only and avoids owning kubelet-managed fields.
+apiVersion: v1
+kind: Node
+metadata:
+  name: omv
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false,ServerSideApply=true
+    node.longhorn.io/default-node-tags: '["monitoring-storage"]'
+---
+apiVersion: v1
+kind: Node
+metadata:
+  name: wyse5070
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false,ServerSideApply=true
+    node.longhorn.io/default-node-tags: '["monitoring-storage"]'

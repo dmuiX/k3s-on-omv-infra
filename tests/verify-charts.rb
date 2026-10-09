@@ -86,7 +86,7 @@ Dir.mktmpdir('infra-helm-check-') do |dir|
   longhorn_index = longhorn.index { |resource| resource['kind'] == 'ConfigMap' && resource.dig('metadata', 'name') == 'longhorn-storageclass' }
   check(longhorn_index, 'Pinned Longhorn chart lost its storage-class ConfigMap')
   longhorn[longhorn_index] = longhorn_override
-  longhorn.concat(yaml_docs(File.read(File.join(ROOT, '02-controllers/longhorn', 'wait-for-manager-nodes.yaml'))))
+  longhorn.concat(yaml_docs(File.read(File.join(ROOT, '02-controllers/longhorn', 'node-default-tags.yaml'))))
   longhorn.concat(yaml_docs(File.read(File.join(ROOT, '02-controllers/longhorn', 'monitoring-storage.yaml'))))
   openbao = render('openbao', env)
   cert_manager = render('cert-manager', env)
@@ -301,18 +301,25 @@ Dir.mktmpdir('infra-helm-check-') do |dir|
         monitoring_storage.dig('parameters', 'encrypted') == 'true' &&
         monitoring_storage['reclaimPolicy'] == 'Retain',
         'Prometheus class must use two encrypted replicas on selected nodes')
-  monitoring_nodes = longhorn.select { |r| r['kind'] == 'Node' }
-  check(monitoring_nodes.map { |r| r.dig('metadata', 'name') }.sort == %w[omv wyse5070] &&
-        monitoring_nodes.all? do |r|
-          r.dig('spec', 'name') == r.dig('metadata', 'name') &&
-            r.dig('spec', 'tags') == ['monitoring-storage'] &&
-            r.dig('spec').keys.sort == %w[name tags] &&
-            r.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '2'
-        end, 'Prometheus storage Nodes must follow manager-owned disk acceptance')
-  manager_wait = find_resource(longhorn, 'Job', 'longhorn-manager-node-wait')
-  check(manager_wait.dig('metadata', 'annotations', 'argocd.argoproj.io/hook') == 'Sync' &&
-        manager_wait.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '1',
-        'Manager-owned Longhorn disks need a wave-1 Sync hook')
+  monitoring_nodes = longhorn.select { |resource| resource['kind'] == 'Node' }
+  expected_sync_options = %w[Prune=false Delete=false ServerSideApply=true]
+  check(monitoring_nodes.map { |resource| resource.dig('metadata', 'name') }.sort == %w[omv wyse5070] &&
+        monitoring_nodes.all? do |resource|
+          annotations = resource.dig('metadata', 'annotations')
+          resource['apiVersion'] == 'v1' && resource.keys.sort == %w[apiVersion kind metadata] &&
+            annotations['node.longhorn.io/default-node-tags'] == '["monitoring-storage"]' &&
+            annotations['argocd.argoproj.io/sync-wave'] == '-1' &&
+            annotations['argocd.argoproj.io/sync-options'].split(',').sort == expected_sync_options.sort
+        end, 'OMV/Wyse must be metadata-only core Nodes annotated before the Longhorn chart')
+  check(longhorn.none? { |resource| resource['kind'] == 'Job' &&
+        resource.dig('metadata', 'name') == 'longhorn-manager-node-wait' },
+        'Longhorn manager polling Job must not render')
+  check(longhorn.none? { |resource| resource['kind'] == 'Node' &&
+        resource.fetch('apiVersion', '').start_with?('longhorn.io/') },
+        'Longhorn Node custom resources must not render')
+  check(longhorn.none? { |resource|
+        resource.dig('metadata', 'name').to_s.start_with?('longhorn-manager-node-wait') },
+        'Longhorn polling ServiceAccount, RBAC and kubeconfig resources must not render')
   settings_cm = find_resource(longhorn, 'ConfigMap', 'longhorn-default-setting')
   settings = YAML.safe_load(settings_cm.fetch('data').fetch('default-setting.yaml'))
   check(JSON.parse(settings.fetch('default-replica-count')) == { 'v1' => '3', 'v2' => '3' },

@@ -9,142 +9,32 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "1"
 data:
-  # Gate app-of-apps waves on both child health and successful sync.
+  # Expose only the generic child Application contract required by app-of-apps waves.
   resource.customizations.health.argoproj.io_Application: |
     local hs = {status = "Progressing", message = "Waiting for child Application status"}
-    if obj.status == nil then
-      return hs
-    end
+    if obj.status == nil then return hs end
 
     local status = obj.status
-    if obj.operation ~= nil or (status.operationState ~= nil and
-       (status.operationState.phase == "Running" or status.operationState.phase == "Terminating")) then
+    local operation = status.operationState
+    if obj.operation ~= nil or (operation ~= nil and
+       (operation.phase == "Running" or operation.phase == "Terminating")) then
       hs.message = "Waiting for child Application operation to finish"
       return hs
     end
-
-    if status.operationState ~= nil and
-       (status.operationState.phase == "Failed" or status.operationState.phase == "Error") then
+    if operation ~= nil and (operation.phase == "Failed" or operation.phase == "Error") then
       hs.status = "Degraded"
-      hs.message = "Child Application sync " .. status.operationState.phase
+      hs.message = "Child Application sync " .. operation.phase
       return hs
     end
-
-    if status.health ~= nil and
-       (status.health.status == "Degraded" or status.health.status == "Missing") then
-      hs.status = status.health.status
-      hs.message = status.health.message or "Child Application health " .. hs.status
-      return hs
-    end
-
     if status.sync == nil or status.sync.status ~= "Synced" then
       hs.message = "Waiting for child Application sync: " ..
         (status.sync and status.sync.status or "Unknown")
       return hs
     end
-
     if status.health ~= nil and status.health.status ~= nil then
       hs.status = status.health.status
       hs.message = status.health.message or ""
     else
       hs.message = "Waiting for child Application health"
-    end
-    return hs
-  resource.customizations.health.longhorn.io_Node: |
-    local hs = {status = "Progressing", message = "Waiting for a schedulable Longhorn node disk"}
-    if obj.metadata == nil or obj.spec == nil or obj.status == nil then return hs end
-    if obj.spec.name ~= obj.metadata.name then
-      hs.status = "Degraded"
-      hs.message = "Longhorn node identity does not match metadata.name"
-      return hs
-    end
-    if obj.spec.allowScheduling ~= true then
-      hs.status = "Degraded"
-      hs.message = "Longhorn node scheduling is disabled"
-      return hs
-    end
-    local tagged = false
-    for _, tag in ipairs(obj.spec.tags or {}) do
-      if tag == "monitoring-storage" then tagged = true end
-    end
-    if not tagged then
-      hs.status = "Degraded"
-      hs.message = "Longhorn monitoring-storage tag is missing"
-      return hs
-    end
-    local diskCount = 0
-    for diskName, disk in pairs(obj.spec.disks or {}) do
-      diskCount = diskCount + 1
-      if disk.allowScheduling ~= true then
-        hs.status = "Degraded"
-        hs.message = "Longhorn disk " .. diskName .. " is not schedulable"
-        return hs
-      end
-      local diskStatus = (obj.status.diskStatus or {})[diskName]
-      if diskStatus == nil or diskStatus.diskUUID == nil or diskStatus.diskUUID == "" then
-        hs.message = "Waiting for Longhorn disk " .. diskName .. " status"
-        return hs
-      end
-      local ready = false
-      local schedulable = false
-      for _, condition in ipairs(diskStatus.conditions or {}) do
-        if condition.type == "Ready" and condition.status == "True" then ready = true end
-        if condition.type == "Schedulable" and condition.status == "True" then schedulable = true end
-      end
-      if not ready or not schedulable then
-        hs.message = "Waiting for Longhorn disk " .. diskName .. " readiness"
-        return hs
-      end
-    end
-    if diskCount == 0 then return hs end
-    local nodeReady = false
-    for _, condition in ipairs(obj.status.conditions or {}) do
-      if condition.type == "Ready" and condition.status == "True" then nodeReady = true end
-    end
-    if not nodeReady then
-      hs.message = "Waiting for Longhorn node readiness"
-      return hs
-    end
-    hs.status = "Healthy"
-    hs.message = "Longhorn monitoring node and disks are schedulable"
-    return hs
-  resource.customizations.health.postgres-operator.crunchydata.com_PostgresCluster: |
-    local hs = {status = "Progressing", message = "Waiting for Crunchy Postgres reconciliation"}
-    if obj.status == nil or obj.metadata == nil then return hs end
-    if obj.status.observedGeneration ~= obj.metadata.generation then
-      hs.message = "Waiting for the current PostgresCluster generation"
-      return hs
-    end
-    for _, condition in ipairs(obj.status.conditions or {}) do
-      if condition.observedGeneration == obj.metadata.generation and
-         condition.status == "False" and
-         (condition.reason == "Error" or condition.reason == "Failed" or
-          condition.reason == "Invalid") then
-        hs.status = "Degraded"
-        hs.message = condition.message or condition.reason
-        return hs
-      end
-    end
-    local desired = 0
-    local ready = 0
-    for _, instance in ipairs(obj.status.instances or {}) do
-      desired = desired + (instance.replicas or 0)
-      ready = ready + (instance.readyReplicas or 0)
-    end
-    local repoReady = false
-    if obj.status.pgbackrest ~= nil then
-      for _, repo in ipairs(obj.status.pgbackrest.repos or {}) do
-        if repo.name == "repo1" and repo.stanzaCreated == true then
-          repoReady = true
-        end
-      end
-    end
-    if desired == 3 and ready == 3 and repoReady and
-       obj.status.patroni ~= nil and obj.status.patroni.systemIdentifier ~= nil and
-       obj.status.databaseRevision ~= nil and obj.status.usersRevision ~= nil then
-      hs.status = "Healthy"
-      hs.message = "Three instances, users, databases and pgBackRest stanza are reconciled"
-    else
-      hs.message = "Ready PostgreSQL instances: " .. ready .. "/3"
     end
     return hs

@@ -4,7 +4,6 @@ require 'yaml'
 require 'json'
 require 'pathname'
 require 'open3'
-require 'tmpdir'
 
 ROOT = File.expand_path('..', __dir__)
 INFRA_REVISION = '0f3a9a03d3747798093d6de84fe9bedf0176b9a9'
@@ -12,7 +11,6 @@ BACKUP_CHART_REVISION = '25e8fb5ccfd62a6c55ea90a2ebc51f164e7240f2'
 LIVE_REVISION = 'ce6ad756dd48ef28145f836e6825a65fcafe548f'
 POSTGRES_REVISION = '6ca730a268c1a857893672013f4425222dbd9f4c'
 OPENBAO_REVISION = '05a77589dc40749e198c74cd41508abcdc782781'
-OPENBAO_ACCESS_REVISION = '712c40098802fc761bec45ed3704defc977ba595'
 LONGHORN_REVISION = '80bc6721ee47c323212dfc425b997876e679ef89'
 POSTGRES_LIVE_REVISION = '3e2ae87315f679fbb6ffc0be2342a74a43d213a6'
 OPENBAO_LIVE_REVISION = 'da4b8dabdf4983933f9beb47e36ddebea389045f'
@@ -33,11 +31,8 @@ root = docs('infra.yml').first
 source = root.fetch('spec').fetch('source')
 directory = source.fetch('directory')
 include_pattern = directory.fetch('include')
-exclude_pattern = directory.fetch('exclude')
-root_selects = lambda do |path|
-  File.fnmatch(include_pattern, path, File::FNM_EXTGLOB) &&
-    !File.fnmatch(exclude_pattern, path, File::FNM_EXTGLOB)
-end
+check(!directory.key?('exclude'), 'Steady-state root must not carry mutable exclusion state')
+root_selects = ->(path) { File.fnmatch(include_pattern, path, File::FNM_EXTGLOB) }
 app_files = Dir.glob(File.join(ROOT, '*', '*', '{*app.yml,application.yml}'), File::FNM_EXTGLOB).select do |path|
   root_selects.call(path.delete_prefix(ROOT + '/'))
 end
@@ -48,18 +43,14 @@ check(apps.size == applications.size, 'Duplicate Application names')
 
 pki_path = '05-platform/openbao-pki/application.yml'
 postgresql_path = '06-data/postgresql/app.yml'
-check(File.fnmatch(include_pattern, pki_path, File::FNM_EXTGLOB),
-      'Root include must explicitly stage the mandatory OpenBao PKI Application')
-check(File.fnmatch(exclude_pattern, pki_path, File::FNM_EXTGLOB) &&
-      File.fnmatch(exclude_pattern, postgresql_path, File::FNM_EXTGLOB),
-      'Root defaults must gate OpenBao PKI and PostgreSQL until guarded activation')
-check(!root_selects.call(pki_path) && !root_selects.call(postgresql_path),
-      'Staged platform Applications must remain inactive before their bootstrap gates pass')
-pki_app = docs(pki_path).first
-postgresql_app = docs(postgresql_path).first
-check(pki_app.dig('spec', 'source', 'path') == '05-platform/openbao-pki/workload' &&
-      pki_app.dig('spec', 'source', 'targetRevision').to_s.match?(/\A[0-9a-f]{40}\z/),
-      'Staged OpenBao PKI workload must remain a single immutable source')
+check(root_selects.call(pki_path) && root_selects.call(postgresql_path),
+      'Steady-state root must discover both OpenBao PKI and PostgreSQL')
+pki_app = apps.fetch('openbao-pki')
+postgresql_app = apps.fetch('postgresql')
+check(pki_app.dig('spec', 'source') == {
+        'repoURL' => source['repoURL'], 'targetRevision' => 'main',
+        'path' => '05-platform/openbao-pki/workload'
+      }, 'OpenBao PKI must render its steady-state Kubernetes resources')
 cert_manager_sources = apps.fetch('cert-manager').dig('spec', 'sources')
 cert_manager_network_source = cert_manager_sources.find do |candidate|
   candidate['path'] == '02-controllers/cert-manager/network-policy'
@@ -74,13 +65,7 @@ check(cert_manager_network_source && cert_manager_private_source &&
 check(postgresql_app.fetch('spec').fetch('sources').all? do |candidate|
         !candidate['repoURL']&.start_with?('https://github.com/dmuiX/') ||
           candidate['targetRevision'].to_s.match?(/\A[0-9a-f]{40}\z/)
-      end, 'Staged PostgreSQL Git sources must remain immutably pinned')
-pki_activated_applications = applications + [pki_app]
-pki_activated_apps = pki_activated_applications.to_h { |app| [app.dig('metadata', 'name'), app] }
-fully_activated_applications = pki_activated_applications + [postgresql_app]
-fully_activated_apps = fully_activated_applications.to_h { |app| [app.dig('metadata', 'name'), app] }
-check(fully_activated_apps.size == fully_activated_applications.size,
-      'Staged activation must not introduce a duplicate Application name')
+      end, 'PostgreSQL Git sources must remain immutably pinned')
 # Public Applications own all resources; only their real value overrides are private.
 app_files.group_by { |path| File.dirname(path) }.each do |dir, paths|
   relative = Pathname.new(dir).relative_path_from(Pathname.new(ROOT)).each_filename.to_a
@@ -138,9 +123,10 @@ k8up_sources = apps.fetch('k8up').dig('spec', 'sources')
 check(k8up_sources.last['path'] == '02-controllers/k8up' && k8up_sources.last.dig('directory', 'include') == 'pdb.yaml',
       'K8up authored PDB must be the final Argo source')
 
-# Authored resources may use native Git/Kustomize sources.
-check(apps.fetch('openbao-access-config').dig('spec', 'source', 'path') == '04-secrets/openbao-access-config/workload',
-      'OpenBao access configuration must render its authored Kustomize source')
+# Authored resources may use native Git/Kustomize sources. OpenBao API
+# configuration belongs to Ansible and must not have an in-cluster Application.
+check(!apps.key?('openbao-access-config') && !File.exist?(File.join(ROOT, '04-secrets/openbao-access-config')),
+      'Custom OpenBao API polling reconciler must be removed')
 
 # VS Code YAML language server uses per-file, relative schemas in both single-root
 # and multi-root workspaces; only active chart values schemas are checked in.
@@ -157,7 +143,7 @@ check(apps.fetch('openbao-access-config').dig('spec', 'source', 'path') == '04-s
         "Editor schema invalid or not a values schema: #{chart}")
 end
 
-git_sources = fully_activated_applications.flat_map do |app|
+git_sources = applications.flat_map do |app|
   spec = app.fetch('spec')
   spec['sources'] || [spec['source']]
 end.compact.select { |candidate| candidate['repoURL']&.start_with?('https://github.com/dmuiX/') }
@@ -169,8 +155,7 @@ check(git_sources.select { |candidate| candidate['repoURL'].end_with?('k3s-on-om
 check(git_sources.all? do |candidate|
   allowed = if candidate['repoURL'].end_with?('k3s-on-omv-infra.git')
               [INFRA_REVISION, BACKUP_CHART_REVISION, POSTGRES_REVISION, OPENBAO_REVISION,
-               OPENBAO_ACCESS_REVISION, pki_app.dig('spec', 'source', 'targetRevision'),
-               cert_manager_network_source['targetRevision'], LONGHORN_REVISION]
+               'main', cert_manager_network_source['targetRevision'], LONGHORN_REVISION]
             else
               [LIVE_REVISION, POSTGRES_LIVE_REVISION, OPENBAO_LIVE_REVISION,
                cert_manager_private_source['targetRevision']]
@@ -192,12 +177,8 @@ check(wave(health) <= applications.map { |app| wave(app) }.min,
 # health check must be seeded in Argo CD before the first root sync; wave 1
 # alone does not order resources within the wave.
 health_keys = health.fetch('data').keys
-check(health_keys.include?('resource.customizations.health.argoproj.io_Application'),
-      'Root cannot wait for child Application health')
-check(health_keys.include?('resource.customizations.health.postgres-operator.crunchydata.com_PostgresCluster'),
-      'Missing Argo health gate for Crunchy PostgresCluster')
-check(health_keys.none? { |key| key.include?('cnpg.io') },
-      'CloudNativePG/Barman health gates must be retired')
+check(health_keys == ['resource.customizations.health.argoproj.io_Application'],
+      'Argo must retain only the child Application health passthrough')
 crd_app = apps.fetch('monitoring-crds')
 monitoring = apps.fetch('kube-prometheus-stack')
 %w[longhorn cert-manager kube-prometheus-stack openbao vault-secrets-webhook].each do |name|
@@ -215,43 +196,31 @@ check(crd_app.dig('spec', 'sources', 0, 'chart') == 'kube-prometheus-stack' &&
         'CRD ownership handoff must not delete monitoring CRDs')
 end
 check(wave(apps.fetch('openbao')) < wave(apps.fetch('vault-secrets-webhook')), 'OpenBao must precede its consumer')
-check(wave(apps.fetch('openbao')) < wave(apps.fetch('openbao-access-config')) &&
-      wave(apps.fetch('openbao-access-config')) < wave(apps.fetch('cert-manager-config')) &&
-      wave(apps.fetch('openbao-access-config')) < wave(apps.fetch('openbao-config')),
-      'OpenBao ACL reconciliation must precede webhook-backed Secrets')
 check(wave(apps.fetch('argocd-config')) == 1, 'Existing Argo CD server configuration must be wave 1')
-expected_default = %w[argocd-config argocd-route grafana-route kube-prometheus-stack monitoring-crds cert-manager
-                      cert-manager-config k8up longhorn longhorn-route openbao openbao-access-config openbao-config
-                      openbao-route vault-secrets-webhook]
-check(apps.keys.sort == expected_default.sort,
-      'Default public root must own regular Applications and keep staged platform phases inactive')
-expected_pki_activated = expected_default + %w[openbao-pki]
-check(pki_activated_apps.keys.sort == expected_pki_activated.sort &&
-      !pki_activated_apps.key?('postgresql'),
-      'OpenBao PKI activation must not implicitly activate PostgreSQL')
-expected_fully_activated = expected_pki_activated + %w[postgresql]
-check(fully_activated_apps.keys.sort == expected_fully_activated.sort,
-      'PostgreSQL must remain available only through its independent activation gate')
+expected_apps = %w[argocd-config argocd-route grafana-route kube-prometheus-stack monitoring-crds cert-manager
+                   cert-manager-config k8up longhorn longhorn-route openbao openbao-config openbao-pki
+                   openbao-route postgresql vault-secrets-webhook]
+check(apps.keys.sort == expected_apps.sort,
+      'Public root must own the complete steady-state Application inventory')
 expected_by_wave = {
   1 => %w[argocd-config monitoring-crds],
   2 => %w[cert-manager k8up longhorn],
   3 => %w[kube-prometheus-stack openbao],
-  4 => %w[openbao-access-config vault-secrets-webhook],
+  4 => %w[vault-secrets-webhook],
   5 => %w[argocd-route cert-manager-config grafana-route longhorn-route openbao-pki openbao-route],
   6 => %w[openbao-config postgresql]
 }
-actual_by_wave = fully_activated_applications.group_by { |app| wave(app) }.transform_values do |items|
+actual_by_wave = applications.group_by { |app| wave(app) }.transform_values do |items|
   items.map { |app| app.dig('metadata', 'name') }.sort
 end
 check(actual_by_wave == expected_by_wave.transform_values(&:sort),
-      'Activated Applications must stay in their independent wave cohorts; no same-wave ordering is assumed')
-check(wave(pki_activated_apps.fetch('openbao-access-config')) < wave(pki_activated_apps.fetch('openbao-pki')) &&
-      wave(pki_activated_apps.fetch('cert-manager')) < wave(pki_activated_apps.fetch('openbao-pki')) &&
-      wave(pki_activated_apps.fetch('openbao')) < wave(pki_activated_apps.fetch('openbao-pki')),
-      'OpenBao PKI activation must follow its controller, OpenBao and access bootstrap phases')
-check(wave(fully_activated_apps.fetch('openbao-pki')) < wave(fully_activated_apps.fetch('postgresql')),
-      'Separately activated PostgreSQL must follow the mandatory OpenBao PKI phase')
-postgres_sources = fully_activated_apps.fetch('postgresql').dig('spec', 'sources')
+      'Applications must stay in their wave cohorts; no same-wave ordering is assumed')
+check(wave(apps.fetch('cert-manager')) < wave(apps.fetch('openbao-pki')) &&
+      wave(apps.fetch('openbao')) < wave(apps.fetch('openbao-pki')),
+      'OpenBao PKI must follow cert-manager and OpenBao')
+check(wave(apps.fetch('openbao-pki')) < wave(apps.fetch('postgresql')),
+      'PostgreSQL must follow the OpenBao PKI phase')
+postgres_sources = apps.fetch('postgresql').dig('spec', 'sources')
 check(postgres_sources.count { |entry| entry['chart'] } == 1 &&
       postgres_sources.any? { |entry| entry['chart'] == 'pgo' && entry['targetRevision'] == '6.0.3' } &&
       postgres_sources.any? { |entry| entry['path'] == '06-data/postgresql' && entry['ref'] == 'infra' } &&
@@ -344,79 +313,43 @@ end
 check(!longhorn.fetch('spec').key?('labels'), 'Misplaced Application labels')
 longhorn_files = Dir.glob(File.join(ROOT, '02-controllers/longhorn', '*.{yml,yaml}'))
 check(longhorn_files.map { |f| File.basename(f) }.sort ==
-      %w[app.yml monitoring-storage.yaml storageclass-configmap.yaml values.yml wait-for-manager-nodes.yaml],
+      %w[app.yml monitoring-storage.yaml node-default-tags.yaml storageclass-configmap.yaml values.yml],
       'Longhorn folder must contain only its Application, values and reviewed storage resources')
-check(longhorn_files.none? do |f|
-  YAML.load_stream(File.read(f)).compact.any? { |d| %w[HelmRelease HelmRepository].include?(d['kind']) }
-end, 'Flux leftovers remain')
+longhorn_authored = longhorn_files.flat_map { |file| YAML.load_stream(File.read(file)).compact }
+check(longhorn_authored.none? { |resource| %w[HelmRelease HelmRepository].include?(resource['kind']) },
+      'Flux leftovers remain')
+check(longhorn_authored.none? { |resource| resource['kind'] == 'Job' },
+      'Longhorn polling Jobs must not be managed')
+check(longhorn_authored.none? do |resource|
+  resource['kind'] == 'Node' && resource.fetch('apiVersion', '').start_with?('longhorn.io/')
+end, 'Longhorn Node custom resources must not be managed')
+check(longhorn_authored.none? do |resource|
+  resource.dig('metadata', 'name').to_s.start_with?('longhorn-manager-node-wait')
+end, 'Longhorn polling ServiceAccount, RBAC and kubeconfig resources must be removed')
 values = docs('02-controllers/longhorn/values.yml').first
 check(values.dig('persistence', 'defaultClassReplicaCount') == 3, 'New PVCs must use three Longhorn replicas')
 check(values.dig('defaultSettings', 'defaultReplicaCount') == { 'v1' => '3', 'v2' => '3' }, 'UI volume replica defaults differ')
+check(values.dig('defaultSettings', 'createDefaultDiskLabeledNodes') == 'false',
+      'Longhorn default disk creation must remain enabled for all new nodes')
 check(values.dig('persistence', 'reclaimPolicy') == 'Retain', 'Unexpected volume deletion policy')
 check(values.dig('persistence', 'defaultClass') == false, 'Do not silently add a second default StorageClass')
 check(values.dig('service', 'ui', 'type') == 'ClusterIP', 'Longhorn UI must use the shared Gateway')
 check(values.dig('metrics', 'serviceMonitor', 'enabled'), 'Longhorn monitoring missing')
-monitoring_storage = docs('02-controllers/longhorn/monitoring-storage.yaml')
-monitoring_nodes = monitoring_storage.select { |resource| resource['kind'] == 'Node' }
+monitoring_nodes = docs('02-controllers/longhorn/node-default-tags.yaml')
+node_sync_options = %w[Prune=false Delete=false ServerSideApply=true]
 check(monitoring_nodes.map { |resource| resource.dig('metadata', 'name') }.sort == %w[omv wyse5070] &&
       monitoring_nodes.all? do |resource|
-        resource.dig('spec', 'name') == resource.dig('metadata', 'name') &&
-          resource.dig('spec', 'tags') == ['monitoring-storage'] &&
-          resource.dig('spec').keys.sort == %w[name tags] &&
-          resource.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '2'
+        annotations = resource.dig('metadata', 'annotations')
+        resource['apiVersion'] == 'v1' && resource['kind'] == 'Node' &&
+          resource.keys.sort == %w[apiVersion kind metadata] &&
+          annotations['node.longhorn.io/default-node-tags'] == '["monitoring-storage"]' &&
+          annotations['argocd.argoproj.io/sync-wave'] == '-1' &&
+          annotations['argocd.argoproj.io/sync-options'].split(',').sort == node_sync_options.sort
       end && monitoring_nodes.none? { |resource| resource.dig('metadata', 'name') == 'raspi4' },
-      'Prometheus storage Nodes must adopt manager-created disks only after the wait hook')
-manager_wait = docs('02-controllers/longhorn/wait-for-manager-nodes.yaml')
-wait_job = manager_wait.find { |resource| resource['kind'] == 'Job' }
-wait_role = manager_wait.find { |resource| resource['kind'] == 'Role' }
-wait_account = manager_wait.find { |resource| resource['kind'] == 'ServiceAccount' }
-wait_config = manager_wait.find do |resource|
-  resource['kind'] == 'ConfigMap' && resource.dig('metadata', 'name') == 'longhorn-manager-node-wait-kubeconfig'
-end
-wait_pod = wait_job.dig('spec', 'template', 'spec')
-wait_container = wait_pod.dig('containers', 0)
-kubeconfig = wait_config.dig('data', 'kubeconfig')
-api_projection = wait_pod.fetch('volumes').find { |volume| volume['name'] == 'kube-api-access' }
-projected_sources = api_projection.dig('projected', 'sources')
-wait_script = wait_container.fetch('args', []).first
-check(wait_job.dig('metadata', 'annotations', 'argocd.argoproj.io/hook') == 'Sync' &&
-      wait_job.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '1' &&
-      wait_job.dig('spec', 'backoffLimit') == 0 &&
-      wait_job.dig('spec', 'activeDeadlineSeconds') == 660 &&
-      wait_account['automountServiceAccountToken'] == false &&
-      wait_pod['automountServiceAccountToken'] == false &&
-      wait_container['image'] == 'rancher/k3s:v1.37.1-k3s1@sha256:ca7f37d993d82ef0dcdcfecb2e0e2618ea541dbaffc620c8cedebe01a82acd0d' &&
-      kubeconfig.include?('server: https://kubernetes.default.svc.cluster.local') &&
-      kubeconfig.include?('certificate-authority: /run/kube-api/ca.crt') &&
-      kubeconfig.include?('tokenFile: /run/kube-api/token') &&
-      projected_sources.any? { |source| source.dig('serviceAccountToken', 'path') == 'token' } &&
-      projected_sources.any? { |source| source.dig('configMap', 'name') == 'kube-root-ca.crt' } &&
-      wait_script.include?('--kubeconfig=/run/kube-api/kubeconfig') &&
-      wait_role.dig('rules', 0) == {'apiGroups' => ['longhorn.io'], 'resources' => ['nodes'], 'verbs' => ['get']} &&
-      wait_script.include?('omv wyse5070') &&
-      wait_script.include?("--output=go-template='{{len .spec.disks}}'") &&
-      !wait_script.include?('.spec.disks[*]'),
-      'A bounded authenticated least-privilege wave-1 hook must count manager-owned OMV/Wyse disk maps')
-Dir.mktmpdir('longhorn-manager-wait-') do |directory|
-  fake_k3s = File.join(directory, 'k3s')
-  File.write(fake_k3s, <<~'SH')
-    #!/bin/sh
-    case "$*" in
-      *'--output=go-template={{len .spec.disks}}'*) printf '1' ;;
-      *) exit 42 ;;
-    esac
-  SH
-  File.chmod(0o700, fake_k3s)
-  bounded_script = wait_script
-    .sub('while [ "$attempts" -lt 120 ]', 'while [ "$attempts" -lt 1 ]')
-    .gsub('sleep 5', 'sleep 0')
-  _stdout, stderr, status = Open3.capture3(
-    {'PATH' => "#{directory}:#{ENV.fetch('PATH', '/usr/bin:/bin')}"},
-    '/bin/sh', '-ec', bounded_script
-  )
-  check(status.success?, "Longhorn disk-map wait hook rejected non-empty map counts: #{stderr}")
-end
-monitoring_class = monitoring_storage.find { |resource| resource['kind'] == 'StorageClass' }
+      'OMV/Wyse must be metadata-only core Nodes annotated before the Longhorn chart')
+monitoring_storage = docs('02-controllers/longhorn/monitoring-storage.yaml')
+check(monitoring_storage.length == 1, 'Monitoring storage file must contain only its StorageClass')
+monitoring_class = monitoring_storage.first
 check(monitoring_class.dig('metadata', 'name') == 'longhorn-monitoring' &&
       monitoring_class.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '3' &&
       monitoring_class.dig('parameters', 'numberOfReplicas') == '2' &&
@@ -442,17 +375,8 @@ longhorn_sources = longhorn.dig('spec', 'sources')
 check(longhorn_sources.any? { |entry| entry['chart'] == 'longhorn' } &&
       longhorn_sources.any? { |entry| entry['ref'] == 'values' } &&
       longhorn_sources.any? { |entry| entry['path'] == '02-controllers/longhorn' &&
-        entry.dig('directory', 'include') == '{storageclass-configmap.yaml,wait-for-manager-nodes.yaml,monitoring-storage.yaml}' },
-      'Longhorn must combine its pinned chart, Git values and reviewed storage resources')
-pinned_wait, pinned_wait_error, pinned_wait_status = Open3.capture3(
-  'git', '-C', ROOT, 'show', "#{LONGHORN_REVISION}:02-controllers/longhorn/wait-for-manager-nodes.yaml"
-)
-check(pinned_wait_status.success? && pinned_wait_error.empty? &&
-      pinned_wait.include?('tokenFile: /run/kube-api/token') &&
-      pinned_wait.include?('certificate-authority: /run/kube-api/ca.crt') &&
-      pinned_wait.include?('rancher/k3s:v1.37.1-k3s1@sha256:') &&
-      pinned_wait.include?("--output=go-template='{{len .spec.disks}}'") &&
-      !pinned_wait.include?('.spec.disks[*]'),
-      'Pinned Longhorn source must contain the authenticated digest-pinned manager wait hook')
+        entry.dig('directory', 'include') ==
+          '{storageclass-configmap.yaml,node-default-tags.yaml,monitoring-storage.yaml}' },
+      'Longhorn must combine its pinned chart, Git values, node annotations and storage resources')
 puts 'PASS: one public root, multi-source Helm, CRD/storage wave order, selected monitoring storage and three-node OpenBao'
 puts applications.sort_by { |app| [wave(app), app.dig('metadata', 'name')] }.map { |app| "  #{wave(app)}: #{app.dig('metadata', 'name')}" }

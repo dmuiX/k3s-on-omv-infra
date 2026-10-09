@@ -1,6 +1,5 @@
-# MANDATORY PLATFORM PHASE: infra.yml discovers this Application but excludes it
-# until the external-root ceremony and guarded Ansible installation have passed.
-# Its immutable targetRevision is advanced only after reviewing a workload commit.
+# Ansible completes the OpenBao PKI ceremony and API configuration before Argo
+# applies these steady-state Kubernetes resources.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -8,7 +7,6 @@ metadata:
   namespace: argocd
   annotations:
     argocd.argoproj.io/sync-wave: "5"
-    gitops.openbao.org/registration: "explicit-only-pinned-revision"
 spec:
   destination:
     name: in-cluster
@@ -16,8 +14,7 @@ spec:
   project: default
   source:
     repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
-    # Reviewed workload commit; update explicitly when promoting PKI changes.
-    targetRevision: 4be136dc58bb441be895e745f4d2acac916c220f
+    targetRevision: main
     path: 05-platform/openbao-pki/workload
   syncPolicy:
     automated:

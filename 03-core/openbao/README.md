@@ -59,8 +59,8 @@ independent protected copy so an OpenBao compromise cannot erase every backup.
 A successful upload is not restore acceptance: test native Raft restoration in
 a separate isolated recovery exercise.
 
-The excluded `06-data/openbao-backups` K8up application is legacy desired state
-and must not be activated for OpenBao. It snapshots mounted files rather than
+The wave-6 `06-data/openbao-backups` K8up application is legacy desired state;
+Ansible must provision its OpenBao credentials before Argo reconciles it. It snapshots mounted files rather than
 using OpenBao's native consistency boundary. K8up remains appropriate for other
 eligible workloads.
 

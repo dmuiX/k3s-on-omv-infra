@@ -21,13 +21,14 @@ spec:
       targetRevision: 80bc6721ee47c323212dfc425b997876e679ef89
       ref: values
     # Longhorn has no Helm value for CSI encryption key references. This last
-    # source intentionally overrides the chart's longhorn-storageclass ConfigMap
-    # and owns the dedicated two-node Prometheus storage placement.
+    # source intentionally overrides the chart's longhorn-storageclass ConfigMap,
+    # annotates the two monitoring storage nodes before the chart resources, and
+    # owns the dedicated Prometheus StorageClass.
     - repoURL: "https://github.com/dmuiX/k3s-on-omv-infra.git"
       targetRevision: 80bc6721ee47c323212dfc425b997876e679ef89
       path: 02-controllers/longhorn
       directory:
-        include: "{storageclass-configmap.yaml,wait-for-manager-nodes.yaml,monitoring-storage.yaml}"
+        include: "{storageclass-configmap.yaml,node-default-tags.yaml,monitoring-storage.yaml}"
   syncPolicy:
     managedNamespaceMetadata:
       labels:

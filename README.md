@@ -28,18 +28,17 @@ External-DNS. It uses Argo CD (already installed) for these applications:
 ├── kube-prometheus-stack/  persistent monitoring on Longhorn
 └── openbao/                secret store
 04-secrets/
-├── openbao-access-config/  Git-managed webhook ACL, initial Job and recurring CronJob
 └── vault-secrets-webhook/  admission-time secret injection
 05-platform/
 ├── public-certificates/    wildcard certificate/issuers after secrets
-├── openbao-pki/            mandatory internal PKI phase, staged inactive until ceremony
+├── openbao-pki/            cert-manager identities, issuers and internal certificate
 ├── argocd/
 ├── grafana/
 ├── longhorn/
 └── openbao/                early UI routes, usable when wildcard TLS becomes ready
 06-data/
 ├── openbao-backups/        OpenBao backup schedule
-├── postgresql/             staged central Crunchy PGO HA platform
+├── postgresql/             central Crunchy PGO HA platform
 └── redis/                  dormant Redis operator preparation (`application.yml`)
 ```
 
@@ -51,7 +50,7 @@ absent until one is implemented. The wave-1 CRD-only Application
 renders only the monitoring CRDs before wave-2 controllers emit ServiceMonitors;
 the full monitoring stack (Grafana, Prometheus, Alertmanager and operator) starts in
 wave 3, after Longhorn, with explicit encrypted Longhorn PVCs. Longhorn also
-precedes OpenBao PVCs; the secrets webhook and access-config Job follow OpenBao.
+precedes OpenBao PVCs; the secrets webhook follows OpenBao.
 Wildcard certificate issuance and UI routes share wave 5 after OpenBao-backed
 Cloudflare custody and webhook activation; routes may reconcile first but become
 usable only when the Gateway certificate is ready. The backup schedule remains
@@ -60,18 +59,14 @@ shares wave 1 with other Applications: **seed and verify it separately before a
 first root sync**. Changing the existing Argo CD backend to HTTP also requires a
 controlled `argocd-server` restart; plan that before enabling its external route.
 
-`infra.yml` is the **one** Argo CD root for the application inventory.
-The mandatory [`05-platform/openbao-pki/`](05-platform/openbao-pki/workload/README.md) platform phase is
-staged rather than optional: the root include names its `application.yml`
-explicitly, while the default root exclusion keeps it inactive until the
-external-root ceremony and guarded installation have passed. Its workload source
-is already pinned to an immutable commit. After those gates pass, the GitOps
-bootstrap activates the pinned Application by promoting the root configuration;
-do not register it independently or remove the safety gate ad hoc. The same
-default exclusion independently gates `06-data/postgresql/app.yml`; PKI activation
-must not activate PostgreSQL. Database activation requires its separate TLS, VSO,
-backup/restore, failover, and connectivity acceptance gates. OpenBao PKI adds no
-Certificate consumers. Upstream
+`infra.yml` is the **one** Argo CD root for the complete steady-state
+Application inventory, including
+[`05-platform/openbao-pki/`](05-platform/openbao-pki/workload/README.md) and
+`06-data/postgresql`. It has no mutable exclusion list or separate activation
+state. Ansible must complete OpenBao initialization, seal/custody handling, PKI
+ceremony, API configuration, and interactive secret entry before Argo applies
+the dependent Kubernetes resources. The PKI Application owns only cert-manager
+identities/RBAC, ClusterIssuers, and the internal Certificate. Upstream
 controllers are Argo multi-source Applications: one version-pinned Helm/OCI chart
 plus values from this Git repository. Route, certificate, and backup resources render the local
 `charts/cluster-config` chart with private values from the live repository. The
@@ -107,25 +102,25 @@ logged; inspect or rotate them only through an explicitly approved secret-access
 procedure.
 
 The `raspi4` node carries `CriticalAddonsOnly=true:NoSchedule`. Infra
-controllers, OpenBao reconciliation and PostgreSQL explicitly tolerate that
-taint. `kube-prometheus-stack` is the deliberate exception; even its node
-exporter excludes `raspi4` to reserve the Pi's limited capacity.
+controllers and PostgreSQL explicitly tolerate that taint.
+`kube-prometheus-stack` is the deliberate exception; even its node exporter
+excludes `raspi4` to reserve the Pi's limited capacity.
 
-### OpenBao backup credential admission
+### OpenBao configuration ownership
 
-The public repo now contains a dedicated ServiceAccount, initial Job and
-recurring CronJob for Git-managed webhook and human-admin ACLs. The local
-bootstrap script can enable `userpass/` and interactively create a personal
-user without putting a password in Git; MFA enrollment stays manual. **They are not deployed.**
-Before enabling the new `openbao-access-config` Argo Application, run its
-reviewed one-time local bootstrap script as described in
-[`04-secrets/openbao-access-config/CONFIG-IAC-DESIGN.md`](04-secrets/openbao-access-config/CONFIG-IAC-DESIGN.md). Thereafter
-edit `04-secrets/openbao-access-config/workload/policies/vault-secrets-webhook-read.hcl`
-for webhook ACLs, `workload/policies/human-admin.hcl` for the human policy,
-and `04-secrets/openbao-access-config/workload/config.json` for the webhook role
-and mount references (KV v2 and userpass are verified, not recreated by the loop). Its intentional `kv/data/*` grant is broad:
-anyone permitted to create and read a webhook-selected Kubernetes Secret may
-request any KV v2 value under `kv/`.
+OpenBao API configuration is intentionally absent from this repository. The
+bootstrap Ansible workflow owns mounts, auth methods and roles, ACL policies,
+PKI configuration, initialization/seal/custody operations, and interactive
+secret entry. Argo CD owns Kubernetes workloads and resources only. Do not add
+an in-cluster Job, CronJob, controller, or polling script to reconcile OpenBao.
+
+The root intentionally retains `automated.prune: false`, and the former
+`openbao-access-config` Application had no resources finalizer. Therefore this
+Git removal cannot clean an already deployed copy automatically. During the
+separately approved rollout, remove that legacy child Application and its
+Job/CronJob, ConfigMap, NetworkPolicy, ServiceAccount, and RBAC through a
+reviewed cascading Argo decommission, then verify that no such workload remains.
+Do not treat a clean Git diff as proof of live removal.
 
 Before enabling any K8up Schedule, run the Bootstrap repository's guarded
 `gitops_bootstrap_action=k8up-credentials`. It create-once maintains
@@ -135,10 +130,7 @@ Exact legacy entries may be reused only after an explicit interactive choice;
 new R2 values are read through hidden prompts and never enter Git, command
 arguments, files, Kubernetes staging Secrets, or logs.
 
-The existing webhook role has only the Cloudflare read policy. The bootstrap
-attaches the stable `vault-secrets-webhook-read` ACL name to that role once;
-the GitOps loop updates the policy **and** reconciles its declared role
-settings in `config.json`.
+Ansible attaches the reviewed webhook and backup policies to their roles.
 Until bootstrapped, OpenBao still returns 403 on the backup paths, so Argo
 cannot create the two backup Secrets and K8up remains in
 `CreateContainerConfigError`.
@@ -165,11 +157,9 @@ backup credentials.
 ruby tests/verify-bootstrap.rb
 ruby tests/verify-application-health.rb # requires Lua
 ruby tests/verify-longhorn-encryption.rb
-ruby tests/verify-openbao-access.rb
-ruby tests/verify-openbao-pki.rb # staged activation gate + offline Kustomize checks
+ruby tests/verify-openbao-pki.rb # native Kubernetes resources + offline Kustomize render
 ruby tests/verify-postgresql.rb # HA/storage/backup/policy manifests + pinned chart renders
 ruby tests/verify-redis.rb # dormant operator, storage and observability preparation
-PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p 'test_openbao_*.py'
 ruby tests/verify-ingress.rb
 ruby tests/verify-charts.rb # Helm + network access to pinned chart repositories
 ```

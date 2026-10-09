@@ -25,25 +25,15 @@ root = YAML.load_file(File.join(ROOT, 'infra.yml'))
 source = root.fetch('spec').fetch('source')
 check(source.fetch('path') == '.' && source.dig('directory', 'recurse'), 'Public root must discover reusable Applications')
 include_pattern = source.dig('directory', 'include')
-exclude_pattern = source.dig('directory', 'exclude')
-root_selects = lambda do |path|
-  File.fnmatch(include_pattern, path, File::FNM_EXTGLOB) &&
-    !File.fnmatch(exclude_pattern, path, File::FNM_EXTGLOB)
-end
+check(!source.fetch('directory').key?('exclude'), 'Public root must not use mutable exclusion state')
+root_selects = ->(path) { File.fnmatch(include_pattern, path, File::FNM_EXTGLOB) }
 %w[01-bootstrap/argocd-bootstrap/application-health-config.yml 01-bootstrap/monitoring-crds/app.yml
    02-controllers/longhorn/app.yml 03-core/kube-prometheus-stack/app.yml 03-core/openbao/app.yml].each do |path|
   check(root_selects.call(path), "Public root excludes #{path}")
 end
-staged_pki_path = '05-platform/openbao-pki/application.yml'
-staged_postgresql_path = '06-data/postgresql/app.yml'
-check(File.fnmatch(include_pattern, staged_pki_path, File::FNM_EXTGLOB) &&
-      File.fnmatch(exclude_pattern, staged_pki_path, File::FNM_EXTGLOB) &&
-      !root_selects.call(staged_pki_path),
-      'Mandatory PKI phase must be explicitly staged but inactive by default')
-check(File.fnmatch(include_pattern, staged_postgresql_path, File::FNM_EXTGLOB) &&
-      File.fnmatch(exclude_pattern, staged_postgresql_path, File::FNM_EXTGLOB) &&
-      !root_selects.call(staged_postgresql_path),
-      'Implemented PostgreSQL phase must remain inactive until guarded activation')
+check(root_selects.call('05-platform/openbao-pki/application.yml') &&
+      root_selects.call('06-data/postgresql/app.yml'),
+      'Steady-state root must select OpenBao PKI and PostgreSQL')
 
 apps = documents.select { |doc| doc['kind'] == 'Application' }
 apps.each do |app|
@@ -51,9 +41,8 @@ apps.each do |app|
   sources.compact.each do |child|
     next if child['chart'] || (child['ref'] && !child['path'])
     if app.dig('metadata', 'name') == 'openbao-pki'
-      revision = child['targetRevision'].to_s
-      check(revision.match?(/\A[0-9a-f]{40}\z/),
-            'Mandatory staged PKI Application must remain immutably pinned')
+      check(child['repoURL'] == source['repoURL'] && child['targetRevision'] == source['targetRevision'],
+            'OpenBao PKI steady-state resources must follow the root revision')
     else
       check(child['repoURL'] == source['repoURL'] && child['targetRevision'].to_s.match?(/\A[0-9a-f]{40}\z/),
             "Public Git source is not immutably pinned: #{app.dig('metadata', 'name')}")

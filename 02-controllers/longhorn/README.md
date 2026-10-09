@@ -3,27 +3,24 @@
 ## Structure and ordering
 
 Folder prefix `02-` denotes Longhorn's controller deployment wave. Its UI
-route is a separate wave-6 Application rendering `charts/cluster-config/` with
-private Git values; placing it
-after certificate configuration avoids blocking Longhorn on TLS readiness. The
-namespace and release name remain `longhorn`. HTTPS only becomes usable once
-the wildcard certificate is ready.
+route is a separate wave-5 Application rendering `charts/cluster-config/` with
+private Git values, in the same platform phase as certificate configuration.
+The namespace and release name remain `longhorn`. HTTPS only becomes usable
+once the wildcard certificate is ready.
 
-- `app.yml`: pinned Longhorn Helm chart, Git values and final StorageClass ConfigMap override.
+- `app.yml`: pinned Longhorn Helm chart, Git values and an authored-resource
+  source for node annotations and encrypted StorageClass configuration.
 - `values.yml`: three-replica storage defaults; no embedded Flux HelmRelease.
 - `storageclass-configmap.yaml`: reviewed final Argo source overriding the chart's
   `longhorn-storageclass` ConfigMap; the normal `longhorn` class encrypts new
   volumes by default. No passphrase or Kubernetes Secret is committed here.
-- `wait-for-manager-nodes.yaml`: bounded, least-privilege wave-1 Sync hook that
-  proves Longhorn Manager created non-empty OMV/Wyse disk maps before Argo can
-  own either Node resource. It uses a digest-pinned multi-architecture K3s image
-  and an explicit in-cluster kubeconfig backed by the projected ServiceAccount
-  token and namespace root CA; it does not depend on a node kubeconfig.
-- `monitoring-storage.yaml`: encrypted two-replica Prometheus class plus partial
-  Longhorn Node resources for OMV and Wyse. The wave-0 manager creates each
-  complete Node and default disk, the wave-1 hook accepts that state, wave 2
-  adopts only identity and the `monitoring-storage` tag, and wave 3 creates the
-  selected StorageClass.
+- `node-default-tags.yaml`: metadata-only core Kubernetes Nodes for OMV and Wyse.
+  In intra-Application wave `-1`, server-side apply adds Longhorn 1.11.1's
+  official `node.longhorn.io/default-node-tags` annotation before chart resources.
+  `Prune=false` and `Delete=false` prevent Argo from deleting cluster Nodes.
+- `monitoring-storage.yaml`: encrypted two-replica Prometheus StorageClass. Its
+  node selector uses the `monitoring-storage` tags that Longhorn initializes from
+  the Kubernetes Node annotations.
 - The public route template selects `longhorn-frontend:80` through the K3s
   Gateway; only the real hostname value comes from private Git.
 
@@ -36,8 +33,7 @@ are removed. Argo CD is the only deployment controller for Longhorn.
 | 2 | Longhorn controller/CSI, encrypted `longhorn` class template and ServiceMonitor |
 | 3 | Persistent monitoring and OpenBao; their PVCs select `longhorn` |
 | 4 | Vault Secrets Webhook |
-| 5 | Cloudflare credential, issuer, wildcard certificate |
-| 6 | Longhorn UI route rendered with the private hostname value |
+| 5 | Cloudflare credential, issuer, wildcard certificate and Longhorn UI route |
 
 The CRD-only Application renders the same pinned monitoring chart as the full
 stack, with all workloads disabled. Longhorn can create its ServiceMonitor
@@ -62,6 +58,16 @@ source, intentionally overriding the chart's ConfigMap. Argo may report a
 with a standalone `helm upgrade -f values.yml`, because that omits the encrypted
 override. `verify-longhorn-encryption.rb` checks the source order and template.
 Update both values and override when changing replica count, filesystem or retention.
+
+**Before updating the immutable Git revision in `app.yml`, stage the ownership
+handoff for clusters that already synced the former `longhorn.io/Node` manifests.**
+The current Application has automated pruning enabled, so removing those objects
+from the pinned source without first applying `Prune=false` to the live tracked
+custom resources could delete Longhorn's active Node records. Perform that
+separate, reviewed transition before pinning and syncing this simplified source;
+do not use the new core Node manifests as substitutes for the existing Longhorn
+custom resources. The local uncommitted tree intentionally cannot contain its
+own future commit SHA.
 
 **Rollout changes an existing class.** Longhorn's ConfigMap controller detects the
 changed template and **deletes/recreates `StorageClass/longhorn` itself**; direct
@@ -97,9 +103,9 @@ OpenBao cluster merely to change the underlying storage encryption.
 - StorageClass `longhorn` is **not default**. Existing K3s `local-path` remains the
   default; consumers opt into Longhorn with `storageClassName: longhorn`.
 - StorageClass `longhorn-monitoring` is also non-default. It uses two replicas
-  selected onto the Git-managed `monitoring-storage` tags on OMV and Wyse. The
-  wave-1 Sync hook blocks Node adoption until the manager has populated both
-  default disks. The Pi remains excluded from Prometheus metrics storage.
+  selected onto the `monitoring-storage` tags initialized from metadata-only
+  Kubernetes Node annotations on OMV and Wyse. The Pi remains excluded from
+  Prometheus metrics storage.
 - UI Service: **ClusterIP**, because the shared Gateway provides LAN/VPN access.
 - Pod Security `privileged` labels target the Longhorn namespace through Argo's
   `managedNamespaceMetadata` and `CreateNamespace=true`, not Application `spec.labels`.
@@ -113,10 +119,10 @@ separately; changing defaults affects only new volumes. Scaling OpenBao from one
 Raft pod to three creates four additional PVCs (data and audit for each new pod);
 neither pod placement nor Raft quorum is proven just by changing a value. Verify
 disk capacity, resource budgets, CSI availability and Raft membership during rollout.
-The current `createDefaultDiskLabeledNodes: "false"` permits default disk
-creation on joining nodes. Git adds monitoring tags only after manager-created
-Node and disk state exists; do not assume storage on other joining nodes will
-remain excluded without changing that policy.
+The current `createDefaultDiskLabeledNodes: "false"` preserves Longhorn's default
+disk creation on joining nodes. Git annotates only OMV and Wyse before Longhorn
+creates its custom Node resources; do not assume storage on other joining nodes
+will remain excluded without changing that policy.
 
 ## Mandatory checks before deployment
 
@@ -142,6 +148,7 @@ Read-only checks after installation:
 kubectl -n longhorn get pods -o wide
 kubectl get csidrivers
 kubectl get storageclass longhorn -o yaml
+kubectl get nodes omv wyse5070 -o jsonpath='{range .items[*]}{.metadata.name}{"\\t"}{.metadata.annotations.node\\.longhorn\\.io/default-node-tags}{"\\n"}{end}'
 kubectl -n longhorn get nodes.longhorn.io
 kubectl -n longhorn get servicemonitor
 ```

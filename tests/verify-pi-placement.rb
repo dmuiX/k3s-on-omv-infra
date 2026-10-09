@@ -55,16 +55,6 @@ check(postgres && permits_pi?(postgres.dig('spec', 'instances', 0, 'tolerations'
 check(permits_pi?(postgres.dig('spec', 'backups', 'pgbackrest', 'jobs', 'tolerations')),
       'pgBackRest backup jobs cannot use raspi4')
 
-[
-  ['04-secrets/openbao-access-config/workload/initial-job.yaml', %w[spec template spec tolerations]],
-  ['04-secrets/openbao-access-config/workload/cronjob.yaml', %w[spec jobTemplate spec template spec tolerations]],
-  ['05-platform/openbao-pki/workload/initial-job.yaml', %w[spec template spec tolerations]],
-  ['05-platform/openbao-pki/workload/cronjob.yaml', %w[spec jobTemplate spec template spec tolerations]]
-].each do |path, keys|
-  value = keys.reduce(yaml(path)) { |current, key| current.fetch(key) }
-  check(permits_pi?(value), "#{path} cannot use raspi4")
-end
-
 monitoring = yaml('03-core/kube-prometheus-stack/values.yml')
 check(!permits_pi?(monitoring['tolerations']), 'Monitoring stack must not tolerate the restricted Pi taint')
 node_terms = monitoring.dig('prometheus-node-exporter', 'affinity', 'nodeAffinity',

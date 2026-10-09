@@ -59,18 +59,16 @@ root = YAML.load_file(File.join(ROOT, 'infra.yml'))
 public_url = root.dig('spec', 'source', 'repoURL')
 directory = root.dig('spec', 'source', 'directory')
 include_pattern = directory.fetch('include')
-exclude_pattern = directory.fetch('exclude')
+check(!directory.key?('exclude'), 'Steady-state root must not carry mutable exclusion state')
 apps = Dir.glob(File.join(ROOT, '[0-9][0-9]-*', '*', '{*app.yml,application.yml}'), File::FNM_EXTGLOB).map do |path|
   relative = path.delete_prefix(ROOT + '/')
-  selected = File.fnmatch(include_pattern, relative, File::FNM_EXTGLOB) &&
-    !File.fnmatch(exclude_pattern, relative, File::FNM_EXTGLOB)
-  YAML.load_file(path) if selected
+  YAML.load_file(path) if File.fnmatch(include_pattern, relative, File::FNM_EXTGLOB)
 end.compact.to_h { |app| [app.dig('metadata', 'name'), app] }
 expected_apps = %w[argocd-config argocd-route grafana-route kube-prometheus-stack monitoring-crds
-                   cert-manager cert-manager-config k8up longhorn longhorn-route openbao
-                   openbao-access-config openbao-config openbao-route vault-secrets-webhook]
+                   cert-manager cert-manager-config k8up longhorn longhorn-route openbao openbao-config
+                   openbao-pki openbao-route postgresql vault-secrets-webhook]
 check(apps.keys.sort == expected_apps.sort && apps.values.map { |app| wave(app) }.uniq.sort == [1, 2, 3, 4, 5, 6],
-      'Default public root must own regular components and keep staged phases inactive')
+      'Public root must own the complete steady-state inventory')
 check(File.file?(VALUES), 'Private values file missing')
 private_values = YAML.load_file(VALUES)
 expected_gateway = {

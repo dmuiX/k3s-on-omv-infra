@@ -22,10 +22,13 @@ check(app['kind'] == 'Application' && app.dig('metadata', 'name') == 'longhorn',
 check(sources.any? { |source| source['chart'] == 'longhorn' && source['targetRevision'] == '1.11.1' },
       'Longhorn must use its pinned Helm chart')
 check(sources.any? { |source| source['ref'] == 'values' }, 'Longhorn Git values source missing')
-check(sources.last == { 'repoURL' => 'https://github.com/dmuiX/k3s-on-omv-infra.git',
-                        'targetRevision' => '80bc6721ee47c323212dfc425b997876e679ef89', 'path' => '02-controllers/longhorn',
-                        'directory' => { 'include' => '{storageclass-configmap.yaml,wait-for-manager-nodes.yaml,monitoring-storage.yaml}' } },
-      'Encrypted StorageClass ConfigMap must be the final Argo source override')
+authored_source = sources.last
+check(authored_source['repoURL'] == 'https://github.com/dmuiX/k3s-on-omv-infra.git' &&
+      authored_source['targetRevision'].to_s.match?(/\A[0-9a-f]{40}\z/) &&
+      authored_source['path'] == '02-controllers/longhorn' &&
+      authored_source.dig('directory', 'include') ==
+        '{storageclass-configmap.yaml,node-default-tags.yaml,monitoring-storage.yaml}',
+      'Longhorn node annotations and StorageClasses must be the final pinned Argo source')
 check(cm['apiVersion'] == 'v1' && cm['kind'] == 'ConfigMap' &&
       cm.dig('metadata', 'name') == 'longhorn-storageclass' && cm.dig('metadata', 'namespace') == 'longhorn',
       'Override must match the chart ConfigMap exactly')

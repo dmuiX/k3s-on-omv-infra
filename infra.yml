@@ -1,5 +1,5 @@
-# Single infra root: all Applications/templates are public; selected Helm
-# values come from the private repo. Seed read-only Git access before syncing.
+# Single steady-state infra root: all Applications/templates are public; selected
+# Helm values come from the private repo. Seed read-only Git access before syncing.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -18,8 +18,7 @@ spec:
     targetRevision: main
     directory:
       recurse: true
-      include: "{01-bootstrap/argocd-bootstrap/application-health-config.yml,*/*/app.yml,*/*/config-app.yml,05-platform/openbao-pki/application.yml}"
-      exclude: "{05-platform/openbao-pki/application.yml,06-data/postgresql/app.yml}"
+      include: "{01-bootstrap/argocd-bootstrap/application-health-config.yml,*/*/app.yml,*/*/config-app.yml,*/*/application.yml}"
   syncPolicy:
     automated:
       prune: false
