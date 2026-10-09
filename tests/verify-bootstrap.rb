@@ -9,7 +9,7 @@ INFRA_REVISION = '0f3a9a03d3747798093d6de84fe9bedf0176b9a9'
 LIVE_REVISION = 'ce6ad756dd48ef28145f836e6825a65fcafe548f'
 POSTGRES_REVISION = '6ca730a268c1a857893672013f4425222dbd9f4c'
 OPENBAO_REVISION = '712c40098802fc761bec45ed3704defc977ba595'
-LONGHORN_REVISION = 'ba24059df86970515c593b2e05fee70dab609aa3'
+LONGHORN_REVISION = '36d4762ae7ce7063dcc0d1dfd664596895a074c8'
 POSTGRES_LIVE_REVISION = '3e2ae87315f679fbb6ffc0be2342a74a43d213a6'
 OPENBAO_LIVE_REVISION = 'da4b8dabdf4983933f9beb47e36ddebea389045f'
 
@@ -330,8 +330,8 @@ longhorn = apps.fetch('longhorn')
 check(wave(longhorn) == 2, 'Longhorn must be in the storage bootstrap wave')
 check(longhorn.dig('spec', 'destination', 'namespace') == 'longhorn', 'Wrong Longhorn namespace')
 check(longhorn.dig('spec', 'syncPolicy', 'syncOptions').include?('CreateNamespace=true'), 'Longhorn namespace is not created')
-check(longhorn.dig('spec', 'syncPolicy', 'syncOptions').include?('ApplyOutOfSyncOnly=true'),
-      'Longhorn must not reapply already-synced controller-owned Node resources during retries')
+check(!longhorn.dig('spec', 'syncPolicy', 'syncOptions').include?('ApplyOutOfSyncOnly=true'),
+      'Longhorn sync must repair every drifted resource instead of hiding invalid Node contracts')
 %w[enforce audit warn].each do |policy|
   check(longhorn.dig('spec', 'syncPolicy', 'managedNamespaceMetadata', 'labels', "pod-security.kubernetes.io/#{policy}") == 'privileged',
         'Longhorn Pod Security labels must target its namespace')
@@ -355,10 +355,11 @@ monitoring_storage = docs('02-controllers/longhorn/monitoring-storage.yaml')
 monitoring_nodes = monitoring_storage.select { |resource| resource['kind'] == 'Node' }
 check(monitoring_nodes.map { |resource| resource.dig('metadata', 'name') }.sort == %w[omv wyse5070] &&
       monitoring_nodes.all? do |resource|
-        resource.dig('spec', 'tags') == ['monitoring-storage'] &&
-          resource.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '1'
+        resource.dig('spec', 'name') == resource.dig('metadata', 'name') &&
+          resource.dig('spec', 'tags') == ['monitoring-storage'] &&
+          !resource.dig('metadata', 'annotations').key?('argocd.argoproj.io/sync-wave')
       end && monitoring_nodes.none? { |resource| resource.dig('metadata', 'name') == 'raspi4' },
-      'Prometheus storage tags must wait for Longhorn to create OMV and Wyse Node CRs')
+      'Prometheus storage Nodes need exact Longhorn identities in wave 0 on OMV and Wyse')
 monitoring_class = monitoring_storage.find { |resource| resource['kind'] == 'StorageClass' }
 check(monitoring_class.dig('metadata', 'name') == 'longhorn-monitoring' &&
       monitoring_class.dig('parameters', 'numberOfReplicas') == '2' &&

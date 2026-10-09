@@ -6,11 +6,11 @@ metadata:
   name: omv
   namespace: longhorn
   annotations:
-    # Longhorn initially owns spec.tags. Wait for the wave-0 manager rollout to
-    # create the Node CR, then client-side apply only the intended tag.
-    argocd.argoproj.io/sync-wave: "1"
+    # Longhorn owns disk configuration. Client-side apply adopts only the
+    # required identity and intended tag while retaining controller fields.
     argocd.argoproj.io/sync-options: ServerSideApply=false
 spec:
+  name: omv
   tags:
     - monitoring-storage
 ---
@@ -20,9 +20,9 @@ metadata:
   name: wyse5070
   namespace: longhorn
   annotations:
-    argocd.argoproj.io/sync-wave: "1"
     argocd.argoproj.io/sync-options: ServerSideApply=false
 spec:
+  name: wyse5070
   tags:
     - monitoring-storage
 ---
