@@ -23,7 +23,7 @@ check(sources.any? { |source| source['chart'] == 'longhorn' && source['targetRev
       'Longhorn must use its pinned Helm chart')
 check(sources.any? { |source| source['ref'] == 'values' }, 'Longhorn Git values source missing')
 check(sources.last == { 'repoURL' => 'https://github.com/dmuiX/k3s-on-omv-infra.git',
-                        'targetRevision' => 'ba24059df86970515c593b2e05fee70dab609aa3', 'path' => '02-controllers/longhorn',
+                        'targetRevision' => '36d4762ae7ce7063dcc0d1dfd664596895a074c8', 'path' => '02-controllers/longhorn',
                         'directory' => { 'include' => '{storageclass-configmap.yaml,monitoring-storage.yaml}' } },
       'Encrypted StorageClass ConfigMap must be the final Argo source override')
 check(cm['apiVersion'] == 'v1' && cm['kind'] == 'ConfigMap' &&
