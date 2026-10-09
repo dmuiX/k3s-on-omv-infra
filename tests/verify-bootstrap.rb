@@ -9,6 +9,7 @@ INFRA_REVISION = '0f3a9a03d3747798093d6de84fe9bedf0176b9a9'
 LIVE_REVISION = 'ce6ad756dd48ef28145f836e6825a65fcafe548f'
 POSTGRES_REVISION = '6ca730a268c1a857893672013f4425222dbd9f4c'
 OPENBAO_REVISION = '712c40098802fc761bec45ed3704defc977ba595'
+LONGHORN_REVISION = 'ba24059df86970515c593b2e05fee70dab609aa3'
 POSTGRES_LIVE_REVISION = '3e2ae87315f679fbb6ffc0be2342a74a43d213a6'
 OPENBAO_LIVE_REVISION = 'da4b8dabdf4983933f9beb47e36ddebea389045f'
 
@@ -107,6 +108,7 @@ helm_apps.each do |name|
                              when 'kube-prometheus-stack' then [INFRA_REVISION, POSTGRES_REVISION]
                              when 'openbao' then [INFRA_REVISION, OPENBAO_REVISION]
                              when 'cert-manager' then [INFRA_REVISION, cert_manager_network_source['targetRevision']]
+                             when 'longhorn' then [INFRA_REVISION, LONGHORN_REVISION]
                              else [INFRA_REVISION]
                              end
   check(values_source && values_source['repoURL'] == source['repoURL'] &&
@@ -164,7 +166,7 @@ check(git_sources.all? do |candidate|
   allowed = if candidate['repoURL'].end_with?('k3s-on-omv-infra.git')
               [INFRA_REVISION, POSTGRES_REVISION, OPENBAO_REVISION,
                pki_app.dig('spec', 'source', 'targetRevision'),
-               cert_manager_network_source['targetRevision']]
+               cert_manager_network_source['targetRevision'], LONGHORN_REVISION]
             else
               [LIVE_REVISION, POSTGRES_LIVE_REVISION, OPENBAO_LIVE_REVISION,
                cert_manager_private_source['targetRevision']]
