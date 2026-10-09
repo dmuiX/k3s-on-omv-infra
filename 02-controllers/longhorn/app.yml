@@ -27,7 +27,7 @@ spec:
       targetRevision: cceca6288815a2a864a7f3fc3280285ce2dc45c2
       path: 02-controllers/longhorn
       directory:
-        include: "{storageclass-configmap.yaml,monitoring-storage.yaml}"
+        include: "{storageclass-configmap.yaml,wait-for-manager-nodes.yaml,monitoring-storage.yaml}"
   syncPolicy:
     managedNamespaceMetadata:
       labels:

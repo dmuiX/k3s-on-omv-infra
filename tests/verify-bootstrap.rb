@@ -339,7 +339,7 @@ end
 check(!longhorn.fetch('spec').key?('labels'), 'Misplaced Application labels')
 longhorn_files = Dir.glob(File.join(ROOT, '02-controllers/longhorn', '*.{yml,yaml}'))
 check(longhorn_files.map { |f| File.basename(f) }.sort ==
-      %w[app.yml monitoring-storage.yaml storageclass-configmap.yaml values.yml],
+      %w[app.yml monitoring-storage.yaml storageclass-configmap.yaml values.yml wait-for-manager-nodes.yaml],
       'Longhorn folder must contain only its Application, values and reviewed storage resources')
 check(longhorn_files.none? do |f|
   YAML.load_stream(File.read(f)).compact.any? { |d| %w[HelmRelease HelmRepository].include?(d['kind']) }
@@ -358,12 +358,40 @@ check(monitoring_nodes.map { |resource| resource.dig('metadata', 'name') }.sort 
         resource.dig('spec', 'name') == resource.dig('metadata', 'name') &&
           resource.dig('spec', 'tags') == ['monitoring-storage'] &&
           resource.dig('spec').keys.sort == %w[name tags] &&
-          resource.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '1'
+          resource.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '2'
       end && monitoring_nodes.none? { |resource| resource.dig('metadata', 'name') == 'raspi4' },
-      'Prometheus storage Nodes must adopt manager-created disks in wave 1')
+      'Prometheus storage Nodes must adopt manager-created disks only after the wait hook')
+manager_wait = docs('02-controllers/longhorn/wait-for-manager-nodes.yaml')
+wait_job = manager_wait.find { |resource| resource['kind'] == 'Job' }
+wait_role = manager_wait.find { |resource| resource['kind'] == 'Role' }
+wait_account = manager_wait.find { |resource| resource['kind'] == 'ServiceAccount' }
+wait_config = manager_wait.find do |resource|
+  resource['kind'] == 'ConfigMap' && resource.dig('metadata', 'name') == 'longhorn-manager-node-wait-kubeconfig'
+end
+wait_pod = wait_job.dig('spec', 'template', 'spec')
+wait_container = wait_pod.dig('containers', 0)
+kubeconfig = wait_config.dig('data', 'kubeconfig')
+api_projection = wait_pod.fetch('volumes').find { |volume| volume['name'] == 'kube-api-access' }
+projected_sources = api_projection.dig('projected', 'sources')
+check(wait_job.dig('metadata', 'annotations', 'argocd.argoproj.io/hook') == 'Sync' &&
+      wait_job.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '1' &&
+      wait_job.dig('spec', 'backoffLimit') == 0 &&
+      wait_job.dig('spec', 'activeDeadlineSeconds') == 660 &&
+      wait_account['automountServiceAccountToken'] == false &&
+      wait_pod['automountServiceAccountToken'] == false &&
+      wait_container['image'] == 'rancher/k3s:v1.37.1-k3s1@sha256:ca7f37d993d82ef0dcdcfecb2e0e2618ea541dbaffc620c8cedebe01a82acd0d' &&
+      kubeconfig.include?('server: https://kubernetes.default.svc.cluster.local') &&
+      kubeconfig.include?('certificate-authority: /run/kube-api/ca.crt') &&
+      kubeconfig.include?('tokenFile: /run/kube-api/token') &&
+      projected_sources.any? { |source| source.dig('serviceAccountToken', 'path') == 'token' } &&
+      projected_sources.any? { |source| source.dig('configMap', 'name') == 'kube-root-ca.crt' } &&
+      wait_container.fetch('args', []).first.include?('--kubeconfig=/run/kube-api/kubeconfig') &&
+      wait_role.dig('rules', 0) == {'apiGroups' => ['longhorn.io'], 'resources' => ['nodes'], 'verbs' => ['get']} &&
+      wait_container.dig('args', 0).include?('omv wyse5070'),
+      'A bounded authenticated least-privilege wave-1 hook must wait for manager-owned OMV/Wyse disks')
 monitoring_class = monitoring_storage.find { |resource| resource['kind'] == 'StorageClass' }
 check(monitoring_class.dig('metadata', 'name') == 'longhorn-monitoring' &&
-      monitoring_class.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '2' &&
+      monitoring_class.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '3' &&
       monitoring_class.dig('parameters', 'numberOfReplicas') == '2' &&
       monitoring_class.dig('parameters', 'nodeSelector') == 'monitoring-storage' &&
       monitoring_class.dig('parameters', 'encrypted') == 'true' &&
@@ -381,7 +409,7 @@ longhorn_sources = longhorn.dig('spec', 'sources')
 check(longhorn_sources.any? { |entry| entry['chart'] == 'longhorn' } &&
       longhorn_sources.any? { |entry| entry['ref'] == 'values' } &&
       longhorn_sources.any? { |entry| entry['path'] == '02-controllers/longhorn' &&
-        entry.dig('directory', 'include') == '{storageclass-configmap.yaml,monitoring-storage.yaml}' },
+        entry.dig('directory', 'include') == '{storageclass-configmap.yaml,wait-for-manager-nodes.yaml,monitoring-storage.yaml}' },
       'Longhorn must combine its pinned chart, Git values and reviewed storage resources')
 puts 'PASS: one public root, multi-source Helm, CRD/storage wave order, selected monitoring storage and three-node OpenBao'
 puts applications.sort_by { |app| [wave(app), app.dig('metadata', 'name')] }.map { |app| "  #{wave(app)}: #{app.dig('metadata', 'name')}" }

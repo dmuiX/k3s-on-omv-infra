@@ -14,10 +14,16 @@ the wildcard certificate is ready.
 - `storageclass-configmap.yaml`: reviewed final Argo source overriding the chart's
   `longhorn-storageclass` ConfigMap; the normal `longhorn` class encrypts new
   volumes by default. No passphrase or Kubernetes Secret is committed here.
+- `wait-for-manager-nodes.yaml`: bounded, least-privilege wave-1 Sync hook that
+  proves Longhorn Manager created non-empty OMV/Wyse disk maps before Argo can
+  own either Node resource. It uses a digest-pinned multi-architecture K3s image
+  and an explicit in-cluster kubeconfig backed by the projected ServiceAccount
+  token and namespace root CA; it does not depend on a node kubeconfig.
 - `monitoring-storage.yaml`: encrypted two-replica Prometheus class plus partial
-  Longhorn Node resources for OMV and Wyse. The wave-0 manager first creates each
-  complete Node and default disk; wave 1 then adopts only the required identity
-  and `monitoring-storage` tag, and wave 2 creates the selected StorageClass.
+  Longhorn Node resources for OMV and Wyse. The wave-0 manager creates each
+  complete Node and default disk, the wave-1 hook accepts that state, wave 2
+  adopts only identity and the `monitoring-storage` tag, and wave 3 creates the
+  selected StorageClass.
 - The public route template selects `longhorn-frontend:80` through the K3s
   Gateway; only the real hostname value comes from private Git.
 
@@ -91,8 +97,8 @@ OpenBao cluster merely to change the underlying storage encryption.
 - StorageClass `longhorn` is **not default**. Existing K3s `local-path` remains the
   default; consumers opt into Longhorn with `storageClassName: longhorn`.
 - StorageClass `longhorn-monitoring` is also non-default. It uses two replicas
-  selected onto the Git-managed `monitoring-storage` tags on OMV and Wyse. Argo
-  must not create these Longhorn Nodes before the manager has populated their
+  selected onto the Git-managed `monitoring-storage` tags on OMV and Wyse. The
+  wave-1 Sync hook blocks Node adoption until the manager has populated both
   default disks. The Pi remains excluded from Prometheus metrics storage.
 - UI Service: **ClusterIP**, because the shared Gateway provides LAN/VPN access.
 - Pod Security `privileged` labels target the Longhorn namespace through Argo's
