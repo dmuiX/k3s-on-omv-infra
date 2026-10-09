@@ -17,9 +17,9 @@ check(app.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '5',
 source = app.dig('spec', 'source')
 check(source == {
   'repoURL' => 'https://github.com/dmuiX/k3s-on-omv-infra.git',
-  'targetRevision' => 'main',
+  'targetRevision' => 'c1e894afae1b84710dec8b2bfff698bff35c06e0',
   'path' => '05-platform/openbao-pki/workload'
-}, 'OpenBao PKI must render the steady-state workload from the root branch')
+}, 'OpenBao PKI must render its immutable steady-state workload')
 cert_manager_values = YAML.load_file(File.join(ROOT, '02-controllers/cert-manager/values.yml'))
 check(cert_manager_values['clusterResourceNamespace'] == 'cert-manager',
       'ClusterIssuer ServiceAccount references must resolve in cert-manager')

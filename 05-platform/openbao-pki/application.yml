@@ -14,7 +14,7 @@ spec:
   project: default
   source:
     repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
-    targetRevision: main
+    targetRevision: c1e894afae1b84710dec8b2bfff698bff35c06e0
     path: 05-platform/openbao-pki/workload
   syncPolicy:
     automated:

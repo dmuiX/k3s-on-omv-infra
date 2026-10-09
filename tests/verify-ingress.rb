@@ -40,13 +40,8 @@ apps.each do |app|
   sources = app.dig('spec', 'sources') || [app.dig('spec', 'source')]
   sources.compact.each do |child|
     next if child['chart'] || (child['ref'] && !child['path'])
-    if app.dig('metadata', 'name') == 'openbao-pki'
-      check(child['repoURL'] == source['repoURL'] && child['targetRevision'] == source['targetRevision'],
-            'OpenBao PKI steady-state resources must follow the root revision')
-    else
-      check(child['repoURL'] == source['repoURL'] && child['targetRevision'].to_s.match?(/\A[0-9a-f]{40}\z/),
-            "Public Git source is not immutably pinned: #{app.dig('metadata', 'name')}")
-    end
+    check(child['repoURL'] == source['repoURL'] && child['targetRevision'].to_s.match?(/\A[0-9a-f]{40}\z/),
+          "Public Git source is not immutably pinned: #{app.dig('metadata', 'name')}")
     check(!child['path'] || !child['path'].start_with?('clusters/'),
           "Public Application selects private manifests: #{app.dig('metadata', 'name')}")
   end

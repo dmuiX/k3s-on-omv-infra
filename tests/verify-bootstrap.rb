@@ -11,7 +11,8 @@ BACKUP_CHART_REVISION = '25e8fb5ccfd62a6c55ea90a2ebc51f164e7240f2'
 LIVE_REVISION = 'ce6ad756dd48ef28145f836e6825a65fcafe548f'
 POSTGRES_REVISION = '6ca730a268c1a857893672013f4425222dbd9f4c'
 OPENBAO_REVISION = '05a77589dc40749e198c74cd41508abcdc782781'
-LONGHORN_REVISION = '80bc6721ee47c323212dfc425b997876e679ef89'
+PLATFORM_REVISION = 'c1e894afae1b84710dec8b2bfff698bff35c06e0'
+LONGHORN_REVISION = PLATFORM_REVISION
 POSTGRES_LIVE_REVISION = '3e2ae87315f679fbb6ffc0be2342a74a43d213a6'
 OPENBAO_LIVE_REVISION = 'da4b8dabdf4983933f9beb47e36ddebea389045f'
 
@@ -48,9 +49,9 @@ check(root_selects.call(pki_path) && root_selects.call(postgresql_path),
 pki_app = apps.fetch('openbao-pki')
 postgresql_app = apps.fetch('postgresql')
 check(pki_app.dig('spec', 'source') == {
-        'repoURL' => source['repoURL'], 'targetRevision' => 'main',
+        'repoURL' => source['repoURL'], 'targetRevision' => PLATFORM_REVISION,
         'path' => '05-platform/openbao-pki/workload'
-      }, 'OpenBao PKI must render its steady-state Kubernetes resources')
+      }, 'OpenBao PKI must render its immutable steady-state Kubernetes resources')
 cert_manager_sources = apps.fetch('cert-manager').dig('spec', 'sources')
 cert_manager_network_source = cert_manager_sources.find do |candidate|
   candidate['path'] == '02-controllers/cert-manager/network-policy'
@@ -155,7 +156,7 @@ check(git_sources.select { |candidate| candidate['repoURL'].end_with?('k3s-on-om
 check(git_sources.all? do |candidate|
   allowed = if candidate['repoURL'].end_with?('k3s-on-omv-infra.git')
               [INFRA_REVISION, BACKUP_CHART_REVISION, POSTGRES_REVISION, OPENBAO_REVISION,
-               'main', cert_manager_network_source['targetRevision'], LONGHORN_REVISION]
+               PLATFORM_REVISION, cert_manager_network_source['targetRevision'], LONGHORN_REVISION]
             else
               [LIVE_REVISION, POSTGRES_LIVE_REVISION, OPENBAO_LIVE_REVISION,
                cert_manager_private_source['targetRevision']]
