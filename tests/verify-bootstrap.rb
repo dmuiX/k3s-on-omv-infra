@@ -11,7 +11,7 @@ INFRA_REVISION = '0f3a9a03d3747798093d6de84fe9bedf0176b9a9'
 LIVE_REVISION = 'ce6ad756dd48ef28145f836e6825a65fcafe548f'
 POSTGRES_REVISION = '6ca730a268c1a857893672013f4425222dbd9f4c'
 OPENBAO_REVISION = '712c40098802fc761bec45ed3704defc977ba595'
-LONGHORN_REVISION = 'b2308c9d94dcc7abf1bb7c7668a7495279ce6c04'
+LONGHORN_REVISION = '80bc6721ee47c323212dfc425b997876e679ef89'
 POSTGRES_LIVE_REVISION = '3e2ae87315f679fbb6ffc0be2342a74a43d213a6'
 OPENBAO_LIVE_REVISION = 'da4b8dabdf4983933f9beb47e36ddebea389045f'
 
@@ -441,7 +441,9 @@ pinned_wait, pinned_wait_error, pinned_wait_status = Open3.capture3(
 check(pinned_wait_status.success? && pinned_wait_error.empty? &&
       pinned_wait.include?('tokenFile: /run/kube-api/token') &&
       pinned_wait.include?('certificate-authority: /run/kube-api/ca.crt') &&
-      pinned_wait.include?('rancher/k3s:v1.37.1-k3s1@sha256:'),
+      pinned_wait.include?('rancher/k3s:v1.37.1-k3s1@sha256:') &&
+      pinned_wait.include?("--output=go-template='{{len .spec.disks}}'") &&
+      !pinned_wait.include?('.spec.disks[*]'),
       'Pinned Longhorn source must contain the authenticated digest-pinned manager wait hook')
 puts 'PASS: one public root, multi-source Helm, CRD/storage wave order, selected monitoring storage and three-node OpenBao'
 puts applications.sort_by { |app| [wave(app), app.dig('metadata', 'name')] }.map { |app| "  #{wave(app)}: #{app.dig('metadata', 'name')}" }
