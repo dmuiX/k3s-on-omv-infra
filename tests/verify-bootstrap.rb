@@ -10,6 +10,7 @@ INFRA_REVISION = '0f3a9a03d3747798093d6de84fe9bedf0176b9a9'
 BACKUP_CHART_REVISION = '25e8fb5ccfd62a6c55ea90a2ebc51f164e7240f2'
 LIVE_REVISION = 'ce6ad756dd48ef28145f836e6825a65fcafe548f'
 POSTGRES_REVISION = '753985bad19f8b5ba5ad3be6178ae0b224b81b69'
+CROSSPLANE_REVISION = '4d06e6efd8ffe74d621fa7f906e6bd36a401804c'
 MONITORING_REVISION = '04bd817d6359e269e6d373e7b345f35a833d0ce6'
 OPENBAO_REVISION = '05a77589dc40749e198c74cd41508abcdc782781'
 PLATFORM_REVISION = 'c1e894afae1b84710dec8b2bfff698bff35c06e0'
@@ -177,8 +178,8 @@ check(git_sources.select { |candidate| candidate['repoURL'].end_with?('k3s-on-om
       end, 'Every Infra child pin must resolve to a local reviewed commit object')
 check(git_sources.all? do |candidate|
   allowed = if candidate['repoURL'].end_with?('k3s-on-omv-infra.git')
-              [INFRA_REVISION, BACKUP_CHART_REVISION, POSTGRES_REVISION, MONITORING_REVISION, OPENBAO_REVISION,
-               PLATFORM_REVISION, cert_manager_network_source['targetRevision'], LONGHORN_REVISION]
+              [INFRA_REVISION, BACKUP_CHART_REVISION, POSTGRES_REVISION, CROSSPLANE_REVISION, MONITORING_REVISION,
+               OPENBAO_REVISION, PLATFORM_REVISION, cert_manager_network_source['targetRevision'], LONGHORN_REVISION]
             else
               [LIVE_REVISION, POSTGRES_LIVE_REVISION, OPENBAO_LIVE_REVISION,
                cert_manager_private_source['targetRevision']]

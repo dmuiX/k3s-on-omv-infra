@@ -27,6 +27,13 @@ assert(runtime.dig('spec', 'deploymentTemplate', 'spec', 'template', 'spec', 'co
 assert(runtime.dig('spec', 'deploymentTemplate', 'spec', 'template', 'metadata', 'labels',
                    'bootstrap.k3s-on-omv.dev/openbao-postgres-client') == 'true',
        'Provider PostgreSQL network identity must be explicit')
+provider_app = docs('03-core/crossplane/app.yml').first
+provider_workload_source = provider_app.dig('spec', 'sources').find do |source|
+  source['path'] == '03-core/crossplane/workload'
+end
+assert(provider_workload_source && provider_workload_source['targetRevision'] ==
+       '4d06e6efd8ffe74d621fa7f906e6bd36a401804c',
+       'Provider workload must pin the reviewed Crossplane v2 runtime fix')
 config_app = docs('05-platform/crossplane/config-app.yml').first
 assert(config_app.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '5',
        'ProviderConfig must follow provider install')

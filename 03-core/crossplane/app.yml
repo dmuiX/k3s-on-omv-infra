@@ -17,7 +17,7 @@ spec:
       helm:
         releaseName: crossplane
     - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
-      targetRevision: 753985bad19f8b5ba5ad3be6178ae0b224b81b69
+      targetRevision: 4d06e6efd8ffe74d621fa7f906e6bd36a401804c
       path: 03-core/crossplane/workload
   syncPolicy:
     automated:
