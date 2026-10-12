@@ -21,6 +21,9 @@ once the wildcard certificate is ready.
 - `monitoring-storage.yaml`: encrypted two-replica Prometheus StorageClass. Its
   node selector uses the `monitoring-storage` tags that Longhorn initializes from
   the Kubernetes Node annotations.
+- `bootstrap-storage-canaries.yaml`: retained 1 GiB standard and monitoring PVCs
+  mounted by one minimal Deployment. They prove attached three-node and OMV/Wyse
+  replica placement before OpenBao initialization, independently of later waves.
 - The public route template selects `longhorn-frontend:80` through the K3s
   Gateway; only the real hostname value comes from private Git.
 
