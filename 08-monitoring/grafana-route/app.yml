@@ -21,7 +21,7 @@ spec:
           - name: component
             value: grafana
     - repoURL: https://github.com/dmuiX/k3s-on-omv-live.git
-      targetRevision: ce6ad756dd48ef28145f836e6825a65fcafe548f
+      targetRevision: 308b335fba035dd3f1e0e5655656c0aa498ccca4
       ref: values
   syncPolicy:
     automated:

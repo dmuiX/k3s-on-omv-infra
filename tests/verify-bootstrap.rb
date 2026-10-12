@@ -7,9 +7,7 @@ require 'pathname'
 ROOT = File.expand_path('..', __dir__)
 INFRA_REPOSITORY = 'https://github.com/dmuiX/k3s-on-omv-infra.git'
 INFRA_REVISION = 'main'
-LIVE_REVISION = 'ce6ad756dd48ef28145f836e6825a65fcafe548f'
-POSTGRES_LIVE_REVISION = '3e2ae87315f679fbb6ffc0be2342a74a43d213a6'
-OPENBAO_LIVE_REVISION = 'da4b8dabdf4983933f9beb47e36ddebea389045f'
+LIVE_REVISION = '308b335fba035dd3f1e0e5655656c0aa498ccca4'
 
 def docs(path)
   YAML.load_stream(File.read(File.join(ROOT, path))).compact
@@ -102,7 +100,7 @@ helm_apps.each do |name|
     if path.start_with?('$snapshot-values/')
       private_source = sources.find { |candidate| candidate['ref'] == 'snapshot-values' }
       check(name == 'openbao' && path == '$snapshot-values/clusters/omv/openbao-values.yml' &&
-            private_source && private_source['targetRevision'] == OPENBAO_LIVE_REVISION,
+            private_source && private_source['targetRevision'] == LIVE_REVISION,
             'OpenBao snapshot values must use the dedicated immutable private source')
     else
       check(path.start_with?('$values/') && File.file?(File.join(ROOT, path.delete_prefix('$values/'))),
@@ -146,8 +144,7 @@ infra_sources = git_sources.select { |candidate| candidate['repoURL'] == INFRA_R
 check(!infra_sources.empty? && infra_sources.all? { |candidate| candidate['targetRevision'] == INFRA_REVISION },
       'Every Infra child source must track the main branch')
 check(git_sources.reject { |candidate| candidate['repoURL'] == INFRA_REPOSITORY }.all? do |candidate|
-  [LIVE_REVISION, POSTGRES_LIVE_REVISION, OPENBAO_LIVE_REVISION,
-   cert_manager_private_source['targetRevision']].include?(candidate['targetRevision'])
+  candidate['targetRevision'] == LIVE_REVISION
 end, 'Every private Git child source must retain its reviewed immutable revision')
 
 health_path = '01-bootstrap/argocd-bootstrap/application-health-config.yml'

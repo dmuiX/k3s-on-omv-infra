@@ -41,7 +41,7 @@ spec:
       ref: infra
       kustomize: {}
     - repoURL: https://github.com/dmuiX/k3s-on-omv-live.git
-      targetRevision: 3e2ae87315f679fbb6ffc0be2342a74a43d213a6
+      targetRevision: 308b335fba035dd3f1e0e5655656c0aa498ccca4
       ref: private
   syncPolicy:
     managedNamespaceMetadata:
