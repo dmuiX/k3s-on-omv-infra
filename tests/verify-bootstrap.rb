@@ -32,12 +32,9 @@ root = docs('infra.yml').first
 source = root.fetch('spec').fetch('source')
 directory = source.fetch('directory')
 include_pattern = directory.fetch('include')
-exclude_pattern = directory.fetch('exclude')
-check(exclude_pattern == '06-data/postgresql/app.yml',
-      'Root must carry only the fixed PostgreSQL activation exclusion')
+check(directory['exclude'].nil?, 'The steady-state root must not exclude PostgreSQL')
 root_selects = lambda do |path|
-  File.fnmatch(include_pattern, path, File::FNM_EXTGLOB) &&
-    !File.fnmatch(exclude_pattern, path, File::FNM_EXTGLOB)
+  File.fnmatch(include_pattern, path, File::FNM_EXTGLOB)
 end
 app_files = Dir.glob(File.join(ROOT, '*', '*', '{*app.yml,application.yml}'), File::FNM_EXTGLOB).select do |path|
   root_selects.call(path.delete_prefix(ROOT + '/'))
@@ -49,14 +46,10 @@ check(apps.size == applications.size, 'Duplicate Application names')
 
 pki_path = '05-platform/openbao-pki/application.yml'
 postgresql_path = '06-data/postgresql/app.yml'
-check(root_selects.call(pki_path) && !root_selects.call(postgresql_path),
-      'Root must discover OpenBao PKI while leaving PostgreSQL separately activated')
+check(root_selects.call(pki_path) && root_selects.call(postgresql_path),
+      'Root must discover both OpenBao PKI and PostgreSQL in steady state')
 pki_app = apps.fetch('openbao-pki')
-postgresql_app = docs(postgresql_path).first
-activated_applications = applications + [postgresql_app]
-activated_apps = activated_applications.to_h { |app| [app.dig('metadata', 'name'), app] }
-check(activated_apps.size == activated_applications.size,
-      'Separate PostgreSQL activation must not introduce a duplicate Application name')
+postgresql_app = apps.fetch('postgresql')
 check(pki_app.dig('spec', 'source') == {
         'repoURL' => source['repoURL'], 'targetRevision' => PLATFORM_REVISION,
         'path' => '05-platform/openbao-pki/workload'
@@ -190,9 +183,9 @@ health = docs(health_path).first
 check(File.fnmatch(source.fetch('directory').fetch('include'), health_path, File::FNM_EXTGLOB),
       'Root must discover the bootstrap health configuration')
 check(wave(health) == 1, 'Bootstrap health configuration must be in wave 1')
-expected_waves = [1, 2, 3, 4, 5, 6]
+expected_waves = [1, 2, 3, 4, 5, 6, 7, 8]
 check(([wave(health)] + applications.map { |app| wave(app) }).uniq.sort == expected_waves,
-      'Infra Applications must use the implemented wave folders; later waves are reserved for future apps')
+      'Infra Applications must preserve the complete automated rollout wave sequence')
 check(wave(health) <= applications.map { |app| wave(app) }.min,
       'Child health customization must not follow the first child Application')
 # Both the health ConfigMap and CRD Application are wave 1. The custom
@@ -221,20 +214,21 @@ check(wave(apps.fetch('openbao')) < wave(apps.fetch('vault-secrets-webhook')), '
 check(wave(apps.fetch('argocd-config')) == 1, 'Existing Argo CD server configuration must be wave 1')
 expected_apps = %w[argocd-config argocd-route grafana-route kube-prometheus-stack monitoring-crds cert-manager
                    cert-manager-config k8up longhorn longhorn-route openbao openbao-config openbao-pki
-                   openbao-route vault-secrets-webhook]
+                   openbao-route postgresql postgresql-vso-credentials provider-vault provider-vault-config
+                   vault-secrets-operator vault-secrets-webhook]
 check(apps.keys.sort == expected_apps.sort,
-      'Public root must own the steady-state inventory except separately activated PostgreSQL')
-check(activated_apps.keys.sort == (expected_apps + ['postgresql']).sort,
-      'Separate activation must add only the PostgreSQL Application')
+      'Public root must own the complete steady-state application inventory')
 expected_by_wave = {
   1 => %w[argocd-config monitoring-crds],
   2 => %w[cert-manager k8up longhorn],
-  3 => %w[kube-prometheus-stack openbao],
-  4 => %w[vault-secrets-webhook],
-  5 => %w[argocd-route cert-manager-config grafana-route longhorn-route openbao-pki openbao-route],
-  6 => %w[openbao-config postgresql]
+  3 => %w[openbao provider-vault],
+  4 => %w[vault-secrets-operator vault-secrets-webhook],
+  5 => %w[argocd-route cert-manager-config longhorn-route openbao-pki openbao-route provider-vault-config],
+  6 => %w[openbao-config postgresql],
+  7 => %w[postgresql-vso-credentials],
+  8 => %w[grafana-route kube-prometheus-stack]
 }
-actual_by_wave = activated_applications.group_by { |app| wave(app) }.transform_values do |items|
+actual_by_wave = applications.group_by { |app| wave(app) }.transform_values do |items|
   items.map { |app| app.dig('metadata', 'name') }.sort
 end
 check(actual_by_wave == expected_by_wave.transform_values(&:sort),

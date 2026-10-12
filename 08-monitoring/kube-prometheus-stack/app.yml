@@ -4,8 +4,8 @@ metadata:
   name: kube-prometheus-stack
   namespace: argocd
   annotations:
-    # Deploy persistent monitoring only after Longhorn is healthy.
-    argocd.argoproj.io/sync-wave: "3"
+    # Grafana starts only after the PostgreSQL credential has been generated and synchronized.
+    argocd.argoproj.io/sync-wave: "8"
 spec:
   destination:
     name: in-cluster

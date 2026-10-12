@@ -67,6 +67,7 @@ check(certificate.dig('spec', 'privateKey') == {
         'algorithm' => 'RSA', 'size' => 2048, 'rotationPolicy' => 'Always'
       }, 'PostgreSQL TLS key must match the RSA-only OpenBao service signing role')
 check(cluster.dig('spec', 'postgresql', 'pg_hba').first == 'hostnossl all all all reject' &&
+      cluster.dig('spec', 'postgresql', 'pg_hba').include?('hostssl postgres openbao_manager all scram-sha-256') &&
       cluster.dig('spec', 'postgresql', 'pg_hba').last(2) == [
         'hostssl all grafana all reject', 'hostssl all radar all reject'
       ], 'Non-TLS and cross-database role connections must fail closed')
@@ -88,7 +89,7 @@ end
   role = resource(kustomized, 'DatabaseRole', name)
   database = resource(kustomized, 'Database', name)
   check(role.dig('spec', 'cluster', 'name') == 'platform-postgres' &&
-        role.dig('spec', 'passwordSecret', 'name') == "#{name}-db-credentials" &&
+        !role.dig('spec').key?('passwordSecret') &&
         role.dig('spec', 'databaseRoleReclaimPolicy') == 'retain', "Unsafe #{name} role")
   check(role.dig('spec', 'login') == true && %w[superuser createdb createrole replication].all? { |key|
           role.dig('spec', key) == false
@@ -102,6 +103,10 @@ check(kustomized.none? { |item| item['kind'] == 'Secret' },
 check(resource(kustomized, 'DatabaseRole', 'grafana').dig('spec', 'connectionLimit') == 25 &&
       resource(kustomized, 'DatabaseRole', 'radar').dig('spec', 'connectionLimit') == 12,
       'Application-specific connection budgets changed')
+manager = resource(kustomized, 'DatabaseRole', 'openbao-manager')
+check(manager.dig('spec', 'passwordSecret', 'name') == 'openbao-manager-credentials' &&
+      manager.dig('spec', 'createrole') == true && manager.dig('spec', 'superuser') == false,
+      'OpenBao manager must use its VSO credential with only role-management privilege')
 
 backup = resource(kustomized, 'ScheduledBackup', 'platform-postgres-daily')
 check(backup.dig('spec', 'schedule') == '0 30 3 * * *' && backup.dig('spec', 'immediate') == true &&

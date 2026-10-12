@@ -2,22 +2,32 @@ apiVersion: pkg.crossplane.io/v1
 kind: Provider
 metadata:
   name: provider-vault
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
 spec:
-  package: xpkg.upbound.io/crossplane-contrib/provider-vault:v4.0.4
+  package: xpkg.upbound.io/upbound/provider-vault:v4.0.4
+  runtimeConfigRef:
+    name: provider-vault
 ---
-# Provider-vault Kubernetes auth configuration. The provider must be granted
-# permission to read the manager Secret in postgresql; its Vault policy and
-# Kubernetes auth role are provisioned out-of-band by the OpenBao bootstrap.
-apiVersion: kubernetes.m.crossplane.io/v1alpha1
-kind: ProviderConfig
+apiVersion: pkg.crossplane.io/v1beta1
+kind: DeploymentRuntimeConfig
 metadata:
-  name: openbao
+  name: provider-vault
 spec:
-  credentials:
-    source: Secret
-    secretRef:
-      namespace: postgresql
-      name: openbao-manager-credentials
-      key: token
-  address: https://openbao.openbao.svc:8200
-  skipTLSVerify: false
+  deploymentTemplate:
+    spec:
+      selector:
+        matchLabels:
+          bootstrap.k3s-on-omv.dev/openbao-postgres-client: "true"
+      template:
+        metadata:
+          labels:
+            bootstrap.k3s-on-omv.dev/openbao-postgres-client: "true"
+        spec:
+          serviceAccountName: provider-vault
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: provider-vault
+  namespace: crossplane-system

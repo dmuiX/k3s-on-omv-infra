@@ -11,6 +11,7 @@ resources:
   - databases/grafana.yaml
   - databases/grafana-openbao.yaml
   - databases/radar.yaml
+  - databases/radar-openbao.yaml
   - monitoring/alerts.yaml
 labels:
   - pairs:

@@ -9,6 +9,23 @@ prometheusOperator:
     certManager:
       enabled: false # Avoid a cert-manager dependency for monitoring's admission webhook.
 grafana:
+  envValueFrom:
+    GF_DATABASE_USER:
+      secretKeyRef:
+        name: grafana-db-credentials
+        key: username
+    GF_DATABASE_PASSWORD:
+      secretKeyRef:
+        name: grafana-db-credentials
+        key: password
+  grafana.ini:
+    database:
+      type: postgres
+      host: platform-postgres-rw.postgresql.svc:5432
+      name: grafana
+      user: $__env{GF_DATABASE_USER}
+      password: $__env{GF_DATABASE_PASSWORD}
+      ssl_mode: require
   # Let the chart create the initial random administrator credential. The
   # Application ignores only those generated Secret data fields so Argo does not
   # rotate them on each Helm render; never commit or log their values.

@@ -4,7 +4,7 @@ metadata:
   name: vault-secrets-operator
   namespace: argocd
   annotations:
-    argocd.argoproj.io/sync-wave: "2"
+    argocd.argoproj.io/sync-wave: "4"
 spec:
   destination:
     name: in-cluster
@@ -19,6 +19,17 @@ spec:
         values: |
           defaultVaultConnection:
             enabled: false
+          defaultAuthMethod:
+            enabled: false
+          controller:
+            manager:
+              resources:
+                requests:
+                  cpu: 25m
+                  memory: 96Mi
+                limits:
+                  cpu: 500m
+                  memory: 256Mi
     - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
       targetRevision: main
       path: 04-secrets/vault-secrets-operator/workload

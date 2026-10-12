@@ -1,0 +1,101 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: radar
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: grafana-vso
+  namespace: kube-prometheus-stack
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: radar-vso
+  namespace: radar
+automountServiceAccountToken: false
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultConnection
+metadata:
+  name: openbao-grafana
+  namespace: kube-prometheus-stack
+spec:
+  address: http://openbao-active.openbao.svc.cluster.local:8200
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultAuth
+metadata:
+  name: openbao-grafana
+  namespace: kube-prometheus-stack
+spec:
+  method: kubernetes
+  mount: kubernetes
+  kubernetes:
+    role: grafana-vso
+    serviceAccount: grafana-vso
+    tokenExpirationSeconds: 600
+  vaultConnectionRef: openbao-grafana
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultDynamicSecret
+metadata:
+  name: grafana-postgresql
+  namespace: kube-prometheus-stack
+spec:
+  vaultAuthRef: openbao-grafana
+  mount: database
+  path: static-creds/grafana
+  allowStaticCreds: true
+  refreshAfter: 1m
+  destination:
+    create: true
+    name: grafana-db-credentials
+    type: kubernetes.io/basic-auth
+  rolloutRestartTargets:
+    - kind: Deployment
+      name: kube-prometheus-stack-grafana
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultConnection
+metadata:
+  name: openbao-radar
+  namespace: radar
+spec:
+  address: http://openbao-active.openbao.svc.cluster.local:8200
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultAuth
+metadata:
+  name: openbao-radar
+  namespace: radar
+spec:
+  method: kubernetes
+  mount: kubernetes
+  kubernetes:
+    role: radar-vso
+    serviceAccount: radar-vso
+    tokenExpirationSeconds: 600
+  vaultConnectionRef: openbao-radar
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultDynamicSecret
+metadata:
+  name: radar-postgresql
+  namespace: radar
+spec:
+  vaultAuthRef: openbao-radar
+  mount: database
+  path: static-creds/radar
+  allowStaticCreds: true
+  refreshAfter: 1m
+  destination:
+    create: true
+    name: radar-db-credentials
+    type: kubernetes.io/basic-auth

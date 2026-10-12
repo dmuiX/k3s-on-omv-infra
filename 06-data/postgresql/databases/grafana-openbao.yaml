@@ -1,19 +1,42 @@
-# OpenBao owns credential generation and rotation; CNPG owns only the fixed
-# login role. Provider-vault and OpenBao auth/policy are prerequisites.
-apiVersion: vault.openbao.upbound.io/v1alpha1
+# OpenBao owns the Grafana password; CNPG must never reconcile this login's password.
+apiVersion: postgresql.cnpg.io/v1
+kind: DatabaseRole
+metadata:
+  name: openbao-manager
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  cluster:
+    name: platform-postgres
+  name: openbao_manager
+  login: true
+  superuser: false
+  createdb: false
+  createrole: true
+  replication: false
+  inherit: true
+  connectionLimit: 5
+  databaseRoleReclaimPolicy: retain
+  passwordSecret:
+    name: openbao-manager-credentials
+---
+apiVersion: database.vault.upbound.io/v1alpha1
 kind: SecretBackendConnection
 metadata:
   name: postgresql
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
 spec:
+  deletionPolicy: Orphan
   forProvider:
-    path: database
     backend: database
+    name: platform-postgres
     allowedRoles:
       - grafana
+      - radar
     postgresql:
-      - name: platform-postgres
-        connectionUrl: "postgresql://{{username}}:{{password}}@platform-postgres-rw.postgresql.svc:5432/postgres?sslmode=verify-full"
-        username: "${OPENBAO_MANAGER_USERNAME}"
+      - connectionUrl: "postgresql://{{username}}:{{password}}@platform-postgres-rw.postgresql.svc:5432/postgres?sslmode=require"
+        username: openbao_manager
         passwordSecretRef:
           name: openbao-manager-credentials
           namespace: postgresql
@@ -21,16 +44,44 @@ spec:
   providerConfigRef:
     name: openbao
 ---
-apiVersion: vault.openbao.upbound.io/v1alpha1
-kind: StaticRole
+apiVersion: database.vault.upbound.io/v1alpha1
+kind: SecretBackendStaticRole
 metadata:
   name: grafana
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
 spec:
+  deletionPolicy: Orphan
   forProvider:
     backend: database
     name: grafana
     dbName: platform-postgres
     username: grafana
-    rotationPeriod: 86400
+    rotationPeriod: 2592000
   providerConfigRef:
     name: openbao
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: crossplane-read-openbao-manager-credential
+  namespace: postgresql
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["openbao-manager-credentials"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: crossplane-read-openbao-manager-credential
+  namespace: postgresql
+subjects:
+  - kind: ServiceAccount
+    name: provider-vault
+    namespace: crossplane-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: crossplane-read-openbao-manager-credential

@@ -25,32 +25,41 @@ External-DNS. It uses Argo CD (already installed) for these applications:
 ├── k8up/                   backup controller
 └── longhorn/               three-replica storage across the cluster
 03-core/
-├── kube-prometheus-stack/  persistent monitoring on Longhorn
+├── crossplane/             OpenBao provider and provider configuration
 └── openbao/                secret store
 04-secrets/
+├── vault-secrets-operator/ OpenBao-to-Kubernetes secret synchronization
 └── vault-secrets-webhook/  admission-time secret injection
 05-platform/
 ├── public-certificates/    wildcard certificate/issuers after secrets
+├── crossplane/             OpenBao ProviderConfig after provider installation
 ├── openbao-pki/            cert-manager identities, issuers and internal certificate
 ├── argocd/
-├── grafana/
 ├── longhorn/
 └── openbao/                early UI routes, usable when wildcard TLS becomes ready
 06-data/
 ├── openbao-backups/        OpenBao backup schedule
-├── postgresql/             separately activated CloudNativePG HA platform
+├── postgresql/             CloudNativePG HA platform, automatically reconciled
 └── redis/                  dormant Redis operator preparation (`application.yml`)
+07-secrets/
+└── postgresql-vso/         per-database OpenBao credential synchronization
+08-monitoring/
+├── grafana-route/          Grafana route after database credential delivery
+└── kube-prometheus-stack/  persistent monitoring on Longhorn
 ```
 
 The first directory level is the parent sync wave; the second keeps component
 ownership separate. Applications in one wave are independent and may start in
 any order. A real dependency belongs in a later wave, not in an alphabetic
-component name. Wave 7 is reserved for future applications and is intentionally
-absent until one is implemented. The wave-1 CRD-only Application
-renders only the monitoring CRDs before wave-2 controllers emit ServiceMonitors;
-the full monitoring stack (Grafana, Prometheus, Alertmanager and operator) starts in
-wave 3, after Longhorn, with explicit encrypted Longhorn PVCs. Longhorn also
-precedes OpenBao PVCs; the secrets webhook follows OpenBao.
+component name. The wave-1 CRD-only Application renders monitoring CRDs before
+controllers emit ServiceMonitors. Longhorn and OpenBao precede Crossplane and the
+Vault Secrets Operator; the Crossplane package installs alongside OpenBao,
+while its ProviderConfig follows in wave 5. PostgreSQL starts automatically in
+wave 6 after its OpenBao PKI,
+manager credential, and provider prerequisites. VSO materializes per-database
+credentials in wave 7; the full monitoring stack (including Grafana) starts in
+wave 8 so Grafana cannot start before its PostgreSQL credential exists.
+Longhorn also precedes OpenBao PVCs; the secrets webhook follows OpenBao.
 Wildcard certificate issuance and UI routes share wave 5 after OpenBao-backed
 Cloudflare custody and webhook activation; routes may reconcile first but become
 usable only when the Gateway certificate is ready. The backup schedule remains
@@ -59,14 +68,12 @@ shares wave 1 with other Applications: **seed and verify it separately before a
 first root sync**. Changing the existing Argo CD backend to HTTP also requires a
 controlled `argocd-server` restart; plan that before enabling its external route.
 
-`infra.yml` is the **one** Argo CD root for the steady-state Application
-inventory, including
-[`05-platform/openbao-pki/`](05-platform/openbao-pki/workload/README.md).
-PostgreSQL remains a separately activated wave-6 GitOps Application through the
-fixed `06-data/postgresql/app.yml` root exclusion; there is no mutable Ansible
-rollout state. Ansible must complete OpenBao initialization, seal/custody handling, PKI
-ceremony, API configuration, and interactive secret entry before Argo applies
-the dependent Kubernetes resources. The PKI Application owns only cert-manager
+`infra.yml` is the **one** Argo CD root for the complete steady-state Application
+inventory, including PostgreSQL and
+[`05-platform/openbao-pki/`](05-platform/openbao-pki/workload/README.md); there is
+no mutable Ansible rollout state or PostgreSQL root exclusion. Ansible completes
+OpenBao initialization, seal/custody handling, PKI ceremony, trust bootstrap,
+and protected manager/R2 input before dependent resources reconcile. The PKI Application owns only cert-manager
 identities/RBAC, ClusterIssuers, and the internal Certificate. Upstream
 controllers are Argo multi-source Applications: one version-pinned Helm/OCI chart
 plus values from this Git repository. Route, certificate, and backup resources render the local
@@ -79,10 +86,9 @@ to this public repository.
 Authored Kustomize resources remain in Git, but rendered upstream chart output
 is deliberately not vendored. The encrypted Longhorn StorageClass ConfigMap is
 an explicit final Argo source overriding the chart resource that Longhorn
-reconciles. Backends run in waves 1–3. Certificate issuance and UI routes follow
-OpenBao/webhook together in wave 5, so routes are created at the earliest safe
-platform stage and become reachable as soon as wildcard TLS is ready. Backup
-configuration and PostgreSQL remain wave-6 data concerns.
+reconciles. Certificate issuance and UI routes follow OpenBao/webhook together
+in wave 5. PostgreSQL and backup configuration reconcile in wave 6, per-database
+credentials in wave 7, and Grafana/monitoring in wave 8.
 
 The local chart installs no controller and defaults to `component: none`.
 A rendered route does not prove working HTTPS: check Certificate Ready and the
@@ -109,11 +115,14 @@ excludes `raspi4` to reserve the Pi's limited capacity.
 
 ### OpenBao configuration ownership
 
-OpenBao API configuration is intentionally absent from this repository. The
-bootstrap Ansible workflow owns mounts, auth methods and roles, ACL policies,
-PKI configuration, initialization/seal/custody operations, and interactive
-secret entry. Argo CD owns Kubernetes workloads and resources only. Do not add
-an in-cluster Job, CronJob, controller, or polling script to reconcile OpenBao.
+OpenBao API configuration is limited to explicit ownership boundaries. The
+bootstrap Ansible workflow owns mounts, Kubernetes auth setup and trust policies,
+PKI configuration, initialization/seal/custody operations, and protected
+one-time inputs. The pinned Crossplane provider is allowed only to manage the
+PostgreSQL connection configuration and static database roles; it cannot manage
+OpenBao policies, auth roles, mounts or KV data. Argo CD owns the Kubernetes
+resources, while Crossplane reconciles only that bounded OpenBao database state.
+Do not add generic OpenBao Jobs, CronJobs or polling reconcilers.
 
 The root intentionally retains `automated.prune: false`, and the former
 `openbao-access-config` Application had no resources finalizer. Therefore this

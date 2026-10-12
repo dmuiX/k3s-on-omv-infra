@@ -77,6 +77,15 @@ spec:
               app.kubernetes.io/name: radar
       ports:
         - {protocol: TCP, port: 5432}
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: crossplane-system
+          podSelector:
+            matchLabels:
+              bootstrap.k3s-on-omv.dev/openbao-postgres-client: "true"
+      ports:
+        - {protocol: TCP, port: 5432}
   egress:
     - to:
         - podSelector:

@@ -59,19 +59,17 @@ root = YAML.load_file(File.join(ROOT, 'infra.yml'))
 public_url = root.dig('spec', 'source', 'repoURL')
 directory = root.dig('spec', 'source', 'directory')
 include_pattern = directory.fetch('include')
-exclude_pattern = directory.fetch('exclude')
-check(exclude_pattern == '06-data/postgresql/app.yml',
-      'Root must carry only the fixed PostgreSQL activation exclusion')
+check(directory['exclude'].nil?, 'Root must not exclude PostgreSQL')
 apps = Dir.glob(File.join(ROOT, '[0-9][0-9]-*', '*', '{*app.yml,application.yml}'), File::FNM_EXTGLOB).map do |path|
   relative = path.delete_prefix(ROOT + '/')
-  YAML.load_file(path) if File.fnmatch(include_pattern, relative, File::FNM_EXTGLOB) &&
-                          !File.fnmatch(exclude_pattern, relative, File::FNM_EXTGLOB)
+  YAML.load_file(path) if File.fnmatch(include_pattern, relative, File::FNM_EXTGLOB)
 end.compact.to_h { |app| [app.dig('metadata', 'name'), app] }
 expected_apps = %w[argocd-config argocd-route grafana-route kube-prometheus-stack monitoring-crds
                    cert-manager cert-manager-config k8up longhorn longhorn-route openbao openbao-config
-                   openbao-pki openbao-route vault-secrets-webhook]
-check(apps.keys.sort == expected_apps.sort && apps.values.map { |app| wave(app) }.uniq.sort == [1, 2, 3, 4, 5, 6],
-      'Public root must own the steady-state inventory except separately activated PostgreSQL')
+                   openbao-pki openbao-route postgresql postgresql-vso-credentials provider-vault
+                   provider-vault-config vault-secrets-operator vault-secrets-webhook]
+check(apps.keys.sort == expected_apps.sort && apps.values.map { |app| wave(app) }.uniq.sort == [1, 2, 3, 4, 5, 6, 7, 8],
+      'Public root must own the complete automatically reconciled platform inventory')
 check(File.file?(VALUES), 'Private values file missing')
 private_values = YAML.load_file(VALUES)
 expected_gateway = {
@@ -85,7 +83,7 @@ check(backup_endpoint.is_a?(URI::HTTPS) && ['', '/'].include?(backup_endpoint.pa
 
 rendered = {}
 { 'argocd-route' => ['argocd', 5, 'argocd-config', 'argocd-server', 80],
-  'grafana-route' => ['grafana', 5, 'kube-prometheus-stack', 'kube-prometheus-stack-grafana', 80],
+  'grafana-route' => ['grafana', 8, 'kube-prometheus-stack', 'kube-prometheus-stack-grafana', 80],
   'longhorn-route' => ['longhorn', 5, 'longhorn', 'longhorn-frontend', 80],
   'openbao-route' => ['openbao', 5, 'openbao', 'openbao-ui', 8200],
   'cert-manager-config' => ['certificates', 5, 'vault-secrets-webhook'],

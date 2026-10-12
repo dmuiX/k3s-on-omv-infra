@@ -1,0 +1,13 @@
+# ProviderConfig depends on provider-vault v4.0.4 having installed its CRD.
+apiVersion: vault.upbound.io/v1beta1
+kind: ProviderConfig
+metadata:
+  name: openbao
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  address: http://openbao-active.openbao.svc.cluster.local:8200
+  credentials:
+    source: Kubernetes
+  role: crossplane-provider-vault
+  mountPath: kubernetes
