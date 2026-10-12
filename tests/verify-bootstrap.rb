@@ -6,8 +6,9 @@ require 'pathname'
 
 ROOT = File.expand_path('..', __dir__)
 INFRA_REPOSITORY = 'https://github.com/dmuiX/k3s-on-omv-infra.git'
+LIVE_REPOSITORY = 'https://github.com/dmuiX/k3s-on-omv-live.git'
 INFRA_REVISION = 'main'
-LIVE_REVISION = '308b335fba035dd3f1e0e5655656c0aa498ccca4'
+LIVE_REVISION = 'main'
 
 def docs(path)
   YAML.load_stream(File.read(File.join(ROOT, path))).compact
@@ -57,7 +58,7 @@ cert_manager_private_source = cert_manager_sources.find { |candidate| candidate[
 check(cert_manager_network_source && cert_manager_private_source &&
       cert_manager_network_source.dig('helm', 'valueFiles') == ['$private/clusters/omv/values.yml'] &&
       cert_manager_network_source['targetRevision'] == INFRA_REVISION &&
-      cert_manager_private_source['targetRevision'].to_s.match?(/\A[0-9a-f]{40}\z/) &&
+      cert_manager_private_source['targetRevision'] == LIVE_REVISION &&
       !cert_manager_private_source.key?('path'),
       'cert-manager must own its branch-tracked private-endpoint NetworkPolicy source')
 postgres_infra_sources = postgresql_app.fetch('spec').fetch('sources').select do |candidate|
@@ -101,7 +102,7 @@ helm_apps.each do |name|
       private_source = sources.find { |candidate| candidate['ref'] == 'snapshot-values' }
       check(name == 'openbao' && path == '$snapshot-values/clusters/omv/openbao-values.yml' &&
             private_source && private_source['targetRevision'] == LIVE_REVISION,
-            'OpenBao snapshot values must use the dedicated immutable private source')
+            'OpenBao snapshot values must use the protected Live main source')
     else
       check(path.start_with?('$values/') && File.file?(File.join(ROOT, path.delete_prefix('$values/'))),
             "#{name} references a missing Git values file")
@@ -136,16 +137,24 @@ check(!apps.key?('openbao-access-config') && !File.exist?(File.join(ROOT, '04-se
         "Editor schema invalid or not a values schema: #{chart}")
 end
 
-git_sources = applications.flat_map do |app|
+all_sources = applications.flat_map do |app|
   spec = app.fetch('spec')
   spec['sources'] || [spec['source']]
-end.compact.select { |candidate| candidate['repoURL']&.start_with?('https://github.com/dmuiX/') }
+end.compact
+first_party_url = lambda do |url|
+  url&.match?(%r{\A(?:https://github\.com/dmuiX/|git@github\.com:dmuiX/|ssh://git@github\.com/dmuiX/)})
+end
+check(first_party_url.call('git@github.com:dmuiX/unreviewed.git'),
+      'First-party source detection must include SSH-form GitHub URLs')
+git_sources = all_sources.select { |candidate| first_party_url.call(candidate['repoURL']) }
 infra_sources = git_sources.select { |candidate| candidate['repoURL'] == INFRA_REPOSITORY }
+live_sources = git_sources.select { |candidate| candidate['repoURL'] == LIVE_REPOSITORY }
+check(git_sources.all? { |candidate| [INFRA_REPOSITORY, LIVE_REPOSITORY].include?(candidate['repoURL']) },
+      'Every first-party Git source must use an exact reviewed HTTPS repository identity')
 check(!infra_sources.empty? && infra_sources.all? { |candidate| candidate['targetRevision'] == INFRA_REVISION },
       'Every Infra child source must track the main branch')
-check(git_sources.reject { |candidate| candidate['repoURL'] == INFRA_REPOSITORY }.all? do |candidate|
-  candidate['targetRevision'] == LIVE_REVISION
-end, 'Every private Git child source must retain its reviewed immutable revision')
+check(live_sources.length == 9 && live_sources.all? { |candidate| candidate['targetRevision'] == LIVE_REVISION },
+      'All nine first-party private Git child sources must track protected Live main')
 
 health_path = '01-bootstrap/argocd-bootstrap/application-health-config.yml'
 health = docs(health_path).first

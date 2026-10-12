@@ -22,7 +22,7 @@ spec:
       targetRevision: main
       ref: values
     - repoURL: "https://github.com/dmuiX/k3s-on-omv-live.git"
-      targetRevision: 308b335fba035dd3f1e0e5655656c0aa498ccca4
+      targetRevision: main
       ref: snapshot-values
   syncPolicy:
     automated:
