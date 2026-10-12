@@ -13,7 +13,7 @@ POSTGRES_REVISION = '753985bad19f8b5ba5ad3be6178ae0b224b81b69'
 MONITORING_REVISION = '04bd817d6359e269e6d373e7b345f35a833d0ce6'
 OPENBAO_REVISION = '05a77589dc40749e198c74cd41508abcdc782781'
 PLATFORM_REVISION = 'c1e894afae1b84710dec8b2bfff698bff35c06e0'
-LONGHORN_REVISION = PLATFORM_REVISION
+LONGHORN_REVISION = '5ac70b17f87c8dfd5145f1c50de29c36b8749468'
 POSTGRES_LIVE_REVISION = '3e2ae87315f679fbb6ffc0be2342a74a43d213a6'
 OPENBAO_LIVE_REVISION = 'da4b8dabdf4983933f9beb47e36ddebea389045f'
 
@@ -339,7 +339,7 @@ end
 check(!longhorn.fetch('spec').key?('labels'), 'Misplaced Application labels')
 longhorn_files = Dir.glob(File.join(ROOT, '02-controllers/longhorn', '*.{yml,yaml}'))
 check(longhorn_files.map { |f| File.basename(f) }.sort ==
-      %w[app.yml monitoring-storage.yaml node-default-tags.yaml storageclass-configmap.yaml values.yml],
+      %w[app.yml bootstrap-storage-canaries.yaml monitoring-storage.yaml node-default-tags.yaml storageclass-configmap.yaml values.yml],
       'Longhorn folder must contain only its Application, values and reviewed storage resources')
 longhorn_authored = longhorn_files.flat_map { |file| YAML.load_stream(File.read(file)).compact }
 check(longhorn_authored.none? { |resource| %w[HelmRelease HelmRepository].include?(resource['kind']) },
@@ -402,7 +402,7 @@ check(longhorn_sources.any? { |entry| entry['chart'] == 'longhorn' } &&
       longhorn_sources.any? { |entry| entry['ref'] == 'values' } &&
       longhorn_sources.any? { |entry| entry['path'] == '02-controllers/longhorn' &&
         entry.dig('directory', 'include') ==
-          '{storageclass-configmap.yaml,node-default-tags.yaml,monitoring-storage.yaml}' },
+          '{storageclass-configmap.yaml,node-default-tags.yaml,monitoring-storage.yaml,bootstrap-storage-canaries.yaml}' },
       'Longhorn must combine its pinned chart, Git values, node annotations and storage resources')
 puts 'PASS: one public root, multi-source Helm, CRD/storage wave order, selected monitoring storage and three-node OpenBao'
 puts applications.sort_by { |app| [wave(app), app.dig('metadata', 'name')] }.map { |app| "  #{wave(app)}: #{app.dig('metadata', 'name')}" }
