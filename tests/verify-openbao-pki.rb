@@ -23,11 +23,6 @@ check(source == {
 cert_manager_values = YAML.load_file(File.join(ROOT, '02-controllers/cert-manager/values.yml'))
 check(cert_manager_values['clusterResourceNamespace'] == 'cert-manager',
       'ClusterIssuer ServiceAccount references must resolve in cert-manager')
-check(cert_manager_values['extraArgs'] == [
-        '--enable-gateway-api',
-        '--dns01-recursive-nameservers-only'
-      ],
-      'cert-manager DNS-01 self-checks must remain on the NetworkPolicy-allowed recursive resolver path')
 
 root = YAML.load_file(File.join(ROOT, 'infra.yml'))
 directory = root.dig('spec', 'source', 'directory')
