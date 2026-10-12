@@ -31,27 +31,34 @@ static roles. VSO 1.6.0 reads `database/static-creds/{grafana,radar}` with
 `allowStaticCreds: true`, materializes namespace-local Kubernetes Secrets, and
 restarts Grafana when its password rotates. The Radar credential is synchronized
 for its future consumer; no Radar workload restart target is configured yet.
-PostgreSQL credentials reconcile in Wave 7, after the database and its OpenBao
-roles. The monitoring stack, including Grafana, starts in Wave 8 so Grafana does
-not start before its database Secret exists.
+The applications are ordered in Waves 6–8, but offline checks do not prove
+operator readiness or that VSO has created destination Secrets before later
+Applications reconcile. Controllers are expected to retry until prerequisites
+exist; verify this behavior during the live PoC.
 
-`sslmode=require` encrypts the PostgreSQL connection but does **not** verify the
-server CA or hostname. This is a known POC limitation: add trusted CA
-verification before treating the database connection as production-accepted.
+Grafana and the provider use `sslmode=require`, which encrypts PostgreSQL
+transport but does **not** verify the server CA or hostname. The PostgreSQL
+server Secret is namespace-local; Grafana cannot mount it across namespaces.
+Trusted CA verification remains a production prerequisite and requires an
+explicit CA distribution mechanism into Grafana's namespace.
 Switching an existing Grafana installation from SQLite to PostgreSQL also
 requires a separately planned and accepted data migration; this manifest change
 does not migrate existing Grafana data.
 
 The provider-vault package is Vault-focused and not officially certified for
-OpenBao. Its schemas were checked against the pinned v4.0.4 CRDs, but OpenBao
-compatibility, first static-role creation, rotation, VSO restart behavior, and
-database connectivity have not been validated on a live cluster. Do not infer
-production readiness from offline tests.
+OpenBao. Offline contract tests check selected manifest fields but do not
+validate them against the provider's installed CRDs. OpenBao compatibility,
+first static-role creation, rotation privileges for CNPG-created roles, VSO
+restart behavior, and database connectivity have not been validated on a live
+cluster. Do not infer production readiness from offline tests.
 
 ## Platform safeguards
 
 CloudNativePG and Barman chart versions remain pinned in `app.yml`. CNPG role
 and database reclaim policies remain `retain`; PostgreSQL storage, backup,
 network policy, and application connection protections remain in force. The
-manager credential and VSO trust bootstrap are supplied by the sibling Ansible
-repository. Never place generated credentials in Git.
+NetworkPolicies permit broad TCP/443 egress for API and object-store access; they
+do not restrict HTTPS destinations and need CNI-aware controls before a stricter
+production boundary is claimed. The manager credential and VSO trust bootstrap
+are supplied by the sibling Ansible repository. Never place generated
+credentials in Git.
