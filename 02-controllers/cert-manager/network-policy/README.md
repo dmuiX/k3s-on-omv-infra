@@ -11,4 +11,6 @@ The controller addresses `kubernetes.default.svc:443`, but K3s evaluates this
 connection after Service DNAT on the current cluster. Private Live values
 therefore provide the three server `/32` endpoints permitted on TCP 6443. The
 public chart retains no LAN addresses. DNS, active OpenBao TCP 8200, and external
-HTTPS TCP 443 are the only other egress paths.
+HTTPS TCP 443 are the only other egress paths. The cert-manager controller uses
+`--dns01-recursive-nameservers-only`, keeping DNS-01 self-checks on CoreDNS
+instead of directly contacting arbitrary authoritative servers on port 53.

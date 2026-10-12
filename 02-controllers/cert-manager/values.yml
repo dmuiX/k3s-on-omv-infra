@@ -66,3 +66,6 @@ prometheus:
     enabled: true
 extraArgs:
   - --enable-gateway-api
+  # Keep DNS-01 self-checks on CoreDNS; the controller NetworkPolicy intentionally
+  # does not permit direct DNS queries to arbitrary authoritative servers.
+  - --dns01-recursive-nameservers-only
