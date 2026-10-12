@@ -21,6 +21,13 @@ def docs(path)
   YAML.load_stream(File.read(File.join(ROOT, path))).compact
 end
 
+def revision_docs(revision, path)
+  content, error, status = Open3.capture3('git', '-C', ROOT, 'show', "#{revision}:#{path}")
+  raise "Cannot read #{path} at #{revision}: #{error}" unless status.success?
+
+  YAML.load_stream(content).compact
+end
+
 def check(condition, message)
   raise message unless condition
 end
@@ -408,6 +415,10 @@ check(standard_canary.dig('spec', 'storageClassName') == 'longhorn' &&
       monitoring_canary.dig('spec', 'storageClassName') == 'longhorn-monitoring',
       'Bootstrap canaries must exercise both reviewed Longhorn classes')
 canary_container = canary_deployment.dig('spec', 'template', 'spec', 'containers', 0)
+canary_mounts = canary_container.fetch('volumeMounts').to_h { |mount| [mount['name'], mount] }
+canary_volumes = canary_deployment.dig('spec', 'template', 'spec', 'volumes').to_h do |volume|
+  [volume['name'], volume]
+end
 check(canary_deployment.dig('metadata', 'namespace') == 'longhorn' &&
       canary_deployment.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '5' &&
       canary_deployment.dig('spec', 'replicas') == 1 &&
@@ -419,10 +430,25 @@ check(canary_deployment.dig('metadata', 'namespace') == 'longhorn' &&
       canary_container.dig('securityContext', 'readOnlyRootFilesystem') == true &&
       canary_container.dig('securityContext', 'runAsNonRoot') == true &&
       canary_container.dig('securityContext', 'capabilities', 'drop') == ['ALL'] &&
-      canary_container.fetch('volumeMounts').map { |mount| mount['name'] }.sort == %w[monitoring standard] &&
-      canary_deployment.dig('spec', 'template', 'spec', 'volumes').map do |volume|
-        volume.dig('persistentVolumeClaim', 'claimName')
-      end.sort == %w[longhorn-bootstrap-monitoring longhorn-bootstrap-standard],
+      canary_container['command'] == [
+        '/bin/sh', '-ec',
+        'printf \'%s\\n\' "$POD_UID" > /standard/ready && printf \'%s\\n\' "$POD_UID" > /monitoring/ready && exec sleep 2147483647'
+      ] &&
+      canary_container['env'] == [
+        {'name' => 'POD_UID', 'valueFrom' => {'fieldRef' => {'fieldPath' => 'metadata.uid'}}}
+      ] &&
+      canary_mounts == {
+        'standard' => {'name' => 'standard', 'mountPath' => '/standard'},
+        'monitoring' => {'name' => 'monitoring', 'mountPath' => '/monitoring'}
+      } &&
+      canary_volumes == {
+        'standard' => {'name' => 'standard', 'persistentVolumeClaim' => {
+          'claimName' => 'longhorn-bootstrap-standard'
+        }},
+        'monitoring' => {'name' => 'monitoring', 'persistentVolumeClaim' => {
+          'claimName' => 'longhorn-bootstrap-monitoring'
+        }}
+      },
       'Bootstrap canary Deployment must mount both claims with the reviewed hardened image contract')
 openbao_values = docs('03-core/openbao/values.yml').first
 check(openbao_values.dig('server', 'ha', 'enabled') && openbao_values.dig('server', 'ha', 'replicas') == 3,

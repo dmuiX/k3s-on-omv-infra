@@ -61,7 +61,12 @@ spec:
           command:
             - /bin/sh
             - -ec
-            - touch /standard/ready /monitoring/ready && exec sleep 2147483647
+            - printf '%s\n' "$POD_UID" > /standard/ready && printf '%s\n' "$POD_UID" > /monitoring/ready && exec sleep 2147483647
+          env:
+            - name: POD_UID
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.uid
           securityContext:
             allowPrivilegeEscalation: false
             capabilities:
