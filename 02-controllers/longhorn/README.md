@@ -8,8 +8,8 @@ private Git values, in the same platform phase as certificate configuration.
 The namespace and release name remain `longhorn`. HTTPS only becomes usable
 once the wildcard certificate is ready.
 
-- `app.yml`: pinned Longhorn Helm chart, Git values and an authored-resource
-  source for node annotations and encrypted StorageClass configuration.
+- `app.yml`: version-pinned Longhorn Helm chart plus branch-tracking same-repository
+  Git values and authored resources for node annotations and encrypted StorageClass configuration.
 - `values.yml`: three-replica storage defaults; no embedded Flux HelmRelease.
 - `storageclass-configmap.yaml`: reviewed final Argo source overriding the chart's
   `longhorn-storageclass` ConfigMap; the normal `longhorn` class encrypts new
@@ -62,15 +62,14 @@ with a standalone `helm upgrade -f values.yml`, because that omits the encrypted
 override. `verify-longhorn-encryption.rb` checks the source order and template.
 Update both values and override when changing replica count, filesystem or retention.
 
-**Before updating the immutable Git revision in `app.yml`, stage the ownership
+**Before merging source changes into the tracked `main` branch, stage the ownership
 handoff for clusters that already synced the former `longhorn.io/Node` manifests.**
 The current Application has automated pruning enabled, so removing those objects
-from the pinned source without first applying `Prune=false` to the live tracked
-custom resources could delete Longhorn's active Node records. Perform that
-separate, reviewed transition before pinning and syncing this simplified source;
-do not use the new core Node manifests as substitutes for the existing Longhorn
-custom resources. The local uncommitted tree intentionally cannot contain its
-own future commit SHA.
+from the branch-tracked source without first applying `Prune=false` to the live
+tracked custom resources could delete Longhorn's active Node records. Perform
+that separate, reviewed transition before merging and syncing this simplified
+source; do not use the new core Node manifests as substitutes for the existing
+Longhorn custom resources.
 
 **Rollout changes an existing class.** Longhorn's ConfigMap controller detects the
 changed template and **deletes/recreates `StorageClass/longhorn` itself**; direct

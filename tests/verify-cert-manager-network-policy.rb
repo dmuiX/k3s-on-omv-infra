@@ -14,20 +14,14 @@ value_source = app.dig('spec', 'sources').find { |source| source['ref'] == 'valu
 network_source = app.dig('spec', 'sources').find do |source|
   source['path'] == '02-controllers/cert-manager/network-policy'
 end
-revision = value_source && value_source['targetRevision']
-check(revision&.match?(/\A[0-9a-f]{40}\z/) && network_source['targetRevision'] == revision,
-      'cert-manager values and NetworkPolicy must share one immutable source revision')
-pinned_values_text, pinned_values_status = Open3.capture2(
-  'git', '-C', ROOT, 'show', "#{revision}:02-controllers/cert-manager/values.yml",
-  err: File::NULL
-)
-check(pinned_values_status.success?, 'Pinned cert-manager values are unavailable')
-pinned_values = YAML.safe_load(pinned_values_text)
-check(pinned_values['extraArgs'] == [
+check(value_source['targetRevision'] == 'main' && network_source['targetRevision'] == 'main',
+      'cert-manager values and NetworkPolicy must both track the Infra main branch')
+values = YAML.safe_load(File.read(File.join(ROOT, '02-controllers/cert-manager/values.yml')))
+check(values['extraArgs'] == [
         '--enable-gateway-api',
         '--dns01-recursive-nameservers-only'
       ],
-      'Pinned cert-manager DNS-01 self-checks must remain on the NetworkPolicy-allowed recursive resolver path')
+      'cert-manager DNS-01 self-checks must remain on the NetworkPolicy-allowed recursive resolver path')
 
 output, status = Open3.capture2('helm', 'template', 'cert-manager-network-policy', CHART,
                                 '--set-json', 'clusterNetwork.kubernetesApiServerEndpointCIDRs=["192.0.2.2/32","192.0.2.5/32","192.0.2.7/32"]',

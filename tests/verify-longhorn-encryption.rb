@@ -24,11 +24,11 @@ check(sources.any? { |source| source['chart'] == 'longhorn' && source['targetRev
 check(sources.any? { |source| source['ref'] == 'values' }, 'Longhorn Git values source missing')
 authored_source = sources.last
 check(authored_source['repoURL'] == 'https://github.com/dmuiX/k3s-on-omv-infra.git' &&
-      authored_source['targetRevision'].to_s.match?(/\A[0-9a-f]{40}\z/) &&
+      authored_source['targetRevision'] == 'main' &&
       authored_source['path'] == '02-controllers/longhorn' &&
       authored_source.dig('directory', 'include') ==
         '{storageclass-configmap.yaml,node-default-tags.yaml,monitoring-storage.yaml,bootstrap-storage-canaries.yaml}',
-      'Longhorn node annotations and StorageClasses must be the final pinned Argo source')
+      'Longhorn node annotations and StorageClasses must be the final branch-tracked Argo source')
 check(cm['apiVersion'] == 'v1' && cm['kind'] == 'ConfigMap' &&
       cm.dig('metadata', 'name') == 'longhorn-storageclass' && cm.dig('metadata', 'namespace') == 'longhorn',
       'Override must match the chart ConfigMap exactly')

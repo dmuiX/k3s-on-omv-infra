@@ -39,8 +39,10 @@ volumes. They do not change existing volume replica counts or prove placement
 and recovery.
 
 The public root owns the steady-state child Application inventory, including
-OpenBao PKI. PostgreSQL remains separately activated through one fixed root
-exclusion rather than mutable Ansible rollout state. Tests assert that no custom
+OpenBao PKI. The root and every child source owned by this repository track its
+`main` branch; upstream charts, container images, and private repository sources
+remain independently pinned. PostgreSQL remains separately activated through
+one fixed root exclusion rather than mutable Ansible rollout state. Tests assert that no custom
 in-cluster OpenBao polling reconciler remains and that the PKI
 Application renders only cert-manager identities/RBAC, ClusterIssuers, and the
 internal Certificate. OpenBao API configuration and ceremony belong to Ansible.

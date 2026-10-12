@@ -3,30 +3,16 @@
 require 'yaml'
 require 'json'
 require 'pathname'
-require 'open3'
 
 ROOT = File.expand_path('..', __dir__)
-INFRA_REVISION = '0f3a9a03d3747798093d6de84fe9bedf0176b9a9'
-BACKUP_CHART_REVISION = '25e8fb5ccfd62a6c55ea90a2ebc51f164e7240f2'
+INFRA_REPOSITORY = 'https://github.com/dmuiX/k3s-on-omv-infra.git'
+INFRA_REVISION = 'main'
 LIVE_REVISION = 'ce6ad756dd48ef28145f836e6825a65fcafe548f'
-POSTGRES_REVISION = '753985bad19f8b5ba5ad3be6178ae0b224b81b69'
-CROSSPLANE_REVISION = '4d06e6efd8ffe74d621fa7f906e6bd36a401804c'
-MONITORING_REVISION = '04bd817d6359e269e6d373e7b345f35a833d0ce6'
-OPENBAO_REVISION = '05a77589dc40749e198c74cd41508abcdc782781'
-PLATFORM_REVISION = 'c1e894afae1b84710dec8b2bfff698bff35c06e0'
-LONGHORN_REVISION = '1e77860e45b2252579de6b04046e899a95d92d67'
 POSTGRES_LIVE_REVISION = '3e2ae87315f679fbb6ffc0be2342a74a43d213a6'
 OPENBAO_LIVE_REVISION = 'da4b8dabdf4983933f9beb47e36ddebea389045f'
 
 def docs(path)
   YAML.load_stream(File.read(File.join(ROOT, path))).compact
-end
-
-def revision_docs(revision, path)
-  content, error, status = Open3.capture3('git', '-C', ROOT, 'show', "#{revision}:#{path}")
-  raise "Cannot read #{path} at #{revision}: #{error}" unless status.success?
-
-  YAML.load_stream(content).compact
 end
 
 def check(condition, message)
@@ -39,6 +25,8 @@ end
 
 root = docs('infra.yml').first
 source = root.fetch('spec').fetch('source')
+check(source['repoURL'] == INFRA_REPOSITORY && source['targetRevision'] == INFRA_REVISION,
+      'The root Application must track the Infra main branch')
 directory = source.fetch('directory')
 include_pattern = directory.fetch('include')
 check(directory['exclude'].nil?, 'The steady-state root must not exclude PostgreSQL')
@@ -60,9 +48,9 @@ check(root_selects.call(pki_path) && root_selects.call(postgresql_path),
 pki_app = apps.fetch('openbao-pki')
 postgresql_app = apps.fetch('postgresql')
 check(pki_app.dig('spec', 'source') == {
-        'repoURL' => source['repoURL'], 'targetRevision' => PLATFORM_REVISION,
+        'repoURL' => source['repoURL'], 'targetRevision' => INFRA_REVISION,
         'path' => '05-platform/openbao-pki/workload'
-      }, 'OpenBao PKI must render its immutable steady-state Kubernetes resources')
+      }, 'OpenBao PKI must render its branch-tracked steady-state Kubernetes resources')
 cert_manager_sources = apps.fetch('cert-manager').dig('spec', 'sources')
 cert_manager_network_source = cert_manager_sources.find do |candidate|
   candidate['path'] == '02-controllers/cert-manager/network-policy'
@@ -70,26 +58,16 @@ end
 cert_manager_private_source = cert_manager_sources.find { |candidate| candidate['ref'] == 'private' }
 check(cert_manager_network_source && cert_manager_private_source &&
       cert_manager_network_source.dig('helm', 'valueFiles') == ['$private/clusters/omv/values.yml'] &&
-      cert_manager_network_source['targetRevision'].to_s.match?(/\A[0-9a-f]{40}\z/) &&
+      cert_manager_network_source['targetRevision'] == INFRA_REVISION &&
       cert_manager_private_source['targetRevision'].to_s.match?(/\A[0-9a-f]{40}\z/) &&
       !cert_manager_private_source.key?('path'),
-      'cert-manager must own its immutable private-endpoint NetworkPolicy source')
-check(postgresql_app.fetch('spec').fetch('sources').all? do |candidate|
-        !candidate['repoURL']&.start_with?('https://github.com/dmuiX/') ||
-          candidate['targetRevision'].to_s.match?(/\A[0-9a-f]{40}\z/)
-      end, 'PostgreSQL Git sources must remain immutably pinned')
+      'cert-manager must own its branch-tracked private-endpoint NetworkPolicy source')
 postgres_infra_sources = postgresql_app.fetch('spec').fetch('sources').select do |candidate|
   candidate['repoURL'] == source['repoURL']
 end
 check(postgres_infra_sources.length == 2 &&
-      postgres_infra_sources.all? { |candidate| candidate['targetRevision'] == POSTGRES_REVISION },
-      'All same-repository PostgreSQL sources must share the reviewed implementation commit')
-%w[06-data/postgresql/cluster/cluster.yaml 06-data/postgresql/values-cloudnativepg.yml
-   06-data/postgresql/values-barman.yml charts/cluster-config/templates/postgresql.yaml].each do |path|
-  check(system('git', '-C', ROOT, 'cat-file', '-e', "#{POSTGRES_REVISION}:#{path}",
-               out: File::NULL, err: File::NULL),
-        "PostgreSQL implementation commit does not contain #{path}")
-end
+      postgres_infra_sources.all? { |candidate| candidate['targetRevision'] == INFRA_REVISION },
+      'All same-repository PostgreSQL sources must track the Infra main branch')
 # Public Applications own all resources; only their real value overrides are private.
 app_files.group_by { |path| File.dirname(path) }.each do |dir, paths|
   relative = Pathname.new(dir).relative_path_from(Pathname.new(ROOT)).each_filename.to_a
@@ -117,16 +95,9 @@ helm_apps.each do |name|
   values_source = sources.find { |candidate| candidate['ref'] == 'values' }
   check(chart && chart['targetRevision'].to_s.match?(/\Av?\d+\.\d+\.\d+(?:[-+][\w.-]+)?\z/),
         "#{name} chart version is not pinned")
-  allowed_values_revisions = case name
-                             when 'kube-prometheus-stack' then [INFRA_REVISION, POSTGRES_REVISION, MONITORING_REVISION]
-                             when 'openbao' then [INFRA_REVISION, OPENBAO_REVISION]
-                             when 'cert-manager' then [INFRA_REVISION, cert_manager_network_source['targetRevision']]
-                             when 'longhorn' then [INFRA_REVISION, LONGHORN_REVISION]
-                             else [INFRA_REVISION]
-                             end
   check(values_source && values_source['repoURL'] == source['repoURL'] &&
-        allowed_values_revisions.include?(values_source['targetRevision']),
-        "#{name} values source is not the pinned reviewed Git revision")
+        values_source['targetRevision'] == INFRA_REVISION,
+        "#{name} values source must track the Infra main branch")
   chart.fetch('helm', {}).fetch('valueFiles', []).each do |path|
     if path.start_with?('$snapshot-values/')
       private_source = sources.find { |candidate| candidate['ref'] == 'snapshot-values' }
@@ -171,21 +142,13 @@ git_sources = applications.flat_map do |app|
   spec = app.fetch('spec')
   spec['sources'] || [spec['source']]
 end.compact.select { |candidate| candidate['repoURL']&.start_with?('https://github.com/dmuiX/') }
-check(git_sources.select { |candidate| candidate['repoURL'].end_with?('k3s-on-omv-infra.git') }
-                 .map { |candidate| candidate['targetRevision'] }.uniq.all? do |revision|
-        system('git', '-C', ROOT, 'cat-file', '-e', "#{revision}^{commit}",
-               out: File::NULL, err: File::NULL)
-      end, 'Every Infra child pin must resolve to a local reviewed commit object')
-check(git_sources.all? do |candidate|
-  allowed = if candidate['repoURL'].end_with?('k3s-on-omv-infra.git')
-              [INFRA_REVISION, BACKUP_CHART_REVISION, POSTGRES_REVISION, CROSSPLANE_REVISION, MONITORING_REVISION,
-               OPENBAO_REVISION, PLATFORM_REVISION, cert_manager_network_source['targetRevision'], LONGHORN_REVISION]
-            else
-              [LIVE_REVISION, POSTGRES_LIVE_REVISION, OPENBAO_LIVE_REVISION,
-               cert_manager_private_source['targetRevision']]
-            end
-  allowed.include?(candidate['targetRevision'])
-end, 'Every owned Git child source must use its reviewed immutable revision')
+infra_sources = git_sources.select { |candidate| candidate['repoURL'] == INFRA_REPOSITORY }
+check(!infra_sources.empty? && infra_sources.all? { |candidate| candidate['targetRevision'] == INFRA_REVISION },
+      'Every Infra child source must track the main branch')
+check(git_sources.reject { |candidate| candidate['repoURL'] == INFRA_REPOSITORY }.all? do |candidate|
+  [LIVE_REVISION, POSTGRES_LIVE_REVISION, OPENBAO_LIVE_REVISION,
+   cert_manager_private_source['targetRevision']].include?(candidate['targetRevision'])
+end, 'Every private Git child source must retain its reviewed immutable revision')
 
 health_path = '01-bootstrap/argocd-bootstrap/application-health-config.yml'
 health = docs(health_path).first
@@ -263,7 +226,7 @@ check(postgres_sources.count { |entry| entry['chart'] } == 2 &&
   check(wave(app) == stage && chart['path'] == 'charts/cluster-config' &&
         chart.dig('helm', 'parameters', 0) == { 'name' => 'component', 'value' => component } &&
         chart.dig('helm', 'valueFiles') == ['$values/clusters/omv/values.yml'] &&
-        (name != 'openbao-config' || chart['targetRevision'] == BACKUP_CHART_REVISION) &&
+        chart['targetRevision'] == INFRA_REVISION &&
         private_values['repoURL'] == 'https://github.com/dmuiX/k3s-on-omv-live.git' &&
         private_values['ref'] == 'values', "Wrong private Helm values wiring for #{name}")
 end
@@ -397,7 +360,7 @@ check(monitoring_class.dig('metadata', 'name') == 'longhorn-monitoring' &&
       monitoring_class.dig('parameters', 'encrypted') == 'true' &&
       monitoring_class['reclaimPolicy'] == 'Retain',
       'Prometheus StorageClass must use two encrypted replicas on the selected nodes')
-canaries = revision_docs(LONGHORN_REVISION, '02-controllers/longhorn/bootstrap-storage-canaries.yaml')
+canaries = docs('02-controllers/longhorn/bootstrap-storage-canaries.yaml')
 standard_canary = canaries.find do |item|
   item['kind'] == 'PersistentVolumeClaim' && item.dig('metadata', 'name') == 'longhorn-bootstrap-standard'
 end
@@ -460,12 +423,9 @@ check(canary_deployment.dig('metadata', 'namespace') == 'longhorn' &&
 openbao_values = docs('03-core/openbao/values.yml').first
 check(openbao_values.dig('server', 'ha', 'enabled') && openbao_values.dig('server', 'ha', 'replicas') == 3,
       'OpenBao Raft must use three server pods')
-pinned_openbao_values, pinned_openbao_error, pinned_openbao_status = Open3.capture3(
-  'git', '-C', ROOT, 'show', "#{OPENBAO_REVISION}:03-core/openbao/values.yml"
-)
-check(pinned_openbao_status.success? && pinned_openbao_error.empty? &&
-      pinned_openbao_values.include?('bootstrap.k3s-on-omv.dev/snapshot-profile: native-r2-v1'),
-      'Pinned OpenBao values must identify native snapshot Job provenance')
+check(File.read(File.join(ROOT, '03-core/openbao/values.yml'))
+          .include?('bootstrap.k3s-on-omv.dev/snapshot-profile: native-r2-v1'),
+      'OpenBao values must identify native snapshot Job provenance')
 %w[dataStorage auditStorage].each do |storage|
   check(openbao_values.dig('server', storage, 'storageClass') == 'longhorn' &&
         openbao_values.dig('server', storage, 'size') == '1Gi',
@@ -475,7 +435,7 @@ longhorn_sources = longhorn.dig('spec', 'sources')
 check(longhorn_sources.any? { |entry| entry['chart'] == 'longhorn' } &&
       longhorn_sources.any? { |entry| entry['ref'] == 'values' } &&
       longhorn_sources.any? { |entry| entry['path'] == '02-controllers/longhorn' &&
-        entry['targetRevision'] == LONGHORN_REVISION &&
+        entry['targetRevision'] == INFRA_REVISION &&
         entry.dig('directory', 'include') ==
           '{storageclass-configmap.yaml,node-default-tags.yaml,monitoring-storage.yaml,bootstrap-storage-canaries.yaml}' },
       'Longhorn must combine its pinned chart, Git values, node annotations and storage resources')

@@ -4,6 +4,7 @@
 require 'yaml'
 
 ROOT = File.expand_path('..', __dir__)
+INFRA_REPOSITORY = 'https://github.com/dmuiX/k3s-on-omv-infra.git'
 
 def check(condition, message)
   raise message unless condition
@@ -23,6 +24,8 @@ check(!Dir.exist?(File.join(ROOT, 'external-dns')), 'External-DNS must not be de
 
 root = YAML.load_file(File.join(ROOT, 'infra.yml'))
 source = root.fetch('spec').fetch('source')
+check(source['repoURL'] == INFRA_REPOSITORY && source['targetRevision'] == 'main',
+      'Public root must track the Infra main branch')
 check(source.fetch('path') == '.' && source.dig('directory', 'recurse'), 'Public root must discover reusable Applications')
 include_pattern = source.dig('directory', 'include')
 check(source.fetch('directory')['exclude'].nil?, 'Public root must not exclude PostgreSQL')
@@ -41,9 +44,13 @@ apps = documents.select { |doc| doc['kind'] == 'Application' }
 apps.each do |app|
   sources = app.dig('spec', 'sources') || [app.dig('spec', 'source')]
   sources.compact.each do |child|
+    if child['repoURL'] == INFRA_REPOSITORY
+      check(child['targetRevision'] == 'main',
+            "Owned Git source does not track main: #{app.dig('metadata', 'name')}")
+    end
     next if child['chart'] || (child['ref'] && !child['path'])
-    check(child['repoURL'] == source['repoURL'] && child['targetRevision'].to_s.match?(/\A[0-9a-f]{40}\z/),
-          "Public Git source is not immutably pinned: #{app.dig('metadata', 'name')}")
+    check(child['repoURL'] == source['repoURL'],
+          "Public manifest source is not owned by Infra: #{app.dig('metadata', 'name')}")
     check(!child['path'] || !child['path'].start_with?('clusters/'),
           "Public Application selects private manifests: #{app.dig('metadata', 'name')}")
   end
