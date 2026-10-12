@@ -10,6 +10,7 @@ INFRA_REVISION = '0f3a9a03d3747798093d6de84fe9bedf0176b9a9'
 BACKUP_CHART_REVISION = '25e8fb5ccfd62a6c55ea90a2ebc51f164e7240f2'
 LIVE_REVISION = 'ce6ad756dd48ef28145f836e6825a65fcafe548f'
 POSTGRES_REVISION = '753985bad19f8b5ba5ad3be6178ae0b224b81b69'
+MONITORING_REVISION = 'bc9244a3e377ad4e6f00e7987daa82a9521564a8'
 OPENBAO_REVISION = '05a77589dc40749e198c74cd41508abcdc782781'
 PLATFORM_REVISION = 'c1e894afae1b84710dec8b2bfff698bff35c06e0'
 LONGHORN_REVISION = PLATFORM_REVISION
@@ -109,7 +110,7 @@ helm_apps.each do |name|
   check(chart && chart['targetRevision'].to_s.match?(/\Av?\d+\.\d+\.\d+(?:[-+][\w.-]+)?\z/),
         "#{name} chart version is not pinned")
   allowed_values_revisions = case name
-                             when 'kube-prometheus-stack' then [INFRA_REVISION, POSTGRES_REVISION]
+                             when 'kube-prometheus-stack' then [INFRA_REVISION, POSTGRES_REVISION, MONITORING_REVISION]
                              when 'openbao' then [INFRA_REVISION, OPENBAO_REVISION]
                              when 'cert-manager' then [INFRA_REVISION, cert_manager_network_source['targetRevision']]
                              when 'longhorn' then [INFRA_REVISION, LONGHORN_REVISION]
@@ -169,7 +170,7 @@ check(git_sources.select { |candidate| candidate['repoURL'].end_with?('k3s-on-om
       end, 'Every Infra child pin must resolve to a local reviewed commit object')
 check(git_sources.all? do |candidate|
   allowed = if candidate['repoURL'].end_with?('k3s-on-omv-infra.git')
-              [INFRA_REVISION, BACKUP_CHART_REVISION, POSTGRES_REVISION, OPENBAO_REVISION,
+              [INFRA_REVISION, BACKUP_CHART_REVISION, POSTGRES_REVISION, MONITORING_REVISION, OPENBAO_REVISION,
                PLATFORM_REVISION, cert_manager_network_source['targetRevision'], LONGHORN_REVISION]
             else
               [LIVE_REVISION, POSTGRES_LIVE_REVISION, OPENBAO_LIVE_REVISION,
