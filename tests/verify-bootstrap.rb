@@ -468,6 +468,7 @@ longhorn_sources = longhorn.dig('spec', 'sources')
 check(longhorn_sources.any? { |entry| entry['chart'] == 'longhorn' } &&
       longhorn_sources.any? { |entry| entry['ref'] == 'values' } &&
       longhorn_sources.any? { |entry| entry['path'] == '02-controllers/longhorn' &&
+        entry['targetRevision'] == LONGHORN_REVISION &&
         entry.dig('directory', 'include') ==
           '{storageclass-configmap.yaml,node-default-tags.yaml,monitoring-storage.yaml,bootstrap-storage-canaries.yaml}' },
       'Longhorn must combine its pinned chart, Git values, node annotations and storage resources')
