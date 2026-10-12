@@ -12,7 +12,7 @@ spec:
   project: default
   source:
     repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
-    targetRevision: main
+    targetRevision: 753985bad19f8b5ba5ad3be6178ae0b224b81b69
     path: 07-secrets/postgresql-vso/workload
   syncPolicy:
     automated:

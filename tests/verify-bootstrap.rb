@@ -9,7 +9,7 @@ ROOT = File.expand_path('..', __dir__)
 INFRA_REVISION = '0f3a9a03d3747798093d6de84fe9bedf0176b9a9'
 BACKUP_CHART_REVISION = '25e8fb5ccfd62a6c55ea90a2ebc51f164e7240f2'
 LIVE_REVISION = 'ce6ad756dd48ef28145f836e6825a65fcafe548f'
-POSTGRES_REVISION = '96ae74b53976199217399914e3ee09cdb9e3f27e'
+POSTGRES_REVISION = '753985bad19f8b5ba5ad3be6178ae0b224b81b69'
 OPENBAO_REVISION = '05a77589dc40749e198c74cd41508abcdc782781'
 PLATFORM_REVISION = 'c1e894afae1b84710dec8b2bfff698bff35c06e0'
 LONGHORN_REVISION = PLATFORM_REVISION
@@ -246,7 +246,7 @@ check(postgres_sources.count { |entry| entry['chart'] } == 2 &&
       postgres_sources.any? { |entry| entry['path'] == 'charts/cluster-config' } &&
       postgres_sources.any? { |entry| entry['ref'] == 'private' },
       'PostgreSQL must remain one pinned multi-source Application')
-{ 'argocd-route' => ['argocd', 5], 'grafana-route' => ['grafana', 5],
+{ 'argocd-route' => ['argocd', 5], 'grafana-route' => ['grafana', 8],
   'longhorn-route' => ['longhorn', 5], 'openbao-route' => ['openbao', 5],
   'cert-manager-config' => ['certificates', 5], 'openbao-config' => ['backups', 6] }.each do |name, (component, stage)|
   app = apps.fetch(name)
