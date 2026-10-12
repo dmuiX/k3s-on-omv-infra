@@ -132,7 +132,8 @@ values = YAML.load_file(File.join(ROOT, '03-core/kube-prometheus-stack/values.ym
 grafana_values = values.fetch('grafana')
 assert grafana_values.dig('grafana.ini', 'database', 'type') == 'postgres' &&
        grafana_values.dig('grafana.ini', 'database', 'host') == 'platform-postgres-rw.postgresql.svc:5432' &&
-       grafana_values.dig('grafana.ini', 'database', 'ssl_mode') == 'require' &&
+       grafana_values.dig('grafana.ini', 'database', 'ssl_mode') == 'verify-full' &&
+       grafana_values.dig('grafana.ini', 'database', 'ca_cert_path') == '/etc/grafana/postgres-ca/ca.crt' &&
        grafana_values.dig('envValueFrom', 'GF_DATABASE_PASSWORD', 'secretKeyRef', 'name') == 'grafana-db-credentials',
        'Grafana must consume the OpenBao-managed PostgreSQL credential over TLS'
 

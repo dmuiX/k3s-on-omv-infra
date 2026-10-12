@@ -25,7 +25,19 @@ grafana:
       name: grafana
       user: $__env{GF_DATABASE_USER}
       password: $__env{GF_DATABASE_PASSWORD}
-      ssl_mode: require
+      ssl_mode: verify-full
+      ca_cert_path: /etc/grafana/postgres-ca/ca.crt
+  extraVolumes:
+    - name: postgres-ca
+      secret:
+        secretName: platform-postgres-server-tls
+        items:
+          - key: ca.crt
+            path: ca.crt
+  extraVolumeMounts:
+    - name: postgres-ca
+      mountPath: /etc/grafana/postgres-ca
+      readOnly: true
   # Let the chart create the initial random administrator credential. The
   # Application ignores only those generated Secret data fields so Argo does not
   # rotate them on each Helm render; never commit or log their values.

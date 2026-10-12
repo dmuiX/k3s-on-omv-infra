@@ -280,6 +280,16 @@ check(monitor_values.dig('grafana', 'persistence', 'enabled') == true &&
       'Grafana must use the right-sized Longhorn claim')
 check(monitor_values.dig('grafana', 'admin').nil?,
       'Grafana must let the chart create its initial random administrator Secret')
+grafana_database = monitor_values.dig('grafana', 'grafana.ini', 'database')
+grafana_ca_volume = monitor_values.dig('grafana', 'extraVolumes')&.find { |volume| volume['name'] == 'postgres-ca' }
+grafana_ca_mount = monitor_values.dig('grafana', 'extraVolumeMounts')&.find { |mount| mount['name'] == 'postgres-ca' }
+check(grafana_database&.dig('ssl_mode') == 'verify-full' &&
+      grafana_database['ca_cert_path'] == '/etc/grafana/postgres-ca/ca.crt' &&
+      grafana_ca_volume&.dig('secret', 'secretName') == 'platform-postgres-server-tls' &&
+      grafana_ca_volume.dig('secret', 'items') == [{ 'key' => 'ca.crt', 'path' => 'ca.crt' }] &&
+      grafana_ca_mount&.dig('mountPath') == '/etc/grafana/postgres-ca' &&
+      grafana_ca_mount['readOnly'] == true,
+      'Grafana must verify PostgreSQL identity using only the mounted CA certificate')
 grafana_secret_ignore = monitoring.fetch('spec').fetch('ignoreDifferences').find do |entry|
   entry['group'] == '' && entry['kind'] == 'Secret' && entry['name'] == 'kube-prometheus-stack-grafana'
 end
