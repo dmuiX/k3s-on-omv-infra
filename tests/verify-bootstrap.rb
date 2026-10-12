@@ -383,6 +383,47 @@ check(monitoring_class.dig('metadata', 'name') == 'longhorn-monitoring' &&
       monitoring_class.dig('parameters', 'encrypted') == 'true' &&
       monitoring_class['reclaimPolicy'] == 'Retain',
       'Prometheus StorageClass must use two encrypted replicas on the selected nodes')
+canaries = docs('02-controllers/longhorn/bootstrap-storage-canaries.yaml')
+standard_canary = canaries.find do |item|
+  item['kind'] == 'PersistentVolumeClaim' && item.dig('metadata', 'name') == 'longhorn-bootstrap-standard'
+end
+monitoring_canary = canaries.find do |item|
+  item['kind'] == 'PersistentVolumeClaim' && item.dig('metadata', 'name') == 'longhorn-bootstrap-monitoring'
+end
+canary_deployment = canaries.find do |item|
+  item['kind'] == 'Deployment' && item.dig('metadata', 'name') == 'longhorn-bootstrap-storage-canaries'
+end
+check(standard_canary && monitoring_canary && canary_deployment,
+      'Bootstrap storage canary resources are incomplete')
+[standard_canary, monitoring_canary].each do |claim|
+  check(claim.dig('metadata', 'namespace') == 'longhorn' &&
+        claim.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '4' &&
+        claim.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-options').split(',').sort ==
+          %w[Delete=false Prune=false] &&
+        claim.dig('spec', 'accessModes') == ['ReadWriteOnce'] &&
+        claim.dig('spec', 'resources', 'requests', 'storage') == '1Gi',
+        'Bootstrap canary claims must be retained, right-sized RWO volumes')
+end
+check(standard_canary.dig('spec', 'storageClassName') == 'longhorn' &&
+      monitoring_canary.dig('spec', 'storageClassName') == 'longhorn-monitoring',
+      'Bootstrap canaries must exercise both reviewed Longhorn classes')
+canary_container = canary_deployment.dig('spec', 'template', 'spec', 'containers', 0)
+check(canary_deployment.dig('metadata', 'namespace') == 'longhorn' &&
+      canary_deployment.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '5' &&
+      canary_deployment.dig('spec', 'replicas') == 1 &&
+      canary_deployment.dig('spec', 'strategy', 'type') == 'Recreate' &&
+      canary_deployment.dig('spec', 'template', 'spec', 'automountServiceAccountToken') == false &&
+      canary_container['image'] ==
+        'docker.io/library/busybox:1.37.0@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e' &&
+      canary_container.dig('securityContext', 'allowPrivilegeEscalation') == false &&
+      canary_container.dig('securityContext', 'readOnlyRootFilesystem') == true &&
+      canary_container.dig('securityContext', 'runAsNonRoot') == true &&
+      canary_container.dig('securityContext', 'capabilities', 'drop') == ['ALL'] &&
+      canary_container.fetch('volumeMounts').map { |mount| mount['name'] }.sort == %w[monitoring standard] &&
+      canary_deployment.dig('spec', 'template', 'spec', 'volumes').map do |volume|
+        volume.dig('persistentVolumeClaim', 'claimName')
+      end.sort == %w[longhorn-bootstrap-monitoring longhorn-bootstrap-standard],
+      'Bootstrap canary Deployment must mount both claims with the reviewed hardened image contract')
 openbao_values = docs('03-core/openbao/values.yml').first
 check(openbao_values.dig('server', 'ha', 'enabled') && openbao_values.dig('server', 'ha', 'replicas') == 3,
       'OpenBao Raft must use three server pods')
