@@ -1,0 +1,36 @@
+# OpenBao owns credential generation and rotation; CNPG owns only the fixed
+# login role. Provider-vault and OpenBao auth/policy are prerequisites.
+apiVersion: vault.openbao.upbound.io/v1alpha1
+kind: SecretBackendConnection
+metadata:
+  name: postgresql
+spec:
+  forProvider:
+    path: database
+    backend: database
+    allowedRoles:
+      - grafana
+    postgresql:
+      - name: platform-postgres
+        connectionUrl: "postgresql://{{username}}:{{password}}@platform-postgres-rw.postgresql.svc:5432/postgres?sslmode=verify-full"
+        username: "${OPENBAO_MANAGER_USERNAME}"
+        passwordSecretRef:
+          name: openbao-manager-credentials
+          namespace: postgresql
+          key: password
+  providerConfigRef:
+    name: openbao
+---
+apiVersion: vault.openbao.upbound.io/v1alpha1
+kind: StaticRole
+metadata:
+  name: grafana
+spec:
+  forProvider:
+    backend: database
+    name: grafana
+    dbName: platform-postgres
+    username: grafana
+    rotationPeriod: 86400
+  providerConfigRef:
+    name: openbao

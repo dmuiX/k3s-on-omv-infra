@@ -9,6 +9,7 @@ resources:
   - cluster/networkpolicy.yaml
   - cluster/controller-pdbs.yaml
   - databases/grafana.yaml
+  - databases/grafana-openbao.yaml
   - databases/radar.yaml
   - monitoring/alerts.yaml
 labels:

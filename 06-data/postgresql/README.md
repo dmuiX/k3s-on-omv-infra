@@ -1,111 +1,44 @@
 # Central PostgreSQL platform
 
-`Application/postgresql` is the single Wave-6 owner for CloudNativePG, the
-Barman Cloud plugin and the central `platform-postgres` cluster. The bootstrap
-root keeps this Application excluded permanently. After the mandatory PKI and
-secret prerequisites pass, activate the tracked Application separately without
-editing the root exclusion or recording mutable rollout state in Ansible.
+`Application/postgresql` is the Wave-6 owner for CloudNativePG, the Barman Cloud
+plugin and `platform-postgres`. The root application now discovers it normally.
 
-## Activation ownership
+## Grafana database credentials POC
 
-An operator with Argo CD administration access owns the Application lifecycle.
-After fresh approval for the target cluster, activate or update it from a reviewed
-checkout with the declarative manifest:
+OpenBao is the source of truth and generates/rotates the fixed `grafana` database
+login via its database secrets engine static role (`database/static-creds/grafana`).
+The role must exist before rotation is enabled. OpenBao's PostgreSQL configuration
+uses the stable `platform-postgres-rw.postgresql.svc` endpoint and a dedicated
+manager credential stored in OpenBao KV v2 at `kv/postgresql/openbao-manager`,
+with keys `username` and `password`. VSO materializes that pair as
+`postgresql/openbao-manager-credentials`; this is a prerequisite, not a literal
+credential in Git.
 
-```sh
-kubectl apply --server-side --field-manager=postgresql-activation \
-  -f 06-data/postgresql/app.yml
-```
+CNPG `DatabaseRole/grafana` deliberately has no `passwordSecret`: CNPG creates
+the fixed login role but does not manage its password. It retains the exact
+`databaseRoleReclaimPolicy: retain` safeguard. OpenBao static-role rotation
+updates that login, and VSO 1.6.0 reads `database/static-creds/grafana` with
+`allowStaticCreds: true`, publishing `grafana-db-credentials` in the Grafana
+namespace and requesting a Grafana Deployment restart on updates.
 
-The fixed root exclusion remains unchanged. Re-run the same command for reviewed
-Application-spec updates. Decommissioning requires a separate data-retention and
-cleanup plan; do not remove the Application as an activation toggle.
+The provider-vault package is pinned to v4.0.4. Its ProviderConfig requires
+Kubernetes auth to OpenBao, appropriate provider service-account RBAC, and
+read access to the manager Secret. These auth role, policy, engine configuration,
+connection, and RBAC prerequisites require OpenBao-side bootstrap. The CRD/API
+shape and chart pins are a proof-of-concept and must be validated against the
+installed provider before activation. Do not apply to a live cluster from this
+branch; no live systems were contacted.
 
-## Fixed release and topology
+VSO and Crossplane applications are installed at sync wave 2, before the
+PostgreSQL Wave-6 application. Resources are ordered so the CNPG role/cluster
+must exist before OpenBao can successfully establish/rotate the static role;
+verify initial role creation and first rotation before enabling the Grafana
+credential consumer. Never place generated credentials in Git.
 
-- CloudNativePG chart `0.29.1`, operator `1.30.1`.
-- Barman Cloud plugin chart `0.8.1`, plugin `0.15.1`.
-- PostgreSQL `18.6` system image on Debian Bookworm.
-- Every runtime image is pinned to its multi-platform OCI index digest; the
-  indexes contain Linux `amd64` and `arm64` manifests.
-- Three instances, hard hostname anti-affinity and one `5Gi` encrypted
-  `longhorn-postgres` RWO claim per instance.
-- `longhorn-postgres` uses one strict-local Longhorn block replica. PostgreSQL
-  streaming replication, not Longhorn replication, supplies database HA.
-- Quorum synchronous replication is `ANY 1` with `dataDurability: preferred`.
-  The current primary may continue asynchronously when both standbys are lost;
-  the corresponding alert marks loss of the RPO-0 guarantee.
+## Platform safeguards
 
-The permitted hostnames are `omv`, `wyse5070` and `raspi4`. Strict locality binds
-the sole Longhorn replica to the scheduled database pod. Before productive data,
-verify that each host's effective Longhorn default disk is the intended SSD;
-local rendering cannot prove physical media or Longhorn placement.
-
-## Credentials and access
-
-Secret values are never stored here. OpenBao KV remains their source of truth,
-and HashiCorp VSO must materialize ordinary namespace-local Kubernetes Secrets
-before this Application is activated:
-
-- `grafana-db-credentials` as `kubernetes.io/basic-auth`, with `username` and
-  `password`, for `DatabaseRole/grafana`;
-- `radar-db-credentials` as `kubernetes.io/basic-auth`, with `username` and
-  `password`, for `DatabaseRole/radar`;
-- `postgresql-r2-credentials` as `Opaque`, with `ACCESS_KEY_ID`,
-  `ACCESS_SECRET_KEY` and `AWS_REGION`, for
-  `ObjectStore/platform-postgres-backups`. Credentials come from OpenBao;
-  VSO renders the non-secret region from private Git into the destination
-  because the Barman API exposes it only through a Secret key selector.
-
-The existing guarded Bootstrap role creates missing Grafana and Radar passwords
-once in OpenBao with KV-v2 `cas=0`; CNPG does not generate or rotate them. VSO
-owns the destination Secrets, and neither this Kustomization nor the private
-values repository may contain `vault:` placeholders or credential values.
-
-The R2 endpoint and dedicated PostgreSQL bucket are non-secret identifiers in the
-private live values repository. PostgreSQL does not reuse K8up's bucket,
-credentials or Restic repository.
-
-Grafana has a 25-connection role/database budget: two planned replicas with at
-most 10 pool connections each and five migration/maintenance connections. Radar
-has a 12-connection budget: two planned replicas with at most five pool
-connections each and two migration/maintenance connections. Their application
-tickets must enforce those per-pod pool limits.
-
-CloudNativePG 1.30.1 does not expose database-level `CONNECT` grants in the
-`Database` API. Ordered `pg_hba` rules therefore allow each registered role only
-its own database and reject that role for every other database. Native
-`DatabaseRole` and `Database` resources still own role/database creation; no
-imperative SQL bootstrap is used. Both resources retain data and roles when a
-manifest is removed.
-
-Only the stable `platform-postgres-rw.postgresql.svc` service is an application
-write endpoint. There is no Gateway, Ingress, NodePort or LoadBalancer.
-
-## Backup and recovery boundary
-
-The Barman plugin archives WAL continuously to dedicated Cloudflare R2 storage;
-`archive_timeout=5min` bounds WAL switching during quiet periods. A base backup
-runs daily at `03:30`, the first backup starts immediately, and retention is 30
-days. Every generated cluster object inherits `k8up.io/backup: "false"`, so K8up
-must not back up PGDATA.
-
-Argo exposes only generic child Application health; it does not add custom health
-checks for CloudNativePG or Barman resources. Missing VSO-owned Secrets still
-fail closed rather than silently creating alternate credentials. Before treating
-the platform as ready, explicitly verify cluster, role, database, scheduled
-backup and Barman recovery-window status. This is required in addition to Argo
-sync/health and is not proof of restore, failover, storage placement, TLS or
-RPO/RTO. Follow
-[`docs/postgresql-maintenance.md`](../../docs/postgresql-maintenance.md) for live
-acceptance and maintenance.
-
-## Local checks
-
-```sh
-ruby tests/verify-postgresql.rb
-ruby tests/verify-bootstrap.rb
-ruby tests/verify-charts.rb
-```
-
-These commands render manifests and pinned charts without contacting Kubernetes.
+CloudNativePG and Barman chart versions remain pinned in `app.yml`. CNPG role
+and database reclaim policies remain `retain`; PostgreSQL storage, backup,
+network policy, and application connection protections are unchanged. OpenBao
+manager bootstrap is supplied by sibling Ansible work; this repository does not
+implement that bootstrap.

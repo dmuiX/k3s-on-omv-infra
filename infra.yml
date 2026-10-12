@@ -19,7 +19,6 @@ spec:
     directory:
       recurse: true
       include: "{01-bootstrap/argocd-bootstrap/application-health-config.yml,*/*/app.yml,*/*/config-app.yml,*/*/application.yml}"
-      exclude: "06-data/postgresql/app.yml"
   syncPolicy:
     automated:
       prune: false

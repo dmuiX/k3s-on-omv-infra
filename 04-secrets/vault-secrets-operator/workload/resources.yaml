@@ -1,0 +1,79 @@
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultConnection
+metadata:
+  name: openbao
+  namespace: kube-prometheus-stack
+spec:
+  address: https://openbao.openbao.svc:8200
+  skipTLSVerify: false
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultAuth
+metadata:
+  name: openbao
+  namespace: kube-prometheus-stack
+spec:
+  method: kubernetes
+  mount: kubernetes
+  kubernetes:
+    role: grafana-vso
+    serviceAccount: default
+    tokenExpirationSeconds: 600
+  vaultConnectionRef: openbao
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultDynamicSecret
+metadata:
+  name: grafana-postgresql
+  namespace: kube-prometheus-stack
+spec:
+  vaultAuthRef: openbao
+  mount: database
+  path: static-creds/grafana
+  allowStaticCreds: true
+  destination:
+    create: true
+    name: grafana-db-credentials
+    type: kubernetes.io/basic-auth
+  rolloutRestartTargets:
+    - kind: Deployment
+      name: kube-prometheus-stack-grafana
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultConnection
+metadata:
+  name: openbao-postgresql
+  namespace: postgresql
+spec:
+  address: https://openbao.openbao.svc:8200
+  skipTLSVerify: false
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultAuth
+metadata:
+  name: openbao-postgresql
+  namespace: postgresql
+spec:
+  method: kubernetes
+  mount: kubernetes
+  kubernetes:
+    role: postgresql-vso
+    serviceAccount: default
+    tokenExpirationSeconds: 600
+  vaultConnectionRef: openbao-postgresql
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata:
+  name: openbao-manager-credentials
+  namespace: postgresql
+spec:
+  vaultAuthRef: openbao-postgresql
+  mount: kv
+  type: kv-v2
+  path: postgresql/openbao-manager
+  refreshAfter: 1m
+  destination:
+    create: true
+    name: openbao-manager-credentials
+    type: Opaque
