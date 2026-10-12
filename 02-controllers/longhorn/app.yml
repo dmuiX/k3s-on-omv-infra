@@ -18,14 +18,14 @@ spec:
         valueFiles:
           - $values/02-controllers/longhorn/values.yml
     - repoURL: "https://github.com/dmuiX/k3s-on-omv-infra.git"
-      targetRevision: 460194c1f2b863741ecbadbb5c546e5ed717ca7c
+      targetRevision: 1e77860e45b2252579de6b04046e899a95d92d67
       ref: values
     # Longhorn has no Helm value for CSI encryption key references. This last
     # source intentionally overrides the chart's longhorn-storageclass ConfigMap,
     # annotates the two monitoring storage nodes before the chart resources, and
     # owns the dedicated Prometheus StorageClass.
     - repoURL: "https://github.com/dmuiX/k3s-on-omv-infra.git"
-      targetRevision: 460194c1f2b863741ecbadbb5c546e5ed717ca7c
+      targetRevision: 1e77860e45b2252579de6b04046e899a95d92d67
       path: 02-controllers/longhorn
       directory:
         include: "{storageclass-configmap.yaml,node-default-tags.yaml,monitoring-storage.yaml,bootstrap-storage-canaries.yaml}"
