@@ -21,6 +21,9 @@ assert(package.dig('spec', 'package') == 'xpkg.upbound.io/upbound/provider-vault
 runtime = resource(provider, 'DeploymentRuntimeConfig', 'provider-vault')
 assert(runtime.dig('spec', 'deploymentTemplate', 'spec', 'template', 'spec', 'serviceAccountName') == 'provider-vault',
        'Provider must use an explicit runtime ServiceAccount')
+assert(runtime.dig('spec', 'deploymentTemplate', 'spec', 'template', 'spec', 'containers') ==
+       [{'name' => 'package-runtime'}],
+       'Crossplane v2 runtime config must declare the generated provider container merge key')
 assert(runtime.dig('spec', 'deploymentTemplate', 'spec', 'template', 'metadata', 'labels',
                    'bootstrap.k3s-on-omv.dev/openbao-postgres-client') == 'true',
        'Provider PostgreSQL network identity must be explicit')

@@ -25,6 +25,9 @@ spec:
             bootstrap.k3s-on-omv.dev/openbao-postgres-client: "true"
         spec:
           serviceAccountName: provider-vault
+          # Crossplane v2 validates this PodSpec before merging the generated provider container.
+          containers:
+            - name: package-runtime
 ---
 apiVersion: v1
 kind: ServiceAccount
