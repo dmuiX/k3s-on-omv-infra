@@ -62,7 +62,10 @@ wave 8 so Grafana cannot start before its PostgreSQL credential exists.
 Longhorn also precedes OpenBao PVCs; the secrets webhook follows OpenBao.
 Wildcard certificate issuance and UI routes share wave 5 after OpenBao-backed
 Cloudflare custody and webhook activation; routes may reconcile first but become
-usable only when the Gateway certificate is ready. The backup schedule remains
+usable only when the Gateway certificate is ready. Certificate configuration
+retries the expected create-only OpenBao prerequisite indefinitely with
+exponential backoff capped at five minutes, avoiding a tight reconciliation
+loop while an operator completes the hidden bootstrap prompt. The backup schedule remains
 separately gated until its OpenBao credentials exist. Argo CD's health customization
 shares wave 1 with other Applications: **seed and verify it separately before a
 first root sync**. Changing the existing Argo CD backend to HTTP also requires a

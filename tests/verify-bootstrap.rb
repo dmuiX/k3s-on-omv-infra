@@ -267,6 +267,12 @@ check(postgres_sources.count { |entry| entry['chart'] } == 2 &&
         private_values['repoURL'] == 'https://github.com/dmuiX/k3s-on-omv-live.git' &&
         private_values['ref'] == 'values', "Wrong private Helm values wiring for #{name}")
 end
+cert_manager_retry = apps.fetch('cert-manager-config').dig('spec', 'syncPolicy', 'retry')
+check(cert_manager_retry == {
+        'limit' => -1,
+        'backoff' => {'duration' => '10s', 'factor' => 2, 'maxDuration' => '5m'}
+      },
+      'Certificate configuration must keep retrying its expected create-only OpenBao prerequisite with bounded backoff')
 %w[argocd-route grafana-route longhorn-route openbao-route].each do |name|
   check(wave(apps.fetch('cert-manager-config')) <= wave(apps.fetch(name)),
         "Route #{name} must not precede wildcard certificate configuration")

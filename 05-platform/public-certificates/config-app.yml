@@ -31,6 +31,12 @@ spec:
       - PruneLast=true
       - ServerSideApply=true
       - RespectIgnoreDifferences=true
+    retry:
+      limit: -1
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 5m
   ignoreDifferences:
     - kind: Secret
       name: cloudflare-token
