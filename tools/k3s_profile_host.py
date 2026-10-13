@@ -63,6 +63,10 @@ def inspect(expected_ip):
     cg = Path('/sys/fs/cgroup/system.slice/k3s.service')
     ms = dict((k, int(v)) for k, v in (l.split() for l in (cg / 'memory.stat').read_text().splitlines()))
     report['working_set_bytes'] = int((cg / 'memory.current').read_text()) - ms['inactive_file']
+    for suffix in ['timer', 'service']:
+        result = subprocess.run(['systemctl', 'show', UNIT + '.' + suffix, '-p', 'ActiveState', '--value'],
+                                capture_output=True, text=True, timeout=6)
+        report['cleanup_' + suffix + '_state'] = result.stdout.strip() or 'not-loaded'
     for directory in [Path('/etc'), Path('/etc/rancher'), OVERLAY.parent.parent]:
         safe_dir(directory)
     if OVERLAY.parent.exists() or OVERLAY.parent.is_symlink():
@@ -152,6 +156,9 @@ def activate(expected_ip, peers, source):
 def finish():
     if OVERLAY.exists() or OVERLAY.is_symlink():
         subprocess.run(['systemctl', 'start', '--no-block', UNIT + '.service'], check=True, timeout=6)
+        # The service job now owns cleanup independently; do not keep a stale
+        # timer waiting after the explicitly requested normal restart.
+        subprocess.run(['systemctl', 'stop', UNIT + '.timer'], capture_output=True, timeout=6)
         return {'normal_restart_cleanup_queued': True}
     return {'overlay_already_absent': True, 'extra_restart_requested': False}
 

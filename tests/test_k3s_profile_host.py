@@ -89,6 +89,14 @@ class HostTests(unittest.TestCase):
             self.assertFalse(result['extra_restart_requested'])
             run.assert_not_called()
 
+    def test_finish_stops_watchdog_after_queuing_cleanup(self):
+        self.overlay.write_bytes(b'enable-pprof: true\n')
+        with patch.object(host.subprocess, 'run') as run:
+            host.finish()
+            self.assertEqual([c.args[0] for c in run.call_args_list], [
+                ['systemctl', 'start', '--no-block', host.UNIT + '.service'],
+                ['systemctl', 'stop', host.UNIT + '.timer']])
+
     def test_timer_registered_before_publish_and_restart(self):
         report = dict(target_matches=True, default_config=True, active=True, kill_mode='process', overlay_absent=True)
         events = []
