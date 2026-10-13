@@ -40,11 +40,6 @@ spec:
       path: 06-data/cloudnative-pg
       ref: infra
       kustomize: {}
-    - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
-      targetRevision: main
-      path: 06-data/cloudnative-pg/controllers
-      directory:
-        include: "{namespace.yaml,networkpolicy.yaml,pdbs.yaml}"
     - repoURL: https://github.com/dmuiX/k3s-on-omv-live.git
       targetRevision: main
       ref: private

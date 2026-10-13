@@ -30,14 +30,15 @@ application = docs(File.read(File.join(ROOT, '06-data/cloudnative-pg/app.yml')))
 check(application.dig('spec', 'syncPolicy', 'automated', 'prune') == false,
       'PostgreSQL pruning must remain disabled until live acceptance and cleanup')
 kustomized = docs(run('kubectl', 'kustomize', '06-data/cloudnative-pg'))
-controller_namespace = docs(File.read(File.join(ROOT, '06-data/cloudnative-pg/controllers/namespace.yaml')))
 controller_policies = docs(File.read(File.join(ROOT, '06-data/cloudnative-pg/controllers/networkpolicy.yaml')))
-controller_pdbs = docs(File.read(File.join(ROOT, '06-data/cloudnative-pg/controllers/pdbs.yaml')))
-check(resource(controller_namespace, 'Namespace', 'cloudnative-pg').dig('metadata', 'labels',
-      'pod-security.kubernetes.io/enforce') == 'restricted',
-      'CloudNativePG controller namespace must enforce restricted Pod Security')
-check(controller_pdbs.all? { |item| item.dig('metadata', 'namespace') == 'cloudnative-pg' },
-      'CloudNativePG controller PDBs must stay with their workloads')
+controller_namespace = resource(kustomized, 'Namespace', 'cloudnative-pg')
+controller_pdbs = kustomized.select { |item| item['kind'] == 'PodDisruptionBudget' }
+check(controller_namespace.dig('metadata', 'labels', 'pod-security.kubernetes.io/enforce') == 'restricted',
+      'CloudNativePG controller namespace must be owned by Kustomize with restricted Pod Security')
+check(controller_pdbs.map { |item| item.dig('metadata', 'name') }.sort ==
+      %w[cloudnative-pg plugin-barman-cloud] &&
+      controller_pdbs.all? { |item| item.dig('metadata', 'namespace') == 'cloudnative-pg' },
+      'CloudNativePG controller PDBs must be owned by Kustomize with their workloads')
 cluster = resource(kustomized, 'Cluster', 'k3s-postgres')
 check(cluster.dig('spec', 'instances') == 3, 'PostgreSQL must have exactly three instances')
 check(cluster.dig('spec', 'imageName').match?(/:18\.6-system-bookworm@sha256:[0-9a-f]{64}\z/),
@@ -124,7 +125,7 @@ check(backup.dig('spec', 'schedule') == '0 30 3 * * *' && backup.dig('spec', 'im
 check(kustomized.none? { |item| %w[Ingress HTTPRoute Gateway].include?(item['kind']) },
       'PostgreSQL must not have a public route')
 policies = kustomized.select { |item| item['kind'] == 'NetworkPolicy' }
-all_policies = policies + controller_policies
+all_policies = policies
 check(all_policies.all? { |item| item.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '0' },
       'Network isolation must apply before the first external backup gate')
 check(all_policies.one? { |item| item.dig('metadata', 'name') == 'default-deny' &&

@@ -46,10 +46,11 @@ assert(config.dig('spec', 'credentials', 'source') == 'Kubernetes' &&
 assert(config.dig('spec', 'address') == 'http://openbao-active.openbao.svc.cluster.local:8200',
        'Wrong OpenBao listener')
 
-resources = docs('06-data/cloudnative-pg/databases/grafana-openbao.yaml')
-connection = resource(resources, 'SecretBackendConnection', 'postgresql')
-static_role = resource(resources, 'SecretBackendStaticRole', 'grafana')
-manager = resource(resources, 'DatabaseRole', 'openbao-manager')
+connection_resources = docs('06-data/cloudnative-pg/database-access/connection.yaml')
+static_roles = docs('06-data/cloudnative-pg/database-access/static-roles.yaml')
+connection = resource(connection_resources, 'SecretBackendConnection', 'postgresql')
+static_role = resource(static_roles, 'SecretBackendStaticRole', 'grafana')
+manager = resource(connection_resources, 'DatabaseRole', 'openbao-manager')
 assert [connection, static_role].all? { |item| item['apiVersion'] == 'database.vault.upbound.io/v1alpha1' },
        'Wrong provider-vault database API'
 pg = connection.dig('spec', 'forProvider', 'postgresql', 0)
@@ -90,11 +91,10 @@ assert pg['connectionUrl'].include?('sslmode=verify-full') &&
        ca_volume&.dig('secret', 'secretName') == 'postgresql-ca' &&
        ca_volume&.dig('secret', 'optional') == true &&
        ca_mount&.dig('mountPath') == '/openbao/postgresql-tls' &&
-       !File.read(File.join(ROOT, '06-data/cloudnative-pg/databases/grafana-openbao.yaml')).include?('${'),
+       !File.read(File.join(ROOT, '06-data/cloudnative-pg/database-access/connection.yaml')).include?('${'),
        'OpenBao must verify the PostgreSQL service name against its mounted internal CA'
 
-radar = docs('06-data/cloudnative-pg/databases/radar-openbao.yaml')
-assert resource(radar, 'SecretBackendStaticRole', 'radar').dig('spec', 'forProvider', 'rotationPeriod') == 2_592_000,
+assert resource(static_roles, 'SecretBackendStaticRole', 'radar').dig('spec', 'forProvider', 'rotationPeriod') == 2_592_000,
        'Radar credentials must use a separate OpenBao static role'
 radar_db_role = resource(docs('06-data/cloudnative-pg/databases/radar.yaml'), 'DatabaseRole', 'radar')
 assert !radar_db_role.dig('spec').key?('passwordSecret'), 'CNPG must not own Radar password rotation'
@@ -103,7 +103,7 @@ vso_operator_app = docs('04-secrets/vault-secrets-operator/app.yml').first
 assert vso_operator_app.dig('spec', 'sources').length == 1 &&
        vso_operator_app.dig('spec', 'sources', 0, 'chart') == 'vault-secrets-operator',
        'The central VSO Application must own only the operator'
-gitops_vso = docs('06-data/cloudnative-pg/credentials/vso.yaml')
+gitops_vso = docs('06-data/cloudnative-pg/credentials/bootstrap-secrets.yaml')
 assert(gitops_vso.select { |item| item['kind'] == 'VaultConnection' }.all? do |item|
   item.dig('spec', 'address') == 'http://openbao-active.openbao.svc.cluster.local:8200'
 end, 'VSO must use the OpenBao in-cluster listener')
@@ -120,8 +120,8 @@ assert monitoring_app.dig('spec', 'sources').any? { |source|
          source['path'] == '08-monitoring/kube-prometheus-stack/workload'
        } && radar_app.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '8',
        'Applications must own their namespace-local PostgreSQL credentials'
-grafana_credentials = docs('08-monitoring/kube-prometheus-stack/workload/postgresql-vso.yaml')
-radar_credentials = docs('08-applications/radar/workload/postgresql-vso.yaml')
+grafana_credentials = docs('08-monitoring/kube-prometheus-stack/workload/postgresql-access.yaml')
+radar_credentials = docs('08-applications/radar/workload/postgresql-access.yaml')
 grafana_vds = resource(grafana_credentials, 'VaultDynamicSecret', 'grafana-postgresql')
 assert grafana_vds.dig('spec', 'allowStaticCreds') == true &&
        grafana_vds.dig('spec', 'path') == 'static-creds/grafana' &&
@@ -158,7 +158,7 @@ assert crossplane_app.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wa
 values = YAML.load_file(File.join(ROOT, '03-core/kube-prometheus-stack/values.yml'))
 grafana_values = values.fetch('grafana')
 assert grafana_values.dig('grafana.ini', 'database', 'type') == 'postgres' &&
-       grafana_values.dig('grafana.ini', 'database', 'host') == 'platform-postgres-rw.postgresql.svc:5432' &&
+       grafana_values.dig('grafana.ini', 'database', 'host') == 'k3s-postgres-rw.cloudnative-pg.svc:5432' &&
        grafana_values.dig('grafana.ini', 'database', 'ssl_mode') == 'require' &&
        grafana_values.dig('grafana.ini', 'database', 'ca_cert_path').nil? &&
        grafana_values['extraVolumes'].nil? && grafana_values['extraVolumeMounts'].nil? &&

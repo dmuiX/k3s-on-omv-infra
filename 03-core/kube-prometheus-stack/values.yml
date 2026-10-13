@@ -21,7 +21,7 @@ grafana:
   grafana.ini:
     database:
       type: postgres
-      host: platform-postgres-rw.postgresql.svc:5432
+      host: k3s-postgres-rw.cloudnative-pg.svc:5432
       name: grafana
       user: $__env{GF_DATABASE_USER}
       password: $__env{GF_DATABASE_PASSWORD}

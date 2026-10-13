@@ -1,4 +1,5 @@
-# OpenBao owns the Grafana password; CNPG must never reconcile this login's password.
+# CNPG creates the bounded manager login; OpenBao owns its password and uses it
+# only to configure and rotate the approved application login roles.
 apiVersion: postgresql.cnpg.io/v1
 kind: DatabaseRole
 metadata:
@@ -41,23 +42,6 @@ spec:
           name: openbao-manager-credentials
           namespace: cloudnative-pg
           key: password
-  providerConfigRef:
-    name: openbao
----
-apiVersion: database.vault.upbound.io/v1alpha1
-kind: SecretBackendStaticRole
-metadata:
-  name: grafana
-  annotations:
-    argocd.argoproj.io/sync-wave: "3"
-spec:
-  deletionPolicy: Orphan
-  forProvider:
-    backend: database
-    name: grafana
-    dbName: k3s-postgres
-    username: grafana
-    rotationPeriod: 2592000
   providerConfigRef:
     name: openbao
 ---

@@ -2,16 +2,19 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 namespace: cloudnative-pg
 resources:
-  - credentials/vso.yaml
+  - controllers/namespace.yaml
+  - controllers/networkpolicy.yaml
+  - controllers/pdbs.yaml
+  - credentials/bootstrap-secrets.yaml
   - cluster/storageclass.yaml
   - cluster/certificates.yaml
   - cluster/cluster.yaml
   - cluster/backup.yaml
   - cluster/networkpolicy.yaml
   - databases/grafana.yaml
-  - databases/grafana-openbao.yaml
+  - database-access/connection.yaml
+  - database-access/static-roles.yaml
   - databases/radar.yaml
-  - databases/radar-openbao.yaml
   - monitoring/alerts.yaml
 labels:
   - pairs:

@@ -1,9 +1,11 @@
 # CloudNativePG platform
 
 `Application/cloudnative-pg` is the automatically reconciled Wave-6 owner for
-CloudNativePG, the Barman Cloud plugin and `k3s-postgres`. Controllers,
-webhooks, certificates, database clusters, credentials, ObjectStores, PDBs and
-NetworkPolicies all run in the dedicated `cloudnative-pg` namespace.
+CloudNativePG, the Barman Cloud plugin and `k3s-postgres`. The two pinned Helm
+charts remain separate sources; one canonical Kustomize source owns all authored
+controller, credential, database, backup, monitoring, and network resources.
+Controllers, webhooks, certificates, database clusters, credentials, ObjectStores,
+PDBs and NetworkPolicies all run in the dedicated `cloudnative-pg` namespace.
 
 The chart uses namespace-scoped RBAC and reconciliation. It remains non-pruning
 until backup, restore, PITR, failover and application-connectivity acceptance is
