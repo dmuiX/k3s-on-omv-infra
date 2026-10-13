@@ -1,0 +1,35 @@
+# OpenBao owns the Grafana and Radar passwords. CNPG creates and retains the
+# corresponding login roles without reconciling their passwords.
+apiVersion: database.vault.upbound.io/v1alpha1
+kind: SecretBackendStaticRole
+metadata:
+  name: grafana
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  deletionPolicy: Orphan
+  forProvider:
+    backend: database
+    name: grafana
+    dbName: k3s-postgres
+    username: grafana
+    rotationPeriod: 2592000
+  providerConfigRef:
+    name: openbao
+---
+apiVersion: database.vault.upbound.io/v1alpha1
+kind: SecretBackendStaticRole
+metadata:
+  name: radar
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  deletionPolicy: Orphan
+  forProvider:
+    backend: database
+    name: radar
+    dbName: k3s-postgres
+    username: radar
+    rotationPeriod: 2592000
+  providerConfigRef:
+    name: openbao

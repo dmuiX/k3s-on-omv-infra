@@ -64,7 +64,7 @@ check(cert_manager_network_source && cert_manager_private_source &&
 postgres_infra_sources = postgresql_app.fetch('spec').fetch('sources').select do |candidate|
   candidate['repoURL'] == source['repoURL']
 end
-check(postgres_infra_sources.length == 3 &&
+check(postgres_infra_sources.length == 2 &&
       postgres_infra_sources.all? { |candidate| candidate['targetRevision'] == INFRA_REVISION },
       'All same-repository PostgreSQL sources must track the Infra main branch')
 # Public Applications own all resources; only their real value overrides are private.
@@ -224,11 +224,11 @@ postgres_sources = postgresql_app.dig('spec', 'sources')
 check(postgres_sources.count { |entry| entry['chart'] } == 2 &&
       postgres_sources.any? { |entry| entry['chart'] == 'cloudnative-pg' && entry['targetRevision'] == '0.29.1' } &&
       postgres_sources.any? { |entry| entry['chart'] == 'plugin-barman-cloud' && entry['targetRevision'] == '0.8.1' } &&
-      postgres_sources.any? { |entry| entry['path'] == '06-data/cloudnative-pg' && entry['ref'] == 'infra' } &&
-      postgres_sources.any? { |entry| entry['path'] == '06-data/cloudnative-pg/controllers' } &&
+      postgres_sources.count { |entry| entry['path'] == '06-data/cloudnative-pg' && entry['ref'] == 'infra' } == 1 &&
+      postgres_sources.none? { |entry| entry['path'] == '06-data/cloudnative-pg/controllers' } &&
       postgres_sources.any? { |entry| entry['path'] == 'charts/cluster-config' } &&
       postgres_sources.any? { |entry| entry['ref'] == 'private' },
-      'PostgreSQL must keep pinned charts and explicit controller/data namespace sources')
+      'PostgreSQL must keep pinned charts and one canonical authored-resource source')
 { 'argocd-route' => ['argocd', 5], 'grafana-route' => ['grafana', 8],
   'longhorn-route' => ['longhorn', 5], 'openbao-route' => ['openbao', 5],
   'cert-manager-config' => ['certificates', 5], 'openbao-config' => ['backups', 6] }.each do |name, (component, stage)|
