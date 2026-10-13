@@ -337,7 +337,7 @@ coordination/#46 reservations, fresh zero-instance checks with race protection,
 rollback source, preserved UID checks and functional database/OIDC acceptance
 before/after the targeted provider rollout. No blanket 242-type deletion approved.
 
-## Prepared coordinated batch (not executed)
+## Coordinated registration withdrawal (executed)
 
 The optional single-type production pilot was dropped. Current main
 `c14d18afd7cdff9450405edff61135abbe7e0e32` was merged into the preparation branch
@@ -375,7 +375,7 @@ run** of both objects; independent NotFound checks prove neither persisted.
 Dry run validates schema/CEL, not enforcement. Activation must demonstrate a
 fresh CREATE dry-run being denied by this exact policy before relying on it.
 
-Approved execution must follow these stages (all pending):
+The approved execution followed these stages:
 
 1. Serialize with #46/Argo/package writers using a renewable maintenance lease;
    verify versions/UIDs/Git baseline and deploy the six-kind future policy through
@@ -400,9 +400,41 @@ Approved execution must follow these stages (all pending):
 8. Compare sustained warm leader-equivalent heap/RSS/goroutines/watches; do not
    promise a GiB figure or confuse a provider rollout with a K3s leak fix.
 
-No guard, six-kind policy, deletion or production restart has been activated.
-The final exact-set production action still requires explicit scope approval;
-this prepared inventory will be refreshed rather than trusted after it ages.
+### Production result (2026-10-13)
+
+The user approved this exact 229-type scope after the plan and effects above were
+presented. The execution refreshed all candidate metadata under an exact CREATE
+deny guard, then completed the staged procedure. All 229 old MRDs were removed
+with Orphan propagation and UID/resourceVersion preconditions; package
+reconciliation recreated all of them with new UIDs and `Inactive` state. The 229
+still-empty, exact-UID CRDs were then withdrawn, reducing total cluster CRDs from
+389 to 160. A second explicit ProviderRevision reconciliation did not recreate
+them. The full pinned provider package remains installed.
+
+The provider pod was replaced exactly once through a PDB-respecting,
+UID/resourceVersion-bound eviction; the provider Deployment and K3s processes
+were not restarted. All seven existing managed resources were freshly
+`Ready`/`Synced`. Their UIDs, the ProviderConfig UID, seven ProviderConfigUsage
+UIDs and all 19 retained CRD/MRD UIDs remained unchanged. OpenBao stayed
+initialized/unsealed, all three PostgreSQL instances passed a fresh read-only
+query, Grafana reported database `ok`, Radar reported `healthy`, and OIDC
+Discovery/JWKS passed. Twelve PVC, 15 PV and 15 Longhorn volume UIDs and replica
+counts were unchanged; all nodes, three API targets and 264 rules were healthy.
+The exact admission guard and transient revision annotation were removed by UID,
+and the maintenance lease was released.
+
+Under unchanged K3s PIDs and matching scheduler/controller/cloud-controller
+leadership, NAS goroutines fell from 26,003 to about 16,956 and its RSS from
+3,362,344,960 to 2,994,044,928 bytes after roughly six minutes. Non-duplicated
+API-server WATCH gauges fell from 1,940 to 1,470 overall and from 533 to 60 for
+Vault groups. Contemporary peer RSS gauges decreased by about 9.8 MiB (Pi),
+350.6 MiB (NAS), and 87.4 MiB (Wyse), with all three process start timestamps
+unchanged. These are short-window observations, not a guaranteed permanent RAM
+figure; retain the warm-baseline caveats above.
+
+Future #46 stages can reactivate a reserved type through a reviewed MRAP Git
+change. Reservation still does not authorize object adoption or broader OpenBao
+privileges.
 
 ## Live acceptance and rollback
 
