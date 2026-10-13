@@ -41,11 +41,11 @@ check(permits_pi?(yaml('03-core/openbao/values.yml').dig('server', 'tolerations'
       'OpenBao cannot place its third voter on raspi4')
 check(permits_pi?(yaml('04-secrets/vault-secrets-webhook/values.yml')['tolerations']),
       'Vault Secrets Webhook cannot use raspi4')
-check(permits_pi?(yaml('06-data/postgresql/values-cloudnativepg.yml')['tolerations']),
+check(permits_pi?(yaml('06-data/cloudnative-pg/values-cloudnativepg.yml')['tolerations']),
       'CloudNativePG operator cannot use raspi4')
-check(permits_pi?(yaml('06-data/postgresql/values-barman.yml')['tolerations']),
+check(permits_pi?(yaml('06-data/cloudnative-pg/values-barman.yml')['tolerations']),
       'Barman plugin cannot use raspi4')
-check(permits_pi?(yaml('06-data/postgresql/cluster/cluster.yaml').dig('spec', 'affinity', 'tolerations')),
+check(permits_pi?(yaml('06-data/cloudnative-pg/cluster/cluster.yaml').dig('spec', 'affinity', 'tolerations')),
       'PostgreSQL instances cannot place the third member on raspi4')
 
 monitoring = yaml('03-core/kube-prometheus-stack/values.yml')

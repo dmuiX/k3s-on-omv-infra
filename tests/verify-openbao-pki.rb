@@ -28,7 +28,7 @@ root = YAML.load_file(File.join(ROOT, 'infra.yml'))
 directory = root.dig('spec', 'source', 'directory')
 check(directory['exclude'].nil?, 'Root must not exclude PostgreSQL')
 check(File.fnmatch(directory.fetch('include'), application_path, File::FNM_EXTGLOB) &&
-      File.fnmatch(directory.fetch('include'), '06-data/postgresql/app.yml', File::FNM_EXTGLOB),
+      File.fnmatch(directory.fetch('include'), '06-data/cloudnative-pg/app.yml', File::FNM_EXTGLOB),
       'Root must discover OpenBao PKI and PostgreSQL in steady state')
 
 output, stderr, result = Open3.capture3('kubectl', 'kustomize', File.join(ROOT, '05-platform/openbao-pki/workload'))

@@ -1,7 +1,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: postgresql
+  name: cloudnative-pg
   namespace: argocd
   annotations:
     argocd.argoproj.io/sync-wave: "6"
@@ -17,14 +17,14 @@ spec:
       helm:
         releaseName: cloudnative-pg
         valueFiles:
-          - $infra/06-data/postgresql/values-cloudnativepg.yml
+          - $infra/06-data/cloudnative-pg/values-cloudnativepg.yml
     - repoURL: https://cloudnative-pg.github.io/charts
       targetRevision: 0.8.1
       chart: plugin-barman-cloud
       helm:
         releaseName: plugin-barman-cloud
         valueFiles:
-          - $infra/06-data/postgresql/values-barman.yml
+          - $infra/06-data/cloudnative-pg/values-barman.yml
     - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
       targetRevision: main
       path: charts/cluster-config
@@ -37,9 +37,14 @@ spec:
           - $private/clusters/omv/values.yml
     - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
       targetRevision: main
-      path: 06-data/postgresql
+      path: 06-data/cloudnative-pg
       ref: infra
       kustomize: {}
+    - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
+      targetRevision: main
+      path: 06-data/cloudnative-pg/controllers
+      directory:
+        include: "{namespace.yaml,networkpolicy.yaml,pdbs.yaml}"
     - repoURL: https://github.com/dmuiX/k3s-on-omv-live.git
       targetRevision: main
       ref: private

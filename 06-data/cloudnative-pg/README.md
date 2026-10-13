@@ -1,9 +1,26 @@
 # CloudNativePG platform
 
-`Application/postgresql` is the automatically reconciled Wave-6 owner for
-CloudNativePG, the Barman Cloud plugin and `platform-postgres`. It remains
-non-pruning until backup, restore, PITR, failover and application-connectivity
-acceptance is completed.
+`Application/cloudnative-pg` is the automatically reconciled Wave-6 owner for
+CloudNativePG, the Barman Cloud plugin and `platform-postgres`. Controller
+workloads, webhooks, certificates, PDBs and controller NetworkPolicies run in
+the dedicated `cloudnative-pg` namespace. Database clusters, credentials,
+ObjectStores and database NetworkPolicies remain in `postgresql`.
+
+The operator uses the chart's cluster-wide RBAC mode because its ServiceAccount
+is outside the managed data namespace, but `WATCH_NAMESPACE=postgresql` keeps
+reconciliation scoped to that namespace. Cross-namespace NetworkPolicies permit
+only the operator-to-instance management port and Barman plugin RPC path needed
+by this layout. It remains non-pruning until backup, restore, PITR, failover and
+application-connectivity acceptance is completed.
+
+Moving an existing installation is a controlled migration, not an ordinary
+rolling update. With pruning disabled, Argo creates the new controller resources
+but intentionally does not delete the former copies in `postgresql`. During the
+cutover, prevent old and new operators from reconciling the same Cluster at the
+same time, verify the new webhook Service and both controller Deployments, and
+then remove only the reviewed old chart resources. Never enable broad pruning as
+a namespace-cleanup shortcut; PostgreSQL retained resources and recovery
+evidence share the Application.
 
 ## OpenBao-managed database credentials
 
@@ -57,8 +74,10 @@ cluster. Do not infer production readiness from offline tests.
 CloudNativePG and Barman chart versions remain pinned in `app.yml`. CNPG role
 and database reclaim policies remain `retain`; PostgreSQL storage, backup,
 network policy, and application connection protections remain in force. The
-NetworkPolicies permit broad TCP/443 egress for API and object-store access; they
-do not restrict HTTPS destinations and need CNI-aware controls before a stricter
-production boundary is claimed. The manager credential and VSO trust bootstrap
-are supplied by the sibling Ansible repository. Never place generated
+database NetworkPolicy permits broad TCP/443 egress because the Barman
+sidecar shares the PostgreSQL instance Pod and must reach object storage; it does
+not restrict HTTPS destinations and needs CNI-aware controls before a stricter
+production boundary is claimed. Controller API access is limited to reviewed
+K3s endpoint `/32`s on translated backend port 6443. The manager credential and
+VSO trust bootstrap are supplied by the sibling Ansible repository. Never place generated
 credentials in Git.

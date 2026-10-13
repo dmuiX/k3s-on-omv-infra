@@ -46,7 +46,7 @@ assert(config.dig('spec', 'credentials', 'source') == 'Kubernetes' &&
 assert(config.dig('spec', 'address') == 'http://openbao-active.openbao.svc.cluster.local:8200',
        'Wrong OpenBao listener')
 
-resources = docs('06-data/postgresql/databases/grafana-openbao.yaml')
+resources = docs('06-data/cloudnative-pg/databases/grafana-openbao.yaml')
 connection = resource(resources, 'SecretBackendConnection', 'postgresql')
 static_role = resource(resources, 'SecretBackendStaticRole', 'grafana')
 manager = resource(resources, 'DatabaseRole', 'openbao-manager')
@@ -90,13 +90,13 @@ assert pg['connectionUrl'].include?('sslmode=verify-full') &&
        ca_volume&.dig('secret', 'secretName') == 'postgresql-ca' &&
        ca_volume&.dig('secret', 'optional') == true &&
        ca_mount&.dig('mountPath') == '/openbao/postgresql-tls' &&
-       !File.read(File.join(ROOT, '06-data/postgresql/databases/grafana-openbao.yaml')).include?('${'),
+       !File.read(File.join(ROOT, '06-data/cloudnative-pg/databases/grafana-openbao.yaml')).include?('${'),
        'OpenBao must verify the PostgreSQL service name against its mounted internal CA'
 
-radar = docs('06-data/postgresql/databases/radar-openbao.yaml')
+radar = docs('06-data/cloudnative-pg/databases/radar-openbao.yaml')
 assert resource(radar, 'SecretBackendStaticRole', 'radar').dig('spec', 'forProvider', 'rotationPeriod') == 2_592_000,
        'Radar credentials must use a separate OpenBao static role'
-radar_db_role = resource(docs('06-data/postgresql/databases/radar.yaml'), 'DatabaseRole', 'radar')
+radar_db_role = resource(docs('06-data/cloudnative-pg/databases/radar.yaml'), 'DatabaseRole', 'radar')
 assert !radar_db_role.dig('spec').key?('passwordSecret'), 'CNPG must not own Radar password rotation'
 
 gitops_vso = docs('04-secrets/vault-secrets-operator/workload/resources.yaml')
@@ -139,7 +139,7 @@ assert monitoring_crds.dig('spec', 'syncPolicy', 'syncOptions').include?('Create
 
 crossplane_app = docs('03-core/crossplane/app.yml').first
 vso_app = docs('04-secrets/vault-secrets-operator/app.yml').first
-postgresql_app = docs('06-data/postgresql/app.yml').first
+postgresql_app = docs('06-data/cloudnative-pg/app.yml').first
 monitoring_app = docs('08-monitoring/kube-prometheus-stack/app.yml').first
 assert crossplane_app.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '3' &&
        vso_app.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '4' &&

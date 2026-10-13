@@ -1,4 +1,5 @@
 # yaml-language-server: $schema=../../values-schemas/plugin-barman-cloud/values.schema.json
+namespaceOverride: cloudnative-pg
 replicaCount: 2
 tolerations:
   - key: CriticalAddonsOnly

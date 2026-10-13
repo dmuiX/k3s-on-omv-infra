@@ -39,7 +39,7 @@ External-DNS. It uses Argo CD (already installed) for these applications:
 └── openbao/                early UI routes, usable when wildcard TLS becomes ready
 06-data/
 ├── openbao-backups/        OpenBao backup schedule
-├── postgresql/             CloudNativePG HA platform, automatically reconciled
+├── cloudnative-pg/         CNPG controllers in `cloudnative-pg`; data in `postgresql`
 └── redis/                  dormant Redis operator preparation (`application.yml`)
 07-secrets/
 └── postgresql-vso/         per-database OpenBao credential synchronization
@@ -54,8 +54,9 @@ any order. A real dependency belongs in a later wave, not in an alphabetic
 component name. The wave-1 CRD-only Application renders monitoring CRDs before
 controllers emit ServiceMonitors. Longhorn and OpenBao precede Crossplane and the
 Vault Secrets Operator; the Crossplane package installs alongside OpenBao,
-while its ProviderConfig follows in wave 5. PostgreSQL starts automatically in
-wave 6 after its OpenBao PKI,
+while its ProviderConfig follows in wave 5. The dedicated `cloudnative-pg`
+controller namespace and PostgreSQL data resources start automatically in wave 6
+after OpenBao PKI,
 manager credential, and provider prerequisites. VSO materializes per-database
 credentials in wave 7; the full monitoring stack (including Grafana) starts in
 wave 8 so Grafana cannot start before its PostgreSQL credential exists.

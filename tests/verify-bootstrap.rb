@@ -41,11 +41,11 @@ apps = applications.to_h { |app| [app.dig('metadata', 'name'), app] }
 check(apps.size == applications.size, 'Duplicate Application names')
 
 pki_path = '05-platform/openbao-pki/application.yml'
-postgresql_path = '06-data/postgresql/app.yml'
+postgresql_path = '06-data/cloudnative-pg/app.yml'
 check(root_selects.call(pki_path) && root_selects.call(postgresql_path),
       'Root must discover both OpenBao PKI and PostgreSQL in steady state')
 pki_app = apps.fetch('openbao-pki')
-postgresql_app = apps.fetch('postgresql')
+postgresql_app = apps.fetch('cloudnative-pg')
 check(pki_app.dig('spec', 'source') == {
         'repoURL' => source['repoURL'], 'targetRevision' => INFRA_REVISION,
         'path' => '05-platform/openbao-pki/workload'
@@ -64,7 +64,7 @@ check(cert_manager_network_source && cert_manager_private_source &&
 postgres_infra_sources = postgresql_app.fetch('spec').fetch('sources').select do |candidate|
   candidate['repoURL'] == source['repoURL']
 end
-check(postgres_infra_sources.length == 2 &&
+check(postgres_infra_sources.length == 3 &&
       postgres_infra_sources.all? { |candidate| candidate['targetRevision'] == INFRA_REVISION },
       'All same-repository PostgreSQL sources must track the Infra main branch')
 # Public Applications own all resources; only their real value overrides are private.
@@ -196,7 +196,7 @@ check(wave(apps.fetch('openbao')) < wave(apps.fetch('vault-secrets-webhook')), '
 check(wave(apps.fetch('argocd-config')) == 1, 'Existing Argo CD server configuration must be wave 1')
 expected_apps = %w[argocd-config argocd-route grafana-route kube-prometheus-stack monitoring-crds cert-manager
                    cert-manager-config k8up longhorn longhorn-route openbao openbao-config openbao-pki
-                   openbao-route postgresql postgresql-vso-credentials provider-vault provider-vault-config
+                   cloudnative-pg openbao-route postgresql-vso-credentials provider-vault provider-vault-config
                    vault-secrets-operator vault-secrets-webhook]
 check(apps.keys.sort == expected_apps.sort,
       'Public root must own the complete steady-state application inventory')
@@ -206,7 +206,7 @@ expected_by_wave = {
   3 => %w[openbao provider-vault],
   4 => %w[vault-secrets-operator vault-secrets-webhook],
   5 => %w[argocd-route cert-manager-config longhorn-route openbao-pki openbao-route provider-vault-config],
-  6 => %w[openbao-config postgresql],
+  6 => %w[cloudnative-pg openbao-config],
   7 => %w[postgresql-vso-credentials],
   8 => %w[grafana-route kube-prometheus-stack]
 }
@@ -224,10 +224,11 @@ postgres_sources = postgresql_app.dig('spec', 'sources')
 check(postgres_sources.count { |entry| entry['chart'] } == 2 &&
       postgres_sources.any? { |entry| entry['chart'] == 'cloudnative-pg' && entry['targetRevision'] == '0.29.1' } &&
       postgres_sources.any? { |entry| entry['chart'] == 'plugin-barman-cloud' && entry['targetRevision'] == '0.8.1' } &&
-      postgres_sources.any? { |entry| entry['path'] == '06-data/postgresql' && entry['ref'] == 'infra' } &&
+      postgres_sources.any? { |entry| entry['path'] == '06-data/cloudnative-pg' && entry['ref'] == 'infra' } &&
+      postgres_sources.any? { |entry| entry['path'] == '06-data/cloudnative-pg/controllers' } &&
       postgres_sources.any? { |entry| entry['path'] == 'charts/cluster-config' } &&
       postgres_sources.any? { |entry| entry['ref'] == 'private' },
-      'PostgreSQL must remain one pinned multi-source Application')
+      'PostgreSQL must keep pinned charts and explicit controller/data namespace sources')
 { 'argocd-route' => ['argocd', 5], 'grafana-route' => ['grafana', 8],
   'longhorn-route' => ['longhorn', 5], 'openbao-route' => ['openbao', 5],
   'cert-manager-config' => ['certificates', 5], 'openbao-config' => ['backups', 6] }.each do |name, (component, stage)|

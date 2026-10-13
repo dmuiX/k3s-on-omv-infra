@@ -7,7 +7,6 @@ resources:
   - cluster/cluster.yaml
   - cluster/backup.yaml
   - cluster/networkpolicy.yaml
-  - cluster/controller-pdbs.yaml
   - databases/grafana.yaml
   - databases/grafana-openbao.yaml
   - databases/radar.yaml

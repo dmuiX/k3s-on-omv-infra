@@ -37,7 +37,7 @@ end
   check(root_selects.call(path), "Public root excludes #{path}")
 end
 check(root_selects.call('05-platform/openbao-pki/application.yml') &&
-      root_selects.call('06-data/postgresql/app.yml'),
+      root_selects.call('06-data/cloudnative-pg/app.yml'),
       'Root must select OpenBao PKI and PostgreSQL in steady state')
 
 apps = documents.select { |doc| doc['kind'] == 'Application' }

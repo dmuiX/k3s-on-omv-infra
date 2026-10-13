@@ -26,10 +26,18 @@ def run(*args, chdir: ROOT)
   output
 end
 
-application = docs(File.read(File.join(ROOT, '06-data/postgresql/app.yml'))).first
+application = docs(File.read(File.join(ROOT, '06-data/cloudnative-pg/app.yml'))).first
 check(application.dig('spec', 'syncPolicy', 'automated', 'prune') == false,
       'PostgreSQL pruning must remain disabled until live acceptance and cleanup')
-kustomized = docs(run('kubectl', 'kustomize', '06-data/postgresql'))
+kustomized = docs(run('kubectl', 'kustomize', '06-data/cloudnative-pg'))
+controller_namespace = docs(File.read(File.join(ROOT, '06-data/cloudnative-pg/controllers/namespace.yaml')))
+controller_policies = docs(File.read(File.join(ROOT, '06-data/cloudnative-pg/controllers/networkpolicy.yaml')))
+controller_pdbs = docs(File.read(File.join(ROOT, '06-data/cloudnative-pg/controllers/pdbs.yaml')))
+check(resource(controller_namespace, 'Namespace', 'cloudnative-pg').dig('metadata', 'labels',
+      'pod-security.kubernetes.io/enforce') == 'restricted',
+      'CloudNativePG controller namespace must enforce restricted Pod Security')
+check(controller_pdbs.all? { |item| item.dig('metadata', 'namespace') == 'cloudnative-pg' },
+      'CloudNativePG controller PDBs must stay with their workloads')
 cluster = resource(kustomized, 'Cluster', 'platform-postgres')
 check(cluster.dig('spec', 'instances') == 3, 'PostgreSQL must have exactly three instances')
 check(cluster.dig('spec', 'imageName').match?(/:18\.6-system-bookworm@sha256:[0-9a-f]{64}\z/),
@@ -122,10 +130,15 @@ check(policies.any? { |item| item.dig('metadata', 'name') == 'default-deny' &&
 check(policies.any? { |item| item.to_s.include?('kube-prometheus-stack') } &&
       policies.any? { |item| item.to_s.include?('radar') && item.to_s.include?('grafana') },
       'Monitoring or registered-consumer network paths are missing')
-operator_policy = policies.find { |item| item.dig('metadata', 'name') == 'allow-cloudnative-pg-operator' }
-check(operator_policy.dig('spec', 'ingress').none? do |rule|
+operator_policy = resource(controller_policies, 'NetworkPolicy', 'allow-cloudnative-pg-operator')
+check(operator_policy.dig('metadata', 'namespace') == 'cloudnative-pg' &&
+      operator_policy.dig('spec', 'ingress').none? do |rule|
         rule.fetch('ports', []).any? { |port| port['port'] == 9443 }
-      end, 'Public manifests must not expose the CloudNativePG webhook broadly')
+      end, 'Public manifests must isolate the CloudNativePG webhook in its controller namespace')
+postgres_policy = resource(policies, 'NetworkPolicy', 'allow-postgres')
+check(postgres_policy.to_s.include?('kubernetes.io/metadata.name') &&
+      postgres_policy.to_s.include?('cloudnative-pg'),
+      'PostgreSQL policy must select CNPG controllers across the namespace boundary')
 
 alerts = resource(kustomized, 'PrometheusRule', 'platform-postgres')
 alert_names = alerts.dig('spec', 'groups').flat_map { |group| group['rules'] }.map { |rule| rule['alert'] }
@@ -138,16 +151,20 @@ Dir.mktmpdir('postgresql-render-') do |dir|
   env = {'HELM_CACHE_HOME' => File.join(dir, 'cache'), 'HELM_CONFIG_HOME' => File.join(dir, 'config'),
          'HELM_DATA_HOME' => File.join(dir, 'data'), 'HELM_PLUGINS' => File.join(dir, 'plugins')}
   operator = docs(run(env, 'helm', 'template', 'cloudnative-pg', 'cloudnative-pg', '--repo',
-                      'https://cloudnative-pg.github.io/charts', '--version', '0.29.1', '--namespace', 'postgresql',
-                      '--include-crds', '--values', '06-data/postgresql/values-cloudnativepg.yml', chdir: ROOT))
+                      'https://cloudnative-pg.github.io/charts', '--version', '0.29.1', '--namespace', 'cloudnative-pg',
+                      '--include-crds', '--values', '06-data/cloudnative-pg/values-cloudnativepg.yml', chdir: ROOT))
   plugin = docs(run(env, 'helm', 'template', 'plugin-barman-cloud', 'plugin-barman-cloud', '--repo',
-                    'https://cloudnative-pg.github.io/charts', '--version', '0.8.1', '--namespace', 'postgresql',
-                    '--include-crds', '--values', '06-data/postgresql/values-barman.yml', chdir: ROOT))
+                    'https://cloudnative-pg.github.io/charts', '--version', '0.8.1', '--namespace', 'cloudnative-pg',
+                    '--include-crds', '--values', '06-data/cloudnative-pg/values-barman.yml', chdir: ROOT))
   operator_deploy = resource(operator, 'Deployment', 'cloudnative-pg')
   plugin_deploy = resource(plugin, 'Deployment', 'plugin-barman-cloud')
-  check(operator_deploy.dig('spec', 'template', 'spec', 'containers', 0, 'env').any? do |entry|
-          entry['name'] == 'WATCH_NAMESPACE' && entry['value'] == 'postgresql'
-        end, 'CloudNativePG operator must watch only the PostgreSQL namespace')
+  operator_config = resource(operator, 'ConfigMap', 'cnpg-controller-manager-config')
+  check(operator_config.dig('data', 'WATCH_NAMESPACE') == 'postgresql',
+        'CloudNativePG operator must watch only the PostgreSQL data namespace')
+  [operator_deploy, plugin_deploy].each do |deployment|
+    check(deployment.dig('metadata', 'namespace') == 'cloudnative-pg',
+          "#{deployment.dig('metadata', 'name')} must run in the controller namespace")
+  end
   [operator_deploy, plugin_deploy].each do |deployment|
     check(deployment.dig('spec', 'replicas') == 2, "#{deployment.dig('metadata', 'name')} must have two replicas")
     check(deployment.dig('spec', 'template', 'spec', 'affinity', 'podAntiAffinity',
@@ -184,14 +201,21 @@ check(object_store.dig('spec', 'configuration', 's3Credentials') == {
       }, 'Barman must use the fixed VSO-owned R2 Secret contract')
 webhook_policy = resource(private_template, 'NetworkPolicy', 'allow-k3s-api-to-cloudnative-pg-webhook')
 sources = webhook_policy.dig('spec', 'ingress', 0, 'from').map { |source| source.dig('ipBlock', 'cidr') }
-check(sources == ['192.0.2.1/32', '198.51.100.1/32'] &&
+check(webhook_policy.dig('metadata', 'namespace') == 'cloudnative-pg' &&
+      sources == ['192.0.2.1/32', '198.51.100.1/32'] &&
       webhook_policy.dig('spec', 'ingress', 0, 'ports', 0, 'port') == 9443,
-      'Webhook policy must use only explicitly configured native and masqueraded API-server /32 sources')
-api_egress_policy = resource(private_template, 'NetworkPolicy', 'allow-k3s-api-egress')
-destinations = api_egress_policy.dig('spec', 'egress', 0, 'to').map { |target| target.dig('ipBlock', 'cidr') }
-check(api_egress_policy.dig('spec', 'podSelector') == {} &&
-      destinations == ['192.0.2.1/32'] &&
-      api_egress_policy.dig('spec', 'egress', 0, 'ports') == [{'protocol' => 'TCP', 'port' => 6443}],
-      'PostgreSQL pods must reach only reviewed K3s API endpoints on the translated backend port')
+      'Webhook policy must use only explicitly configured API sources in the controller namespace')
+api_egress_policies = private_template.select do |item|
+  item['kind'] == 'NetworkPolicy' && item.dig('metadata', 'name') == 'allow-k3s-api-egress'
+end
+check(api_egress_policies.map { |item| item.dig('metadata', 'namespace') }.sort == %w[cloudnative-pg postgresql],
+      'Both controller and data namespaces need exact K3s API egress')
+api_egress_policies.each do |policy|
+  destinations = policy.dig('spec', 'egress', 0, 'to').map { |target| target.dig('ipBlock', 'cidr') }
+  check(policy.dig('spec', 'podSelector') == {} &&
+        destinations == ['192.0.2.1/32'] &&
+        policy.dig('spec', 'egress', 0, 'ports') == [{'protocol' => 'TCP', 'port' => 6443}],
+        "#{policy.dig('metadata', 'namespace')} must reach only reviewed K3s API endpoints")
+end
 
 puts 'PASS: PostgreSQL HA, storage, TLS, roles, backups, policies, monitoring and pinned chart renders'

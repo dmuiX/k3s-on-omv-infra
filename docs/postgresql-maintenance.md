@@ -5,7 +5,7 @@ K3s mutations remain owned by the bootstrap repository; GitOps owns
 
 ## Before maintenance
 
-- [ ] Argo CD `Application/postgresql` exists and reports Synced with generic child health Healthy.
+- [ ] Argo CD `Application/cloudnative-pg` exists and reports Synced with generic child health Healthy.
 - [ ] CloudNativePG `Cluster/platform-postgres` explicitly reports `Cluster in healthy state`.
 - [ ] Both `DatabaseRole` and `Database` resources report their current generations applied.
 - [ ] The scheduled backup has run and the Barman ObjectStore reports a usable recovery window.
