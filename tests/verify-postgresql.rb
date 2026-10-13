@@ -94,24 +94,25 @@ check(storage.dig('parameters', 'numberOfReplicas') == '1' &&
         "Missing Longhorn encryption reference for #{operation}")
 end
 
-%w[grafana radar].each do |name|
-  role = resource(kustomized, 'DatabaseRole', name)
+{'grafana' => 25, 'radar' => 12}.each do |name, connection_limit|
   database = resource(kustomized, 'Database', name)
-  check(role.dig('spec', 'cluster', 'name') == 'k3s-postgres' &&
-        !role.dig('spec').key?('passwordSecret') &&
-        role.dig('spec', 'databaseRoleReclaimPolicy') == 'retain', "Unsafe #{name} role")
-  check(role.dig('spec', 'login') == true && %w[superuser createdb createrole replication].all? { |key|
-          role.dig('spec', key) == false
-        }, "#{name} role is over-privileged")
+  static_role = resource(kustomized, 'SecretBackendStaticRole', name)
+  rotation = static_role.dig('spec', 'forProvider', 'rotationStatements', 0)
+  check(kustomized.none? { |item| item['kind'] == 'DatabaseRole' && item.dig('metadata', 'name') == name },
+        "CNPG must not retain ownership of the OpenBao-managed #{name} login")
   check(database.dig('spec', 'owner') == name && database.dig('spec', 'databaseReclaimPolicy') == 'retain' &&
-        database.dig('spec', 'connectionLimit') == role.dig('spec', 'connectionLimit'),
+        database.dig('spec', 'connectionLimit') == connection_limit &&
+        database.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '4',
         "Unsafe or inconsistent #{name} database")
+  check(static_role.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '3' &&
+        static_role.dig('spec', 'forProvider', 'username') == name &&
+        rotation.include?("CREATE ROLE #{name}") && rotation.include?("ALTER ROLE #{name}") &&
+        rotation.include?("CONNECTION LIMIT #{connection_limit}") &&
+        rotation.include?('NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION'),
+        "OpenBao must create and constrain the #{name} login before database ownership")
 end
 check(kustomized.none? { |item| item['kind'] == 'Secret' },
       'PostgreSQL desired state must consume VSO-owned Secrets, not author credential placeholders')
-check(resource(kustomized, 'DatabaseRole', 'grafana').dig('spec', 'connectionLimit') == 25 &&
-      resource(kustomized, 'DatabaseRole', 'radar').dig('spec', 'connectionLimit') == 12,
-      'Application-specific connection budgets changed')
 manager = resource(kustomized, 'DatabaseRole', 'openbao-manager')
 check(manager.dig('spec', 'passwordSecret', 'name') == 'openbao-manager-credentials' &&
       manager.dig('spec', 'createrole') == true && manager.dig('spec', 'superuser') == false,

@@ -1,30 +1,10 @@
 apiVersion: postgresql.cnpg.io/v1
-kind: DatabaseRole
-metadata:
-  name: radar
-  annotations:
-    argocd.argoproj.io/sync-wave: "2"
-spec:
-  cluster:
-    name: k3s-postgres
-  name: radar
-  login: true
-  superuser: false
-  createdb: false
-  createrole: false
-  replication: false
-  inherit: true
-  # Budget: two future Radar replicas x five pool connections plus two
-  # migration/maintenance connections. The app-side pool must remain <=5/pod.
-  connectionLimit: 12
-  databaseRoleReclaimPolicy: retain
----
-apiVersion: postgresql.cnpg.io/v1
 kind: Database
 metadata:
   name: radar
   annotations:
-    argocd.argoproj.io/sync-wave: "3"
+    # OpenBao creates and adopts the fixed login role before CNPG assigns ownership.
+    argocd.argoproj.io/sync-wave: "4"
 spec:
   cluster:
     name: k3s-postgres

@@ -94,10 +94,12 @@ assert pg['connectionUrl'].include?('sslmode=verify-full') &&
        'OpenBao must verify the PostgreSQL service name against its mounted internal CA'
 
 radar = docs('06-data/cloudnative-pg/databases/radar-openbao.yaml')
-assert resource(radar, 'SecretBackendStaticRole', 'radar').dig('spec', 'forProvider', 'rotationPeriod') == 2_592_000,
-       'Radar credentials must use a separate OpenBao static role'
-radar_db_role = resource(docs('06-data/cloudnative-pg/databases/radar.yaml'), 'DatabaseRole', 'radar')
-assert !radar_db_role.dig('spec').key?('passwordSecret'), 'CNPG must not own Radar password rotation'
+radar_static_role = resource(radar, 'SecretBackendStaticRole', 'radar')
+assert radar_static_role.dig('spec', 'forProvider', 'rotationPeriod') == 2_592_000 &&
+       radar_static_role.dig('spec', 'forProvider', 'rotationStatements', 0).include?('CREATE ROLE radar'),
+       'Radar credentials must use a self-provisioning OpenBao static role'
+assert docs('06-data/cloudnative-pg/databases/radar.yaml').none? { |item| item['kind'] == 'DatabaseRole' },
+       'CNPG must not own the OpenBao-managed Radar login'
 
 vso_operator_app = docs('04-secrets/vault-secrets-operator/app.yml').first
 assert vso_operator_app.dig('spec', 'sources').length == 1 &&
