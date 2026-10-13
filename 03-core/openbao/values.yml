@@ -33,9 +33,19 @@ server:
         items:
           - key: unseal-key
             path: unseal-key
+    - name: postgresql-ca
+      secret:
+        secretName: postgresql-ca
+        optional: true
+        items:
+          - key: ca.crt
+            path: ca.crt
   volumeMounts:
     - name: unseal-key-volume
       mountPath: /openbao/secrets
+      readOnly: true
+    - name: postgresql-ca
+      mountPath: /openbao/postgresql-tls
       readOnly: true
   ha:
     enabled: true

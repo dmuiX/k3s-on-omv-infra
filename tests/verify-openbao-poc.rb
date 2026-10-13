@@ -82,9 +82,16 @@ assert File.read(File.join(ROOT, '../k3s-on-omv-bootstrap/ansible/roles/gitops_b
 provider_policy = File.read(File.join(ROOT, '../k3s-on-omv-bootstrap/ansible/roles/gitops_bootstrap/files/openbao-access/policy_files/crossplane-provider-vault.hcl'))
 assert !provider_policy.include?('sys/policies/acl') && !provider_policy.include?('auth/kubernetes/role'),
        'Crossplane provider must not receive policy or auth-role administration privileges'
-assert pg['connectionUrl'].include?('sslmode=require') &&
+openbao_values = YAML.load_file(File.join(ROOT, '03-core/openbao/values.yml'))
+ca_volume = openbao_values.dig('server', 'volumes').find { |volume| volume['name'] == 'postgresql-ca' }
+ca_mount = openbao_values.dig('server', 'volumeMounts').find { |mount| mount['name'] == 'postgresql-ca' }
+assert pg['connectionUrl'].include?('sslmode=verify-full') &&
+       pg['connectionUrl'].include?('sslrootcert=/openbao/postgresql-tls/ca.crt') &&
+       ca_volume&.dig('secret', 'secretName') == 'postgresql-ca' &&
+       ca_volume&.dig('secret', 'optional') == true &&
+       ca_mount&.dig('mountPath') == '/openbao/postgresql-tls' &&
        !File.read(File.join(ROOT, '06-data/postgresql/databases/grafana-openbao.yaml')).include?('${'),
-       'PostgreSQL transport must be encrypted and no shell-style secret interpolation is permitted'
+       'OpenBao must verify the PostgreSQL service name against its mounted internal CA'
 
 radar = docs('06-data/postgresql/databases/radar-openbao.yaml')
 assert resource(radar, 'SecretBackendStaticRole', 'radar').dig('spec', 'forProvider', 'rotationPeriod') == 2_592_000,
