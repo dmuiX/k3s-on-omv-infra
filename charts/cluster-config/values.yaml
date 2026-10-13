@@ -48,6 +48,9 @@ postgresqlBackup:
   region: auto
 
 postgresqlNetwork:
-  # Safe documentation-only address. Live values list each K3s server as /32.
+  # Safe documentation-only addresses. Live values list each K3s server and
+  # each Flannel host-to-pod masquerade source as exact /32 entries.
   apiServerSourceCIDRs:
     - 192.0.2.1/32
+  apiServerMasqueradeSourceCIDRs:
+    - 198.51.100.1/32

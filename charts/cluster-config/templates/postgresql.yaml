@@ -83,8 +83,14 @@ spec:
       app.kubernetes.io/name: cloudnative-pg
   policyTypes: [Ingress]
   ingress:
+    # Flannel masquerades host-to-remote-pod traffic to the source node's
+    # per-node Pod gateway, so both native and translated API sources are exact.
     - from:
 {{- range required "K3s API server source CIDRs are required" .Values.postgresqlNetwork.apiServerSourceCIDRs }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+{{- end }}
+{{- range required "K3s API server masquerade source CIDRs are required" .Values.postgresqlNetwork.apiServerMasqueradeSourceCIDRs }}
         - ipBlock:
             cidr: {{ . | quote }}
 {{- end }}
