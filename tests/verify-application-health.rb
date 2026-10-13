@@ -12,8 +12,10 @@ oidc_keys = %w[OidcKey OidcScope OidcClient OidcProvider].map do |kind|
   "resource.customizations.health.identity.vault.upbound.io_#{kind}"
 end
 data = config.fetch('data')
-expected_keys = [application_key, dynamic_secret_key, static_secret_key, *oidc_keys, 'resource.exclusions']
-raise 'Only reviewed health contracts and resource exclusions may be configured' unless data.keys.sort == expected_keys.sort
+expected_keys = [application_key, dynamic_secret_key, static_secret_key, *oidc_keys,
+                 'accounts.radar', 'accounts.radar.enabled', 'resource.exclusions']
+raise 'Only reviewed health contracts, Radar account and resource exclusions may be configured' unless data.keys.sort == expected_keys.sort
+raise 'Radar Argo account must be API-key-only' unless data['accounts.radar'] == 'apiKey' && data['accounts.radar.enabled'] == 'true'
 
 lua = data.fetch(application_key)
 dynamic_secret_lua = data.fetch(dynamic_secret_key)

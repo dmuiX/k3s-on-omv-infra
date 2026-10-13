@@ -186,6 +186,8 @@ check(wave(health) <= applications.map { |app| wave(app) }.min,
 # alone does not order resources within the wave.
 health_keys = health.fetch('data').keys
 check(health_keys.sort == [
+        'accounts.radar',
+        'accounts.radar.enabled',
         'resource.customizations.health.argoproj.io_Application',
         'resource.customizations.health.identity.vault.upbound.io_OidcClient',
         'resource.customizations.health.identity.vault.upbound.io_OidcKey',
@@ -195,7 +197,7 @@ check(health_keys.sort == [
         'resource.customizations.health.secrets.hashicorp.com_VaultStaticSecret',
         'resource.exclusions'
       ].sort,
-      'Argo must retain only reviewed health contracts and resource exclusions')
+      'Argo must retain only reviewed health contracts, Radar account and resource exclusions')
 crd_app = apps.fetch('monitoring-crds')
 monitoring = apps.fetch('kube-prometheus-stack')
 %w[longhorn cert-manager kube-prometheus-stack openbao vault-secrets-webhook].each do |name|

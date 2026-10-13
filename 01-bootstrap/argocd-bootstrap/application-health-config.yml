@@ -9,6 +9,9 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "1"
 data:
+  # Radar uses a dedicated API-key-only account for read-only GitOps diffs.
+  accounts.radar: apiKey
+  accounts.radar.enabled: "true"
   # Preserve Argo's existing default exclusions, then avoid caching unused
   # provider APIs. Database/Vault ProviderConfig APIs authored in Git remain visible.
   resource.exclusions: |
