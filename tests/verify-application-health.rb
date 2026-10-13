@@ -9,8 +9,8 @@ application_key = 'resource.customizations.health.argoproj.io_Application'
 dynamic_secret_key = 'resource.customizations.health.secrets.hashicorp.com_VaultDynamicSecret'
 static_secret_key = 'resource.customizations.health.secrets.hashicorp.com_VaultStaticSecret'
 data = config.fetch('data')
-expected_keys = [application_key, dynamic_secret_key, static_secret_key]
-raise 'Only reviewed Application and VaultStaticSecret health may be customized' unless data.keys.sort == expected_keys.sort
+expected_keys = [application_key, dynamic_secret_key, static_secret_key, 'resource.exclusions']
+raise 'Only reviewed health contracts and resource exclusions may be configured' unless data.keys.sort == expected_keys.sort
 
 lua = data.fetch(application_key)
 dynamic_secret_lua = data.fetch(dynamic_secret_key)

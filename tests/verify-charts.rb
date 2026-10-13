@@ -93,7 +93,13 @@ Dir.mktmpdir('infra-helm-check-') do |dir|
   secrets_webhook = render('vault-secrets-webhook', env)
   cnpg = render('cloudnative-pg', env, 'cloudnative-pg')
   barman = render('cloudnative-pg', env, 'plugin-barman-cloud')
-  auxiliary = k8up + secrets_webhook + cnpg + barman
+  crossplane = render('provider-vault', env, 'crossplane')
+  core = find_resource(crossplane, 'Deployment', 'crossplane')
+  init_args = core.dig('spec', 'template', 'spec', 'initContainers', 0, 'args')
+  check(init_args == ['core', 'init', '--activation', 'secretbackendconnections.database.vault.upbound.io',
+                     '--activation', 'secretbackendstaticroles.database.vault.upbound.io'],
+        'Crossplane must initialize only the declared managed resource APIs')
+  auxiliary = k8up + secrets_webhook + cnpg + barman + crossplane
   check((crds + monitoring + longhorn + openbao + cert_manager + auxiliary).none? do |resource|
     %w[Application ApplicationSet].include?(resource['kind'])
   end, 'A Helm chart unexpectedly rendered a nested Argo resource')
