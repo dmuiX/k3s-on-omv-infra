@@ -67,6 +67,10 @@ end
 check(excluded?(exclusions, 'pki.vault.upbound.io', 'SecretBackend'), 'Unused legacy provider APIs must not occupy Argo caches')
 check(excluded?(exclusions, 'database.vault.m.upbound.io', 'SecretBackendConnection'), 'Unused namespaced provider APIs must not occupy Argo caches')
 check(excluded?(exclusions, 'apiextensions.crossplane.io', 'ManagedResourceDefinition'), 'Generated MRDs must not occupy Argo caches')
+%w[OidcKey OidcScope OidcClient OidcProvider].each do |kind|
+  check(!excluded?(exclusions, 'identity.vault.upbound.io', kind),
+        "Application-owned OpenBao identity resource excluded from GitOps: #{kind}")
+end
 [['', 'Endpoints'], ['discovery.k8s.io', 'EndpointSlice'], ['coordination.k8s.io', 'Lease'],
  ['cert-manager.io', 'CertificateRequest'], ['cilium.io', 'CiliumEndpoint'],
  ['kyverno.io', 'UpdateRequest']].each do |group, kind|

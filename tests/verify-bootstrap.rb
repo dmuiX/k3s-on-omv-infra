@@ -39,6 +39,15 @@ applications = app_files.flat_map { |path| YAML.load_stream(File.read(path)).com
 check(applications.all? { |app| app['kind'] == 'Application' }, 'Root discovers unexpected resources')
 apps = applications.to_h { |app| [app.dig('metadata', 'name'), app] }
 check(apps.size == applications.size, 'Duplicate Application names')
+root_automated = root.dig('spec', 'syncPolicy', 'automated')
+check(root_automated.is_a?(Hash) && root_automated['enabled'] != false &&
+      root_automated['prune'] == false && root_automated['selfHeal'] == true &&
+      applications.all? do |app|
+        automated = app.dig('spec', 'syncPolicy', 'automated')
+        automated.is_a?(Hash) && automated['enabled'] == true &&
+          automated['prune'] == false && automated['selfHeal'] == true
+      end,
+      'Root and child Applications must auto-sync and self-heal without automatic pruning')
 
 pki_path = '05-platform/openbao-pki/application.yml'
 postgresql_path = '06-data/cloudnative-pg/app.yml'
@@ -84,7 +93,7 @@ end
 
 # Upstream controllers stay as Argo multi-source Helm Applications. Values are
 # reviewed in Git; generated chart output is deliberately not committed.
-helm_apps = %w[monitoring-crds kube-prometheus-stack cert-manager k8up longhorn openbao vault-secrets-webhook]
+helm_apps = %w[monitoring-crds kube-prometheus-stack cert-manager k8up longhorn openbao radar vault-secrets-webhook]
 helm_apps.each do |name|
   app = apps.fetch(name)
   spec = app.fetch('spec')
@@ -103,6 +112,11 @@ helm_apps.each do |name|
       check(name == 'openbao' && path == '$snapshot-values/clusters/omv/openbao-values.yml' &&
             private_source && private_source['targetRevision'] == LIVE_REVISION,
             'OpenBao snapshot values must use the protected Live main source')
+    elsif path.start_with?('$private/')
+      private_source = sources.find { |candidate| candidate['ref'] == 'private' }
+      check(name == 'radar' && path == '$private/clusters/omv/radar-values.yml' &&
+            private_source && private_source['targetRevision'] == LIVE_REVISION,
+            'Radar identity values must use the protected Live main source')
     else
       check(path.start_with?('$values/') && File.file?(File.join(ROOT, path.delete_prefix('$values/'))),
             "#{name} references a missing Git values file")
@@ -110,7 +124,8 @@ helm_apps.each do |name|
   end
 end
 upstream_dirs = %w[01-bootstrap/monitoring-crds 02-controllers/cert-manager 02-controllers/k8up 02-controllers/longhorn
-                   03-core/kube-prometheus-stack 03-core/openbao 04-secrets/vault-secrets-webhook]
+                   03-core/kube-prometheus-stack 03-core/openbao 04-secrets/vault-secrets-webhook
+                   07-applications/radar]
 check(upstream_dirs.none? { |dir| File.directory?(File.join(ROOT, dir, 'manifests')) },
       'Rendered upstream Helm manifest directories must not be committed')
 k8up_sources = apps.fetch('k8up').dig('spec', 'sources')
@@ -153,8 +168,8 @@ check(git_sources.all? { |candidate| [INFRA_REPOSITORY, LIVE_REPOSITORY].include
       'Every first-party Git source must use an exact reviewed HTTPS repository identity')
 check(!infra_sources.empty? && infra_sources.all? { |candidate| candidate['targetRevision'] == INFRA_REVISION },
       'Every Infra child source must track the main branch')
-check(live_sources.length == 9 && live_sources.all? { |candidate| candidate['targetRevision'] == LIVE_REVISION },
-      'All nine first-party private Git child sources must track protected Live main')
+check(live_sources.length == 10 && live_sources.all? { |candidate| candidate['targetRevision'] == LIVE_REVISION },
+      'All ten first-party private Git child sources must track protected Live main')
 
 health_path = '01-bootstrap/argocd-bootstrap/application-health-config.yml'
 health = docs(health_path).first
@@ -171,12 +186,18 @@ check(wave(health) <= applications.map { |app| wave(app) }.min,
 # alone does not order resources within the wave.
 health_keys = health.fetch('data').keys
 check(health_keys.sort == [
+        'accounts.radar',
+        'accounts.radar.enabled',
         'resource.customizations.health.argoproj.io_Application',
+        'resource.customizations.health.identity.vault.upbound.io_OidcClient',
+        'resource.customizations.health.identity.vault.upbound.io_OidcKey',
+        'resource.customizations.health.identity.vault.upbound.io_OidcProvider',
+        'resource.customizations.health.identity.vault.upbound.io_OidcScope',
         'resource.customizations.health.secrets.hashicorp.com_VaultDynamicSecret',
         'resource.customizations.health.secrets.hashicorp.com_VaultStaticSecret',
         'resource.exclusions'
       ].sort,
-      'Argo must retain only reviewed health contracts and resource exclusions')
+      'Argo must retain only reviewed health contracts, Radar account and resource exclusions')
 crd_app = apps.fetch('monitoring-crds')
 monitoring = apps.fetch('kube-prometheus-stack')
 %w[longhorn cert-manager kube-prometheus-stack openbao vault-secrets-webhook].each do |name|
@@ -197,7 +218,7 @@ check(wave(apps.fetch('openbao')) < wave(apps.fetch('vault-secrets-webhook')), '
 check(wave(apps.fetch('argocd-config')) == 1, 'Existing Argo CD server configuration must be wave 1')
 expected_apps = %w[argocd-config argocd-route grafana-route kube-prometheus-stack monitoring-crds cert-manager
                    cert-manager-config k8up longhorn longhorn-route openbao openbao-config openbao-pki
-                   cloudnative-pg openbao-route postgresql-vso-credentials provider-vault provider-vault-config
+                   cloudnative-pg openbao-route provider-vault provider-vault-config radar
                    vault-secrets-operator vault-secrets-webhook]
 check(apps.keys.sort == expected_apps.sort,
       'Public root must own the complete steady-state application inventory')
@@ -208,7 +229,7 @@ expected_by_wave = {
   4 => %w[vault-secrets-operator vault-secrets-webhook],
   5 => %w[argocd-route cert-manager-config longhorn-route openbao-pki openbao-route provider-vault-config],
   6 => %w[cloudnative-pg openbao-config],
-  7 => %w[postgresql-vso-credentials],
+  7 => %w[radar],
   8 => %w[grafana-route kube-prometheus-stack]
 }
 actual_by_wave = applications.group_by { |app| wave(app) }.transform_values do |items|
@@ -279,15 +300,21 @@ check(grafana_database&.dig('ssl_mode') == 'require' &&
 grafana_secret_ignore = monitoring.fetch('spec').fetch('ignoreDifferences').find do |entry|
   entry['group'] == '' && entry['kind'] == 'Secret' && entry['name'] == 'kube-prometheus-stack-grafana'
 end
+grafana_checksum_ignore = monitoring.fetch('spec').fetch('ignoreDifferences').find do |entry|
+  entry['group'] == 'apps' && entry['kind'] == 'Deployment' &&
+    entry['name'] == 'kube-prometheus-stack-grafana'
+end
 grafana_volume_ignore = monitoring.fetch('spec').fetch('ignoreDifferences').find do |entry|
   entry['group'] == '' && entry['kind'] == 'PersistentVolumeClaim' &&
     entry['name'] == 'kube-prometheus-stack-grafana'
 end
 check(grafana_volume_ignore && grafana_volume_ignore['jsonPointers'] == ['/spec/volumeName'],
       'Grafana retained-PV prebinding must ignore only the immutable volumeName')
-check(grafana_secret_ignore && grafana_secret_ignore['jsonPointers'].sort ==
-      ['/data/admin-password', '/data/admin-user'],
-      'Argo must ignore only the chart-generated Grafana administrator data fields')
+check(grafana_secret_ignore && grafana_secret_ignore['jsonPointers'] == ['/data'],
+      'Argo must preserve all chart-generated Grafana administrator Secret data')
+check(grafana_checksum_ignore && grafana_checksum_ignore['jsonPointers'] ==
+      ['/spec/template/metadata/annotations/checksum~1secret'],
+      'Argo must ignore only Grafana pod-template drift derived from its generated administrator Secret')
 { 'prometheus' => ['20Gi', 'longhorn-monitoring'],
   'alertmanager' => ['1Gi', 'longhorn'] }.each do |component, (size, storage_class)|
   spec = component == 'prometheus' ? 'prometheusSpec' : 'alertmanagerSpec'

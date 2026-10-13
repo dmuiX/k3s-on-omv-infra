@@ -66,7 +66,7 @@ apps = Dir.glob(File.join(ROOT, '[0-9][0-9]-*', '*', '{*app.yml,application.yml}
 end.compact.to_h { |app| [app.dig('metadata', 'name'), app] }
 expected_apps = %w[argocd-config argocd-route grafana-route kube-prometheus-stack monitoring-crds
                    cert-manager cert-manager-config k8up longhorn longhorn-route openbao openbao-config
-                   cloudnative-pg openbao-pki openbao-route postgresql-vso-credentials provider-vault
+                   cloudnative-pg openbao-pki openbao-route provider-vault radar
                    provider-vault-config vault-secrets-operator vault-secrets-webhook]
 check(apps.keys.sort == expected_apps.sort && apps.values.map { |app| wave(app) }.uniq.sort == [1, 2, 3, 4, 5, 6, 7, 8],
       'Public root must own the complete automatically reconciled platform inventory')

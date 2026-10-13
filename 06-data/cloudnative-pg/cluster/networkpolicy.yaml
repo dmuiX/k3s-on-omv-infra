@@ -16,6 +16,7 @@ spec:
               cnpg.io/cluster: k3s-postgres
       ports:
         - {protocol: TCP, port: 5432}
+        - {protocol: TCP, port: 8000}
     - from:
         - podSelector:
             matchLabels:
@@ -38,21 +39,21 @@ spec:
           podSelector:
             matchLabels:
               app.kubernetes.io/name: grafana
+        # Radar is the only workload in its dedicated namespace. Selecting the
+        # namespace avoids kube-router's stale cross-namespace pod-selector set.
         - namespaceSelector:
             matchLabels:
               kubernetes.io/metadata.name: radar
-          podSelector:
-            matchLabels:
-              app.kubernetes.io/name: radar
       ports:
         - {protocol: TCP, port: 5432}
     - from:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: crossplane-system
+              kubernetes.io/metadata.name: openbao
           podSelector:
             matchLabels:
-              bootstrap.k3s-on-omv.dev/openbao-postgres-client: "true"
+              app.kubernetes.io/name: openbao
+              component: server
       ports:
         - {protocol: TCP, port: 5432}
   egress:
@@ -75,3 +76,24 @@ spec:
             cidr: 0.0.0.0/0
       ports:
         - {protocol: TCP, port: 443}
+---
+# Keep this consumer grant separate so kube-router creates a fresh namespace
+# selector set when Radar is introduced after the database policy already exists.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-radar-postgres
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: k3s-postgres
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: radar
+      ports:
+        - {protocol: TCP, port: 5432}

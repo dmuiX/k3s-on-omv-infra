@@ -9,6 +9,9 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "1"
 data:
+  # Radar uses a dedicated API-key-only account for read-only GitOps diffs.
+  accounts.radar: apiKey
+  accounts.radar.enabled: "true"
   # Preserve Argo's existing default exclusions, then avoid caching unused
   # provider APIs. Database/Vault ProviderConfig APIs authored in Git remain visible.
   resource.exclusions: |
@@ -40,7 +43,6 @@ data:
         - gcp.vault.upbound.io
         - generic.vault.upbound.io
         - github.vault.upbound.io
-        - identity.vault.upbound.io
         - jwt.vault.upbound.io
         - kmip.vault.upbound.io
         - kubernetes.vault.upbound.io
@@ -93,6 +95,66 @@ data:
       hs.message = status.health.message or ""
     else
       hs.message = "Waiting for child Application health"
+    end
+    return hs
+  resource.customizations.health.identity.vault.upbound.io_OidcKey: |
+    local hs = {status = "Progressing", message = "Waiting for OpenBao OIDC key reconciliation"}
+    if obj.status == nil or obj.status.conditions == nil then return hs end
+    for _, condition in ipairs(obj.status.conditions) do
+      if condition.type == "Ready" then
+        hs.message = condition.message or condition.reason or hs.message
+        if condition.status == "True" then
+          hs.status = "Healthy"
+        elseif condition.reason == "ReconcileError" or condition.reason == "Unavailable" then
+          hs.status = "Degraded"
+        end
+        return hs
+      end
+    end
+    return hs
+  resource.customizations.health.identity.vault.upbound.io_OidcScope: |
+    local hs = {status = "Progressing", message = "Waiting for OpenBao OIDC scope reconciliation"}
+    if obj.status == nil or obj.status.conditions == nil then return hs end
+    for _, condition in ipairs(obj.status.conditions) do
+      if condition.type == "Ready" then
+        hs.message = condition.message or condition.reason or hs.message
+        if condition.status == "True" then
+          hs.status = "Healthy"
+        elseif condition.reason == "ReconcileError" or condition.reason == "Unavailable" then
+          hs.status = "Degraded"
+        end
+        return hs
+      end
+    end
+    return hs
+  resource.customizations.health.identity.vault.upbound.io_OidcClient: |
+    local hs = {status = "Progressing", message = "Waiting for OpenBao OIDC client reconciliation"}
+    if obj.status == nil or obj.status.conditions == nil then return hs end
+    for _, condition in ipairs(obj.status.conditions) do
+      if condition.type == "Ready" then
+        hs.message = condition.message or condition.reason or hs.message
+        if condition.status == "True" then
+          hs.status = "Healthy"
+        elseif condition.reason == "ReconcileError" or condition.reason == "Unavailable" then
+          hs.status = "Degraded"
+        end
+        return hs
+      end
+    end
+    return hs
+  resource.customizations.health.identity.vault.upbound.io_OidcProvider: |
+    local hs = {status = "Progressing", message = "Waiting for OpenBao OIDC provider reconciliation"}
+    if obj.status == nil or obj.status.conditions == nil then return hs end
+    for _, condition in ipairs(obj.status.conditions) do
+      if condition.type == "Ready" then
+        hs.message = condition.message or condition.reason or hs.message
+        if condition.status == "True" then
+          hs.status = "Healthy"
+        elseif condition.reason == "ReconcileError" or condition.reason == "Unavailable" then
+          hs.status = "Degraded"
+        end
+        return hs
+      end
     end
     return hs
   resource.customizations.health.secrets.hashicorp.com_VaultDynamicSecret: |

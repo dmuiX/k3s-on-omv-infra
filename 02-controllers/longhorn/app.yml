@@ -36,7 +36,8 @@ spec:
         pod-security.kubernetes.io/audit: privileged
         pod-security.kubernetes.io/warn: privileged
     automated:
-      prune: true
+      enabled: true
+      prune: false
       selfHeal: true
       allowEmpty: false
     retry:

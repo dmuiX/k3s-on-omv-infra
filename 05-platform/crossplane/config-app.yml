@@ -16,7 +16,8 @@ spec:
     path: 03-core/crossplane/provider-config
   syncPolicy:
     automated:
-      prune: true
+      enabled: true
+      prune: false
       selfHeal: true
     syncOptions:
       - ServerSideApply=true

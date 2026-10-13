@@ -18,7 +18,8 @@ spec:
     path: 05-platform/openbao-pki/workload
   syncPolicy:
     automated:
-      prune: true
+      enabled: true
+      prune: false
       selfHeal: true
       allowEmpty: false
     syncOptions:

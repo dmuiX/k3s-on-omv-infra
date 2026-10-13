@@ -1,0 +1,97 @@
+{{- $radarHostname := required "Radar hostname is required" .Values.routes.radar.hostname -}}
+{{- $radarPort := int (default 443 .Values.routes.radar.externalPort) -}}
+{{- $radarAuthority := ternary $radarHostname (printf "%s:%d" $radarHostname $radarPort) (eq $radarPort 443) -}}
+{{- $openbaoHostname := required "OpenBao hostname is required" .Values.routes.openbao.hostname -}}
+{{- $openbaoPort := int (default 443 .Values.routes.openbao.externalPort) -}}
+{{- $openbaoAuthority := ternary $openbaoHostname (printf "%s:%d" $openbaoHostname $openbaoPort) (eq $openbaoPort 443) -}}
+apiVersion: identity.vault.upbound.io/v1alpha1
+kind: OidcKey
+metadata:
+  name: radar
+  namespace: radar
+  annotations:
+    argocd.argoproj.io/sync-wave: "-3"
+  labels:
+    app.kubernetes.io/name: radar
+    app.kubernetes.io/component: oidc
+spec:
+  deletionPolicy: Orphan
+  forProvider:
+    name: radar
+    algorithm: RS256
+    allowedClientIds:
+      - "*"
+    rotationPeriod: 86400
+    verificationTtl: 172800
+  providerConfigRef:
+    name: openbao
+---
+apiVersion: identity.vault.upbound.io/v1alpha1
+kind: OidcScope
+metadata:
+  name: radar-groups
+  namespace: radar
+  annotations:
+    argocd.argoproj.io/sync-wave: "-3"
+  labels:
+    app.kubernetes.io/name: radar
+    app.kubernetes.io/component: oidc
+spec:
+  deletionPolicy: Orphan
+  forProvider:
+    name: radar-groups
+    description: Fixed Kubernetes authorization group for approved OpenBao identities.
+    template: '{"groups":["radar:view"]}'
+  providerConfigRef:
+    name: openbao
+---
+apiVersion: identity.vault.upbound.io/v1alpha1
+kind: OidcClient
+metadata:
+  name: radar
+  namespace: radar
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+  labels:
+    app.kubernetes.io/name: radar
+    app.kubernetes.io/component: oidc
+spec:
+  deletionPolicy: Orphan
+  forProvider:
+    name: radar
+    clientType: confidential
+    assignments:
+      - allow_all
+    key: radar
+    idTokenTtl: 900
+    accessTokenTtl: 900
+    redirectUris:
+      - {{ printf "https://%s/auth/callback" $radarAuthority | quote }}
+  providerConfigRef:
+    name: openbao
+  writeConnectionSecretToRef:
+    name: radar-oidc-client
+    namespace: radar
+---
+apiVersion: identity.vault.upbound.io/v1alpha1
+kind: OidcProvider
+metadata:
+  name: radar
+  namespace: radar
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+  labels:
+    app.kubernetes.io/name: radar
+    app.kubernetes.io/component: oidc
+spec:
+  deletionPolicy: Orphan
+  forProvider:
+    name: radar
+    httpsEnabled: true
+    issuerHost: {{ $openbaoAuthority | quote }}
+    allowedClientIdsRefs:
+      - name: radar
+    scopesSupportedRefs:
+      - name: radar-groups
+  providerConfigRef:
+    name: openbao

@@ -21,8 +21,9 @@ secret delivery cannot own or prune the database namespace.
 
 OpenBao is authoritative for the fixed Grafana and Radar login passwords. Each
 login is represented by an OpenBao database static role with a 30-day rotation
-period. CNPG creates and retains each login role but has no `passwordSecret`, so
-it does not overwrite OpenBao's password. OpenBao's PostgreSQL connection uses
+period. Its constrained rotation statement creates the login on first use and
+rotates it thereafter. CNPG owns only the retained `Database` object and assigns
+it to the OpenBao-created login in the following sync wave. OpenBao's PostgreSQL connection uses
 the stable `k3s-postgres-rw.cloudnative-pg.svc` endpoint and a dedicated
 `openbao_manager` login. Its randomly generated password is created once in
 OpenBao KV v2 at `kv/postgresql/openbao-manager` with CAS=0 by the guarded
@@ -30,7 +31,8 @@ Bootstrap Ansible action. CNPG receives that credential through VSO; it is not
 stored in inventory or Git.
 
 The manager login is not a superuser and cannot create databases. It has only
-`CREATEROLE`, a connection limit of five, and a dedicated Kubernetes Role that
+`CREATEROLE`, a connection limit of five, and automatically receives authority
+for the constrained login roles it creates. A dedicated Kubernetes Role
 lets the Crossplane provider read only the manager Secret. The provider's
 OpenBao policy is limited to the `k3s-postgres` database configuration and
 static-role endpoints; it cannot manage ACL policies, auth roles, mounts or KV
@@ -48,26 +50,23 @@ operator readiness or that VSO has created destination Secrets before later
 Applications reconcile. Controllers are expected to retry until prerequisites
 exist; verify this behavior during the live PoC.
 
-Grafana and the provider use `sslmode=require`, which encrypts PostgreSQL
-transport but does **not** verify the server CA or hostname. The PostgreSQL
-server Secret is namespace-local; Grafana cannot mount it across namespaces.
-Trusted CA verification remains a production prerequisite and requires an
-explicit CA distribution mechanism into Grafana's namespace.
+The provider uses `sslmode=verify-full` with the internal PostgreSQL CA mounted
+in OpenBao. Grafana currently uses encrypted `sslmode=require`; distributing the
+namespace-local CA into Grafana remains a separate hardening step.
 Switching an existing Grafana installation from SQLite to PostgreSQL also
 requires a separately planned and accepted data migration; this manifest change
 does not migrate existing Grafana data.
 
 The provider-vault package is Vault-focused and not officially certified for
 OpenBao. Offline contract tests check selected manifest fields but do not
-validate them against the provider's installed CRDs. OpenBao compatibility,
-first static-role creation, rotation privileges for CNPG-created roles, VSO
-restart behavior, and database connectivity have not been validated on a live
-cluster. Do not infer production readiness from offline tests.
+validate them against the provider's installed CRDs. OpenBao connection creation
+has been observed live; first-login creation, recurring rotation, VSO restart
+behavior, backup, and recovery still require explicit live acceptance.
 
 ## Platform safeguards
 
-CloudNativePG and Barman chart versions remain pinned in `app.yml`. CNPG role
-and database reclaim policies remain `retain`; PostgreSQL storage, backup,
+CloudNativePG and Barman chart versions remain pinned in `app.yml`. Database
+reclaim policies remain `retain`; PostgreSQL storage, backup,
 network policy, and application connection protections remain in force. The
 database NetworkPolicy permits broad TCP/443 egress because the Barman
 sidecar shares the PostgreSQL instance Pod and must reach object storage; it does

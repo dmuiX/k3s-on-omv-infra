@@ -1,0 +1,20 @@
+auth:
+  oidc:
+    issuerURL: https://openbao.example.invalid:9443/v1/identity/oidc/provider/radar
+    internalIssuerURL: http://openbao-active.openbao.svc.cluster.local:8200/v1/identity/oidc/provider/radar
+    clientID: fixture-client-id
+    redirectURL: https://radar.example.invalid:9443/auth/callback
+    scopes: [openid, radar-groups]
+httpRoute:
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: traefik-gateway
+      namespace: kube-system
+      sectionName: websecure
+  hostnames: [radar.example.invalid]
+  rules:
+    - matches:
+        - path: {type: PathPrefix, value: /}
+      backendRefs:
+        - {group: "", kind: Service, name: radar, port: 9280, weight: 1}

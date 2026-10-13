@@ -1,0 +1,61 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: radar
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "7"
+spec:
+  destination:
+    name: in-cluster
+    namespace: radar
+  project: default
+  sources:
+    - repoURL: https://skyhook-io.github.io/helm-charts
+      targetRevision: 1.16.0
+      chart: radar
+      helm:
+        releaseName: radar
+        valueFiles:
+          - $values/07-applications/radar/values-radar.yml
+          - $private/clusters/omv/radar-values.yml
+    - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
+      targetRevision: main
+      ref: values
+    - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
+      targetRevision: main
+      path: 07-applications/radar
+      helm:
+        releaseName: radar-platform
+        valueFiles:
+          - $private/clusters/omv/values.yml
+    - repoURL: https://github.com/dmuiX/k3s-on-omv-live.git
+      targetRevision: main
+      ref: private
+  syncPolicy:
+    managedNamespaceMetadata:
+      labels:
+        pod-security.kubernetes.io/enforce: restricted
+        pod-security.kubernetes.io/audit: restricted
+        pod-security.kubernetes.io/warn: restricted
+    automated:
+      enabled: true
+      prune: false
+      selfHeal: true
+      allowEmpty: false
+    retry:
+      limit: 5
+      backoff:
+        duration: 10s
+        factor: 2
+        maxDuration: 5m
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - RespectIgnoreDifferences=true
+  ignoreDifferences:
+    - group: ""
+      kind: Secret
+      name: radar-auth
+      jsonPointers:
+        - /data/auth-secret

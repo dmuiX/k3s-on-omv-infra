@@ -57,10 +57,13 @@ def render(name, env, chart_name = nil)
   args.concat(['--version', source.fetch('targetRevision'), '--namespace', app.dig('spec', 'destination', 'namespace'),
                '--kube-version', '1.37.1', '--include-crds'])
   source.fetch('helm', {}).fetch('valueFiles', []).each do |path|
-    prefix = %w[$values/ $infra/ $snapshot-values/].find { |candidate| path.start_with?(candidate) }
+    prefix = %w[$values/ $infra/ $snapshot-values/ $private/].find { |candidate| path.start_with?(candidate) }
     check(prefix, 'Helm values must use a reviewed Git values source')
-    values_path = if prefix == '$snapshot-values/'
+    values_path = case prefix
+                  when '$snapshot-values/'
                     File.join(ROOT, 'tests/fixtures/openbao-private-values.yml')
+                  when '$private/'
+                    File.join(ROOT, 'tests/fixtures/radar-private-values.yml')
                   else
                     File.join(ROOT, path.delete_prefix(prefix))
                   end
@@ -94,6 +97,20 @@ Dir.mktmpdir('infra-helm-check-') do |dir|
   cnpg = render('cloudnative-pg', env, 'cloudnative-pg')
   barman = render('cloudnative-pg', env, 'plugin-barman-cloud')
   crossplane = render('provider-vault', env, 'crossplane')
+  radar = render('radar', env)
+  radar_deployment = find_resource(radar, 'Deployment', 'radar')
+  radar_container = radar_deployment.dig('spec', 'template', 'spec', 'containers').find { |item| item['name'] == 'radar' }
+  check(radar_container.fetch('image') == 'ghcr.io/skyhook-io/radar:1.16.0@sha256:2e57d0465fbac3be0248928251a1474084bc494690d61db73c541c3aff639055',
+        'Radar image must use the reviewed immutable digest')
+  check(radar_container.fetch('args').include?('--auth-mode=oidc') &&
+        radar_container.fetch('args').include?('--timeline-storage=postgres'),
+        'Radar must require OIDC and PostgreSQL timeline storage')
+  check(radar.none? { |resource| resource['kind'] == 'ClusterRole' },
+        'Radar chart RBAC must stay disabled in favor of the reviewed least-privilege role')
+  radar_route = find_resource(radar, 'HTTPRoute', 'radar')
+  check(radar_route.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '1' &&
+        radar_route.dig('spec', 'hostnames') == ['radar.example.invalid'],
+        'Radar route must follow authenticated workload reconciliation')
   core = find_resource(crossplane, 'Deployment', 'crossplane')
   init_args = core.dig('spec', 'template', 'spec', 'initContainers', 0, 'args')
   check(init_args == ['core', 'init', '--activation', 'secretbackendconnections.database.vault.upbound.io',
@@ -164,6 +181,10 @@ Dir.mktmpdir('infra-helm-check-') do |dir|
             object_store.dig('spec', 'configuration', 's3Credentials', 'region', 'key') == 'AWS_REGION' &&
             resources.none? { |resource| resource['kind'] == 'Secret' },
             'PostgreSQL Barman configuration or VSO Secret boundary is incomplete')
+      radar_policy = find_resource(resources, 'NetworkPolicy', 'allow-radar-postgres-pod-cidrs')
+      check(radar_policy.dig('spec', 'ingress', 0, 'from', 0, 'ipBlock', 'cidr') == '192.0.2.0/24' &&
+            radar_policy.dig('spec', 'ingress', 0, 'ports', 0, 'port') == 5432,
+            'PostgreSQL must render the topology-specific Radar Pod-CIDR grant')
     end
     if component == 'restore'
       restore = resources.find { |resource| resource['kind'] == 'Restore' }

@@ -41,11 +41,11 @@ External-DNS. It uses Argo CD (already installed) for these applications:
 ├── openbao-backups/        OpenBao backup schedule
 ├── cloudnative-pg/         CNPG controllers and PostgreSQL data in `cloudnative-pg`
 └── redis/                  dormant Redis operator preparation (`application.yml`)
-07-secrets/
-└── postgresql-vso/         per-database OpenBao credential synchronization
+07-applications/
+└── radar/                  Radar-owned PostgreSQL credentials and OIDC identity
 08-monitoring/
 ├── grafana-route/          Grafana route after database credential delivery
-└── kube-prometheus-stack/  persistent monitoring on Longhorn
+└── kube-prometheus-stack/  monitoring and its PostgreSQL credential synchronization
 ```
 
 The first directory level is the parent sync wave; the second keeps component
@@ -57,9 +57,10 @@ Vault Secrets Operator; the Crossplane package installs alongside OpenBao,
 while its ProviderConfig follows in wave 5. The dedicated `cloudnative-pg`
 controller namespace and PostgreSQL data resources start automatically in wave 6
 after OpenBao PKI,
-manager credential, and provider prerequisites. VSO materializes per-database
-credentials in wave 7; the full monitoring stack (including Grafana) starts in
-wave 8 so Grafana cannot start before its PostgreSQL credential exists.
+manager credential, and provider prerequisites. Each consuming Application owns
+its namespace-local VSO resources in wave 8. Grafana's credential resources use
+negative resource waves so its PostgreSQL credential is healthy before the
+monitoring chart is applied.
 Longhorn also precedes OpenBao PVCs; the secrets webhook follows OpenBao.
 Wildcard certificate issuance and UI routes share wave 5 after OpenBao-backed
 Cloudflare custody and webhook activation; routes may reconcile first but become
@@ -91,8 +92,8 @@ Authored Kustomize resources remain in Git, but rendered upstream chart output
 is deliberately not vendored. The encrypted Longhorn StorageClass ConfigMap is
 an explicit final Argo source overriding the chart resource that Longhorn
 reconciles. Certificate issuance and UI routes follow OpenBao/webhook together
-in wave 5. PostgreSQL and backup configuration reconcile in wave 6, per-database
-credentials in wave 7, and Grafana/monitoring in wave 8.
+in wave 5. PostgreSQL and backup configuration reconcile in wave 6. Consumer-owned
+credentials and Grafana/monitoring reconcile in wave 8 with resource-level ordering.
 
 The local chart installs no controller and defaults to `component: none`.
 A rendered route does not prove working HTTPS: check Certificate Ready and the
@@ -105,7 +106,9 @@ bootstrap. Secrets such as Cloudflare tokens and backup passwords live
 in OpenBao, not Git. The public templates use non-secret `vault:` references;
 the private values file contains identifiers and private network endpoints, not
 credentials.
-The root and child Applications' automation and pruning settings require review before deployment.
+The root and all child Applications auto-sync and self-heal, but deliberately use
+`automated.prune: false`. Resource deletion therefore requires a separate reviewed
+cleanup instead of occurring as a side effect of a Git change.
 The Grafana subchart creates its initial random administrator Secret in-cluster.
 Argo ignores only the generated `admin-user` and `admin-password` data fields so
 subsequent Helm renders do not rotate them. The values are never committed or
@@ -123,9 +126,10 @@ OpenBao API configuration is limited to explicit ownership boundaries. The
 bootstrap Ansible workflow owns mounts, Kubernetes auth setup and trust policies,
 PKI configuration, initialization/seal/custody operations, and protected
 one-time inputs. The pinned Crossplane provider is allowed only to manage the
-PostgreSQL connection configuration and static database roles; it cannot manage
-OpenBao policies, auth roles, mounts or KV data. Argo CD owns the Kubernetes
-resources, while Crossplane reconciles only that bounded OpenBao database state.
+PostgreSQL connection configuration, static database roles, and application-owned
+Identity OIDC resources; it cannot manage OpenBao policies, auth roles, mounts or
+KV data. Argo CD owns the Kubernetes resources, while Crossplane reconciles only
+that bounded OpenBao state.
 Do not add generic OpenBao Jobs, CronJobs or polling reconcilers.
 
 The root intentionally retains `automated.prune: false`, and the former

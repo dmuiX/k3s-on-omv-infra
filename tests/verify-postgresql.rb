@@ -67,7 +67,8 @@ check(cluster.dig('spec', 'postgresql', 'parameters', 'max_connections') == '100
       'PostgreSQL connection/memory/WAL defaults changed')
 check(cluster.dig('spec', 'certificates', 'serverTLSSecret') == 'k3s-postgres-server-tls' &&
       cluster.dig('spec', 'plugins', 0) == {
-        'name' => 'barman-cloud.cloudnative-pg.io', 'isWALArchiver' => true,
+        'name' => 'barman-cloud.cloudnative-pg.io', 'enabled' => true,
+        'isWALArchiver' => true,
         'parameters' => {'barmanObjectName' => 'k3s-postgres-backups'}
       }, 'TLS or Barman plugin wiring is incomplete')
 certificate = resource(kustomized, 'Certificate', 'k3s-postgres-server')
@@ -93,24 +94,25 @@ check(storage.dig('parameters', 'numberOfReplicas') == '1' &&
         "Missing Longhorn encryption reference for #{operation}")
 end
 
-%w[grafana radar].each do |name|
-  role = resource(kustomized, 'DatabaseRole', name)
+{'grafana' => 25, 'radar' => 12}.each do |name, connection_limit|
   database = resource(kustomized, 'Database', name)
-  check(role.dig('spec', 'cluster', 'name') == 'k3s-postgres' &&
-        !role.dig('spec').key?('passwordSecret') &&
-        role.dig('spec', 'databaseRoleReclaimPolicy') == 'retain', "Unsafe #{name} role")
-  check(role.dig('spec', 'login') == true && %w[superuser createdb createrole replication].all? { |key|
-          role.dig('spec', key) == false
-        }, "#{name} role is over-privileged")
+  static_role = resource(kustomized, 'SecretBackendStaticRole', name)
+  rotation = static_role.dig('spec', 'forProvider', 'rotationStatements', 0)
+  check(kustomized.none? { |item| item['kind'] == 'DatabaseRole' && item.dig('metadata', 'name') == name },
+        "CNPG must not retain ownership of the OpenBao-managed #{name} login")
   check(database.dig('spec', 'owner') == name && database.dig('spec', 'databaseReclaimPolicy') == 'retain' &&
-        database.dig('spec', 'connectionLimit') == role.dig('spec', 'connectionLimit'),
+        database.dig('spec', 'connectionLimit') == connection_limit &&
+        database.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '4',
         "Unsafe or inconsistent #{name} database")
+  check(static_role.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '3' &&
+        static_role.dig('spec', 'forProvider', 'username') == name &&
+        rotation.include?("CREATE ROLE #{name}") && rotation.include?("ALTER ROLE #{name}") &&
+        rotation.include?("CONNECTION LIMIT #{connection_limit}") &&
+        rotation.include?('NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION'),
+        "OpenBao must create and constrain the #{name} login before database ownership")
 end
 check(kustomized.none? { |item| item['kind'] == 'Secret' },
       'PostgreSQL desired state must consume VSO-owned Secrets, not author credential placeholders')
-check(resource(kustomized, 'DatabaseRole', 'grafana').dig('spec', 'connectionLimit') == 25 &&
-      resource(kustomized, 'DatabaseRole', 'radar').dig('spec', 'connectionLimit') == 12,
-      'Application-specific connection budgets changed')
 manager = resource(kustomized, 'DatabaseRole', 'openbao-manager')
 check(manager.dig('spec', 'passwordSecret', 'name') == 'openbao-manager-credentials' &&
       manager.dig('spec', 'createrole') == true && manager.dig('spec', 'superuser') == false,
@@ -140,11 +142,33 @@ check(operator_policy.dig('metadata', 'namespace') == 'cloudnative-pg' &&
         rule.fetch('ports', []).any? { |port| port['port'] == 9443 }
       end, 'Public manifests must isolate the CloudNativePG webhook in its controller namespace')
 postgres_policy = resource(policies, 'NetworkPolicy', 'allow-postgres')
+radar_postgres_policy = resource(policies, 'NetworkPolicy', 'allow-radar-postgres')
+check(radar_postgres_policy.dig('spec', 'ingress', 0, 'from', 0,
+                                'namespaceSelector', 'matchLabels', 'kubernetes.io/metadata.name') == 'radar' &&
+      radar_postgres_policy.dig('spec', 'ingress', 0, 'ports', 0, 'port') == 5432,
+      'Radar must have a dedicated namespace-scoped PostgreSQL ingress grant')
+instance_rule = postgres_policy.dig('spec', 'ingress').find do |rule|
+  rule.fetch('from', []).any? { |source| source.dig('podSelector', 'matchLabels', 'cnpg.io/cluster') == 'k3s-postgres' }
+end
+check(instance_rule && [5432, 8000].all? { |port| instance_rule.fetch('ports').any? { |item| item['port'] == port } },
+      'PostgreSQL instances must retain database and manager connectivity to their peers')
 operator_source = postgres_policy.dig('spec', 'ingress').flat_map { |rule| rule.fetch('from', []) }.find do |source|
   source.dig('podSelector', 'matchLabels', 'app.kubernetes.io/name') == 'cloudnative-pg'
 end
 check(operator_source && !operator_source.key?('namespaceSelector'),
       'PostgreSQL policy must select the namespace-local CNPG controller')
+radar_source = postgres_policy.dig('spec', 'ingress').flat_map { |rule| rule.fetch('from', []) }.find do |source|
+  source.dig('namespaceSelector', 'matchLabels', 'kubernetes.io/metadata.name') == 'radar'
+end
+check(radar_source && !radar_source.key?('podSelector'),
+      'PostgreSQL must accept Radar only from its dedicated namespace')
+openbao_source = postgres_policy.dig('spec', 'ingress').flat_map { |rule| rule.fetch('from', []) }.find do |source|
+  source.dig('namespaceSelector', 'matchLabels', 'kubernetes.io/metadata.name') == 'openbao'
+end
+check(openbao_source &&
+      openbao_source.dig('podSelector', 'matchLabels', 'app.kubernetes.io/name') == 'openbao' &&
+      openbao_source.dig('podSelector', 'matchLabels', 'component') == 'server',
+      'PostgreSQL must accept database-engine connections from OpenBao servers')
 
 alerts = resource(kustomized, 'PrometheusRule', 'k3s-postgres')
 alert_names = alerts.dig('spec', 'groups').flat_map { |group| group['rules'] }.map { |rule| rule['alert'] }

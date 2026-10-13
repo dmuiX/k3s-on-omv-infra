@@ -1,11 +1,20 @@
 #!/usr/bin/env ruby
 # Offline OpenBao/PostgreSQL contract checks; no cluster or network access.
+require 'open3'
 require 'yaml'
 
 ROOT = File.expand_path('..', __dir__)
+LIVE_VALUES = File.expand_path('../k3s-on-omv-live/clusters/omv/values.yml', ROOT)
 def docs(path)
   YAML.load_stream(File.read(File.join(ROOT, path))).compact
 end
+def helm_docs(path, values)
+  output, error, status = Open3.capture3('helm', 'template', 'radar-platform',
+                                         File.join(ROOT, path), '--values', values)
+  raise error unless status.success?
+  YAML.load_stream(output).compact
+end
+
 def assert(value, message)
   raise message unless value
 end
@@ -94,10 +103,12 @@ assert pg['connectionUrl'].include?('sslmode=verify-full') &&
        'OpenBao must verify the PostgreSQL service name against its mounted internal CA'
 
 radar = docs('06-data/cloudnative-pg/databases/radar-openbao.yaml')
-assert resource(radar, 'SecretBackendStaticRole', 'radar').dig('spec', 'forProvider', 'rotationPeriod') == 2_592_000,
-       'Radar credentials must use a separate OpenBao static role'
-radar_db_role = resource(docs('06-data/cloudnative-pg/databases/radar.yaml'), 'DatabaseRole', 'radar')
-assert !radar_db_role.dig('spec').key?('passwordSecret'), 'CNPG must not own Radar password rotation'
+radar_static_role = resource(radar, 'SecretBackendStaticRole', 'radar')
+assert radar_static_role.dig('spec', 'forProvider', 'rotationPeriod') == 2_592_000 &&
+       radar_static_role.dig('spec', 'forProvider', 'rotationStatements', 0).include?('CREATE ROLE radar'),
+       'Radar credentials must use a self-provisioning OpenBao static role'
+assert docs('06-data/cloudnative-pg/databases/radar.yaml').none? { |item| item['kind'] == 'DatabaseRole' },
+       'CNPG must not own the OpenBao-managed Radar login'
 
 vso_operator_app = docs('04-secrets/vault-secrets-operator/app.yml').first
 assert vso_operator_app.dig('spec', 'sources').length == 1 &&
@@ -114,25 +125,60 @@ assert gitops_vso.all? { |item| item.dig('metadata', 'namespace') == 'cloudnativ
        bootstrap_static_secrets.any? { |item| item.dig('spec', 'path') == 'postgresql/r2-credentials' } &&
        bootstrap_static_secrets.all? { |item| item.dig('spec', 'destination', 'transformation', 'excludeRaw') == true },
        'CloudNativePG must own its namespace-local VSO prerequisites without the raw payload key'
-credential_app = docs('07-secrets/postgresql-vso/app.yml').first
-assert credential_app.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '7',
-       'Per-application credentials must reconcile after PostgreSQL roles'
-credentials = docs('07-secrets/postgresql-vso/workload/resources.yaml')
-grafana_vds = resource(credentials, 'VaultDynamicSecret', 'grafana-postgresql')
+monitoring_app = docs('08-monitoring/kube-prometheus-stack/app.yml').first
+radar_app = docs('07-applications/radar/app.yml').first
+assert monitoring_app.dig('spec', 'sources').any? { |source|
+         source['path'] == '08-monitoring/kube-prometheus-stack/workload'
+       } && radar_app.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '7' &&
+       radar_app.dig('spec', 'sources').any? { |source| source['path'] == '07-applications/radar' },
+       'Applications must own their namespace-local PostgreSQL credentials'
+grafana_credentials = docs('08-monitoring/kube-prometheus-stack/workload/postgresql-vso.yaml')
+radar_resources = helm_docs('07-applications/radar', LIVE_VALUES)
+radar_credentials = radar_resources
+radar_oidc = radar_resources
+oidc_key = resource(radar_oidc, 'OidcKey', 'radar')
+oidc_client = resource(radar_oidc, 'OidcClient', 'radar')
+oidc_provider = resource(radar_oidc, 'OidcProvider', 'radar')
+private_routes = YAML.load_file(LIVE_VALUES).fetch('routes')
+radar_route = private_routes.fetch('radar')
+openbao_route = private_routes.fetch('openbao')
+radar_authority = [radar_route.fetch('hostname'), radar_route.fetch('externalPort')].join(':')
+openbao_authority = [openbao_route.fetch('hostname'), openbao_route.fetch('externalPort')].join(':')
+radar_callback = "https://#{radar_authority}/auth/callback"
+assert oidc_key.dig('spec', 'forProvider', 'algorithm') == 'RS256' &&
+       oidc_client.dig('spec', 'forProvider', 'redirectUris') == [radar_callback] &&
+       oidc_client.dig('spec', 'writeConnectionSecretToRef') == {'name' => 'radar-oidc-client', 'namespace' => 'radar'} &&
+       oidc_provider.dig('spec', 'forProvider', 'issuerHost') == openbao_authority &&
+       oidc_provider.dig('spec', 'forProvider', 'allowedClientIdsRefs') == [{'name' => 'radar'}],
+       'Radar must own its bounded OpenBao OIDC provider and generated client secret'
+radar_role = resource(radar_resources, 'ClusterRole', 'radar')
+radar_rules = radar_role.dig('rules')
+assert radar_rules.none? { |rule| Array(rule['resources']).include?('secrets') } &&
+       radar_rules.none? { |rule| (Array(rule['verbs']) & %w[delete patch update]).any? } &&
+       resource(radar_resources, 'ClusterRoleBinding', 'radar-view').dig('subjects', 0, 'name') == 'radar:view',
+       'Radar must use read-only application RBAC without Secret access'
+radar_auth_secret = resource(radar_resources, 'Secret', 'radar-auth')
+assert radar_auth_secret.dig('metadata', 'annotations', 'helm.sh/resource-policy') == 'keep' &&
+       radar_auth_secret.dig('data', 'auth-secret').to_s.length > 40,
+       'Radar must generate and retain an independent session-signing secret'
+grafana_vds = resource(grafana_credentials, 'VaultDynamicSecret', 'grafana-postgresql')
 assert grafana_vds.dig('spec', 'allowStaticCreds') == true &&
        grafana_vds.dig('spec', 'path') == 'static-creds/grafana' &&
        grafana_vds.dig('spec', 'destination', 'name') == 'grafana-db-credentials' &&
        grafana_vds.dig('spec', 'rolloutRestartTargets', 0, 'name') == 'kube-prometheus-stack-grafana',
        'VSO must materialize Grafana static credentials and restart Grafana on rotation'
-radar_vds = resource(credentials, 'VaultDynamicSecret', 'radar-postgresql')
-grafana_auth = resource(credentials, 'VaultAuth', 'openbao-grafana')
-radar_auth = resource(credentials, 'VaultAuth', 'openbao-radar')
+radar_vds = resource(radar_credentials, 'VaultDynamicSecret', 'radar-postgresql')
+grafana_auth = resource(grafana_credentials, 'VaultAuth', 'openbao-grafana')
+radar_auth = resource(radar_credentials, 'VaultAuth', 'openbao-radar')
 assert grafana_vds.dig('spec', 'allowStaticCreds') == true &&
        grafana_vds.dig('spec', 'destination', 'name') == 'grafana-db-credentials' &&
        grafana_auth.dig('spec', 'kubernetes', 'role') == grafana_identity['name'],
        'VSO must materialize Grafana credentials using its bootstrapped OpenBao role'
 assert radar_vds.dig('spec', 'allowStaticCreds') == true &&
        radar_vds.dig('spec', 'destination', 'name') == 'radar-db-credentials' &&
+       radar_vds.dig('spec', 'destination', 'transformation', 'templates', 'dsn', 'text').include?(
+         'k3s-postgres-rw.cloudnative-pg.svc:5432/radar?sslmode=require') &&
+       radar_vds.dig('spec', 'rolloutRestartTargets', 0, 'name') == 'radar' &&
        radar_auth.dig('spec', 'kubernetes', 'role') == radar_identity['name'],
        'VSO must materialize Radar credentials using its bootstrapped OpenBao role'
 assert [grafana_vds, radar_vds].all? { |item|
@@ -140,12 +186,11 @@ assert [grafana_vds, radar_vds].all? { |item|
 }, 'Application credential Secrets must omit the VSO raw payload key'
 monitoring_crds = docs('01-bootstrap/monitoring-crds/app.yml').first
 assert monitoring_crds.dig('spec', 'syncPolicy', 'syncOptions').include?('CreateNamespace=true'),
-       'The Grafana VSO ServiceAccount namespace must exist before Wave 7'
+       'The Grafana VSO ServiceAccount namespace must exist before monitoring reconciliation'
 
 crossplane_app = docs('03-core/crossplane/app.yml').first
 vso_app = docs('04-secrets/vault-secrets-operator/app.yml').first
 postgresql_app = docs('06-data/cloudnative-pg/app.yml').first
-monitoring_app = docs('08-monitoring/kube-prometheus-stack/app.yml').first
 assert crossplane_app.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '3' &&
        vso_app.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '4' &&
        postgresql_app.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '6' &&
@@ -155,7 +200,7 @@ assert crossplane_app.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wa
 values = YAML.load_file(File.join(ROOT, '03-core/kube-prometheus-stack/values.yml'))
 grafana_values = values.fetch('grafana')
 assert grafana_values.dig('grafana.ini', 'database', 'type') == 'postgres' &&
-       grafana_values.dig('grafana.ini', 'database', 'host') == 'platform-postgres-rw.postgresql.svc:5432' &&
+       grafana_values.dig('grafana.ini', 'database', 'host') == 'k3s-postgres-rw.cloudnative-pg.svc:5432' &&
        grafana_values.dig('grafana.ini', 'database', 'ssl_mode') == 'require' &&
        grafana_values.dig('grafana.ini', 'database', 'ca_cert_path').nil? &&
        grafana_values['extraVolumes'].nil? && grafana_values['extraVolumeMounts'].nil? &&

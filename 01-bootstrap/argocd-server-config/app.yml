@@ -15,10 +15,11 @@ spec:
     repoURL: "https://github.com/dmuiX/k3s-on-omv-infra.git"
     targetRevision: main
     directory:
-      include: "{LimitRange.yaml,argocd-server-svc.yaml,argocd-cmd-params-cm.yml}"
+      include: "{LimitRange.yaml,argocd-server-svc.yaml,argocd-cmd-params-cm.yml,argocd-rbac-cm.yml}"
   syncPolicy:
     automated:
-      prune: true
+      enabled: true
+      prune: false
       selfHeal: true
     syncOptions:
       - PruneLast=true
