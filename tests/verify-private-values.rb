@@ -179,7 +179,8 @@ check(postgresql_store &&
       postgresql_store.dig('spec', 'configuration', 's3Credentials', 'accessKeyId', 'name') == 'postgresql-r2-credentials' &&
       postgresql_store.dig('spec', 'configuration', 's3Credentials', 'region', 'key') == 'AWS_REGION' &&
       private_values.dig('postgresqlBackup', 'region').to_s.length.positive? &&
-      rendered_api_cidrs == private_values.dig('postgresqlNetwork', 'apiServerSourceCIDRs'),
+      rendered_api_cidrs == private_values.dig('postgresqlNetwork', 'apiServerSourceCIDRs') +
+        private_values.dig('postgresqlNetwork', 'apiServerMasqueradeSourceCIDRs'),
       'Private PostgreSQL backup identifiers, VSO Secret contract or API-server CIDRs did not render')
 check(render('restore').one? { |r| r['kind'] == 'Restore' } &&
       apps.values.none? { |app| app.dig('spec', 'sources', 0, 'helm', 'parameters', 0, 'value') == 'restore' },

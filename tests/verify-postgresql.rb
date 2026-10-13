@@ -184,8 +184,9 @@ check(object_store.dig('spec', 'configuration', 's3Credentials') == {
       }, 'Barman must use the fixed VSO-owned R2 Secret contract')
 webhook_policy = resource(private_template, 'NetworkPolicy', 'allow-k3s-api-to-cloudnative-pg-webhook')
 sources = webhook_policy.dig('spec', 'ingress', 0, 'from').map { |source| source.dig('ipBlock', 'cidr') }
-check(sources == ['192.0.2.1/32'] && webhook_policy.dig('spec', 'ingress', 0, 'ports', 0, 'port') == 9443,
-      'Webhook policy must use only explicitly configured API-server /32 sources')
+check(sources == ['192.0.2.1/32', '198.51.100.1/32'] &&
+      webhook_policy.dig('spec', 'ingress', 0, 'ports', 0, 'port') == 9443,
+      'Webhook policy must use only explicitly configured native and masqueraded API-server /32 sources')
 api_egress_policy = resource(private_template, 'NetworkPolicy', 'allow-k3s-api-egress')
 destinations = api_egress_policy.dig('spec', 'egress', 0, 'to').map { |target| target.dig('ipBlock', 'cidr') }
 check(api_egress_policy.dig('spec', 'podSelector') == {} &&
