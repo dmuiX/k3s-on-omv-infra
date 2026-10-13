@@ -186,5 +186,11 @@ webhook_policy = resource(private_template, 'NetworkPolicy', 'allow-k3s-api-to-c
 sources = webhook_policy.dig('spec', 'ingress', 0, 'from').map { |source| source.dig('ipBlock', 'cidr') }
 check(sources == ['192.0.2.1/32'] && webhook_policy.dig('spec', 'ingress', 0, 'ports', 0, 'port') == 9443,
       'Webhook policy must use only explicitly configured API-server /32 sources')
+api_egress_policy = resource(private_template, 'NetworkPolicy', 'allow-k3s-api-egress')
+destinations = api_egress_policy.dig('spec', 'egress', 0, 'to').map { |target| target.dig('ipBlock', 'cidr') }
+check(api_egress_policy.dig('spec', 'podSelector') == {} &&
+      destinations == ['192.0.2.1/32'] &&
+      api_egress_policy.dig('spec', 'egress', 0, 'ports') == [{'protocol' => 'TCP', 'port' => 6443}],
+      'PostgreSQL pods must reach only reviewed K3s API endpoints on the translated backend port')
 
 puts 'PASS: PostgreSQL HA, storage, TLS, roles, backups, policies, monitoring and pinned chart renders'
