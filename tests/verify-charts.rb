@@ -55,7 +55,7 @@ def render(name, env, chart_name = nil)
   args = [HELM, 'template', release, chart_ref]
   args.concat(['--repo', repo]) unless chart_ref.start_with?('oci://')
   args.concat(['--version', source.fetch('targetRevision'), '--namespace', app.dig('spec', 'destination', 'namespace'),
-               '--kube-version', '1.36.4', '--include-crds'])
+               '--kube-version', '1.37.1', '--include-crds'])
   source.fetch('helm', {}).fetch('valueFiles', []).each do |path|
     prefix = %w[$values/ $infra/ $snapshot-values/].find { |candidate| path.start_with?(candidate) }
     check(prefix, 'Helm values must use a reviewed Git values source')
@@ -383,6 +383,26 @@ Dir.mktmpdir('infra-helm-check-') do |dir|
   container = manager.dig('spec', 'template', 'spec', 'containers').find { |c| c['name'] == 'longhorn-manager' }
   check(container.dig('resources', 'requests', 'memory') == '256Mi', 'Manager memory request was ignored')
   check(container.dig('resources', 'limits', 'memory') == '1Gi', 'Manager memory limit was ignored')
+  check(manager.dig('spec', 'updateStrategy', 'rollingUpdate', 'maxUnavailable') == '100%',
+        'Manager rollout must retain the chart-supported v1.13 strategy')
+  global_manager = find_resource(longhorn, 'Deployment', 'longhorn-global-manager')
+  global_container = global_manager.dig('spec', 'template', 'spec', 'containers')
+                                   .find { |c| c['name'] == 'longhorn-global-manager' }
+  check(global_manager.dig('spec', 'replicas') == 3, 'Global manager must have one leader and two standbys')
+  check(global_container.dig('resources', 'requests', 'cpu') == '100m' &&
+        global_container.dig('resources', 'requests', 'memory') == '128Mi' &&
+        global_container.dig('resources', 'limits', 'cpu') == '500m' &&
+        global_container.dig('resources', 'limits', 'memory') == '512Mi',
+        'Global manager resource budget was ignored')
+  required_anti_affinity = global_manager.dig('spec', 'template', 'spec', 'affinity', 'podAntiAffinity',
+                                              'requiredDuringSchedulingIgnoredDuringExecution')
+  check(Array(required_anti_affinity).any? { |term| term['topologyKey'] == 'kubernetes.io/hostname' },
+        'Global manager replicas must be placed on distinct nodes')
+  global_pdb = find_resource(longhorn, 'PodDisruptionBudget', 'longhorn-global-manager')
+  check(global_pdb.dig('spec', 'minAvailable') == 2, 'Global manager PDB must preserve two replicas')
+  check(global_pdb.dig('spec', 'selector', 'matchLabels') ==
+        global_manager.dig('spec', 'selector', 'matchLabels'),
+        'Global manager PDB selector must match its Deployment')
   check(longhorn.none? { |r| %w[Gateway Ingress HelmRelease HelmRepository].include?(r['kind']) },
         'Unexpected routing or Flux resource rendered by Longhorn')
   puts 'PASS: pinned Helm renders and private templates, early monitoring CRDs, Longhorn-backed monitoring, PostgreSQL controllers'

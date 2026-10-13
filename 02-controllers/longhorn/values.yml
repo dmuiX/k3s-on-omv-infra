@@ -38,5 +38,27 @@ longhornManager:
       # Encrypted-volume discovery can transiently add a ~445 MiB cryptsetup
       # process to the manager's own memory during startup.
       memory: 1Gi
+longhornGlobalManager:
+  replicas: 3
+  affinity:
+    podAntiAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        - labelSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values:
+                  - longhorn-global-manager
+          topologyKey: kubernetes.io/hostname
+  resources:
+    requests:
+      cpu: 100m
+      memory: 128Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 2
 preUpgradeChecker:
      jobEnabled: false # necessary as its kind of a egg chicken problem: longhorn-pre-upgrade is a PreSync hook, but its pod needs longhorn-service-account, which will be created while its deploying
