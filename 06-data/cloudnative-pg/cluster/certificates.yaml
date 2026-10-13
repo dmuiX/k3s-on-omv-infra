@@ -1,13 +1,13 @@
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
-  name: platform-postgres-server
+  name: k3s-postgres-server
   annotations:
     argocd.argoproj.io/sync-wave: "0"
   labels:
     cnpg.io/reload: ""
 spec:
-  secretName: platform-postgres-server-tls
+  secretName: k3s-postgres-server-tls
   duration: 2160h
   renewBefore: 360h
   privateKey:
@@ -17,12 +17,12 @@ spec:
   usages:
     - server auth
   dnsNames:
-    - platform-postgres-rw.postgresql.svc
-    - platform-postgres-rw.postgresql.svc.cluster.local
-    - platform-postgres-r.postgresql.svc
-    - platform-postgres-r.postgresql.svc.cluster.local
-    - platform-postgres-ro.postgresql.svc
-    - platform-postgres-ro.postgresql.svc.cluster.local
+    - k3s-postgres-rw.cloudnative-pg.svc
+    - k3s-postgres-rw.cloudnative-pg.svc.cluster.local
+    - k3s-postgres-r.cloudnative-pg.svc
+    - k3s-postgres-r.cloudnative-pg.svc.cluster.local
+    - k3s-postgres-ro.cloudnative-pg.svc
+    - k3s-postgres-ro.cloudnative-pg.svc.cluster.local
   issuerRef:
     group: cert-manager.io
     kind: ClusterIssuer

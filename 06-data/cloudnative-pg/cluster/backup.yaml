@@ -1,7 +1,7 @@
 apiVersion: postgresql.cnpg.io/v1
 kind: ScheduledBackup
 metadata:
-  name: platform-postgres-daily
+  name: k3s-postgres-daily
   annotations:
     argocd.argoproj.io/sync-wave: "1"
 spec:
@@ -12,6 +12,6 @@ spec:
   method: plugin
   target: prefer-standby
   cluster:
-    name: platform-postgres
+    name: k3s-postgres
   pluginConfiguration:
     name: barman-cloud.cloudnative-pg.io

@@ -31,8 +31,8 @@ spec:
 apiVersion: barmancloud.cnpg.io/v1
 kind: ObjectStore
 metadata:
-  name: platform-postgres-backups
-  namespace: postgresql
+  name: k3s-postgres-backups
+  namespace: cloudnative-pg
   annotations:
     argocd.argoproj.io/sync-wave: "0"
 spec:
@@ -101,28 +101,6 @@ spec:
 # Kube-proxy translates the kubernetes.default Service port 443 to each K3s
 # API endpoint on 6443 before some NetworkPolicy engines evaluate egress.
 # Permit only the reviewed control-plane addresses on that backend port.
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata:
-  name: allow-k3s-api-egress
-  namespace: postgresql
-  annotations:
-    argocd.argoproj.io/sync-wave: "0"
-spec:
-  podSelector: {}
-  policyTypes: [Egress]
-  egress:
-    - to:
-{{- range required "K3s API server source CIDRs are required" .Values.postgresqlNetwork.apiServerSourceCIDRs }}
-        - ipBlock:
-            cidr: {{ . | quote }}
-{{- end }}
-      ports:
-        - protocol: TCP
-          port: 6443
----
-# The controllers run separately from database workloads but use the same
-# translated K3s API endpoints.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:

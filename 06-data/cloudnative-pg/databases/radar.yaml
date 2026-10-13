@@ -6,7 +6,7 @@ metadata:
     argocd.argoproj.io/sync-wave: "2"
 spec:
   cluster:
-    name: platform-postgres
+    name: k3s-postgres
   name: radar
   login: true
   superuser: false
@@ -27,7 +27,7 @@ metadata:
     argocd.argoproj.io/sync-wave: "3"
 spec:
   cluster:
-    name: platform-postgres
+    name: k3s-postgres
   name: radar
   owner: radar
   allowConnections: true

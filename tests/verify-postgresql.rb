@@ -38,7 +38,7 @@ check(resource(controller_namespace, 'Namespace', 'cloudnative-pg').dig('metadat
       'CloudNativePG controller namespace must enforce restricted Pod Security')
 check(controller_pdbs.all? { |item| item.dig('metadata', 'namespace') == 'cloudnative-pg' },
       'CloudNativePG controller PDBs must stay with their workloads')
-cluster = resource(kustomized, 'Cluster', 'platform-postgres')
+cluster = resource(kustomized, 'Cluster', 'k3s-postgres')
 check(cluster.dig('spec', 'instances') == 3, 'PostgreSQL must have exactly three instances')
 check(cluster.dig('spec', 'imageName').match?(/:18\.6-system-bookworm@sha256:[0-9a-f]{64}\z/),
       'PostgreSQL 18.6 system image must be digest pinned')
@@ -65,12 +65,12 @@ check(cluster.dig('spec', 'postgresql', 'parameters', 'max_connections') == '100
       cluster.dig('spec', 'postgresql', 'parameters', 'shared_buffers') == '128MB' &&
       cluster.dig('spec', 'postgresql', 'parameters', 'archive_timeout') == '5min',
       'PostgreSQL connection/memory/WAL defaults changed')
-check(cluster.dig('spec', 'certificates', 'serverTLSSecret') == 'platform-postgres-server-tls' &&
+check(cluster.dig('spec', 'certificates', 'serverTLSSecret') == 'k3s-postgres-server-tls' &&
       cluster.dig('spec', 'plugins', 0) == {
         'name' => 'barman-cloud.cloudnative-pg.io', 'isWALArchiver' => true,
-        'parameters' => {'barmanObjectName' => 'platform-postgres-backups'}
+        'parameters' => {'barmanObjectName' => 'k3s-postgres-backups'}
       }, 'TLS or Barman plugin wiring is incomplete')
-certificate = resource(kustomized, 'Certificate', 'platform-postgres-server')
+certificate = resource(kustomized, 'Certificate', 'k3s-postgres-server')
 check(certificate.dig('spec', 'privateKey') == {
         'algorithm' => 'RSA', 'size' => 2048, 'rotationPolicy' => 'Always'
       }, 'PostgreSQL TLS key must match the RSA-only OpenBao service signing role')
@@ -96,7 +96,7 @@ end
 %w[grafana radar].each do |name|
   role = resource(kustomized, 'DatabaseRole', name)
   database = resource(kustomized, 'Database', name)
-  check(role.dig('spec', 'cluster', 'name') == 'platform-postgres' &&
+  check(role.dig('spec', 'cluster', 'name') == 'k3s-postgres' &&
         !role.dig('spec').key?('passwordSecret') &&
         role.dig('spec', 'databaseRoleReclaimPolicy') == 'retain', "Unsafe #{name} role")
   check(role.dig('spec', 'login') == true && %w[superuser createdb createrole replication].all? { |key|
@@ -116,7 +116,7 @@ check(manager.dig('spec', 'passwordSecret', 'name') == 'openbao-manager-credenti
       manager.dig('spec', 'createrole') == true && manager.dig('spec', 'superuser') == false,
       'OpenBao manager must use its VSO credential with only role-management privilege')
 
-backup = resource(kustomized, 'ScheduledBackup', 'platform-postgres-daily')
+backup = resource(kustomized, 'ScheduledBackup', 'k3s-postgres-daily')
 check(backup.dig('spec', 'schedule') == '0 30 3 * * *' && backup.dig('spec', 'immediate') == true &&
       backup.dig('spec', 'method') == 'plugin' && backup.dig('spec', 'target') == 'prefer-standby',
       'Daily immediate plugin backup contract changed')
@@ -136,11 +136,13 @@ check(operator_policy.dig('metadata', 'namespace') == 'cloudnative-pg' &&
         rule.fetch('ports', []).any? { |port| port['port'] == 9443 }
       end, 'Public manifests must isolate the CloudNativePG webhook in its controller namespace')
 postgres_policy = resource(policies, 'NetworkPolicy', 'allow-postgres')
-check(postgres_policy.to_s.include?('kubernetes.io/metadata.name') &&
-      postgres_policy.to_s.include?('cloudnative-pg'),
-      'PostgreSQL policy must select CNPG controllers across the namespace boundary')
+operator_source = postgres_policy.dig('spec', 'ingress').flat_map { |rule| rule.fetch('from', []) }.find do |source|
+  source.dig('podSelector', 'matchLabels', 'app.kubernetes.io/name') == 'cloudnative-pg'
+end
+check(operator_source && !operator_source.key?('namespaceSelector'),
+      'PostgreSQL policy must select the namespace-local CNPG controller')
 
-alerts = resource(kustomized, 'PrometheusRule', 'platform-postgres')
+alerts = resource(kustomized, 'PrometheusRule', 'k3s-postgres')
 alert_names = alerts.dig('spec', 'groups').flat_map { |group| group['rules'] }.map { |rule| rule['alert'] }
 %w[PostgreSQLSynchronousStandbyUnavailable PostgreSQLBaseBackupTooOld PostgreSQLWALArchivingStalled
    PostgreSQLPVCUsageWarning PostgreSQLPVCUsageCritical PostgreSQLBackupMetricMissing].each do |name|
@@ -159,8 +161,8 @@ Dir.mktmpdir('postgresql-render-') do |dir|
   operator_deploy = resource(operator, 'Deployment', 'cloudnative-pg')
   plugin_deploy = resource(plugin, 'Deployment', 'plugin-barman-cloud')
   operator_config = resource(operator, 'ConfigMap', 'cnpg-controller-manager-config')
-  check(operator_config.dig('data', 'WATCH_NAMESPACE') == 'postgresql',
-        'CloudNativePG operator must watch only the PostgreSQL data namespace')
+  check(operator_config.dig('data', 'WATCH_NAMESPACE') == 'cloudnative-pg',
+        'CloudNativePG operator must watch only its own namespace')
   [operator_deploy, plugin_deploy].each do |deployment|
     check(deployment.dig('metadata', 'namespace') == 'cloudnative-pg',
           "#{deployment.dig('metadata', 'name')} must run in the controller namespace")
@@ -185,9 +187,9 @@ Dir.mktmpdir('postgresql-render-') do |dir|
   check(dashboard_json.fetch('panels').length > 10, 'Pinned CloudNativePG dashboard is incomplete')
 end
 
-private_template = docs(run('helm', 'template', 'postgresql', 'charts/cluster-config', '--namespace', 'postgresql',
+private_template = docs(run('helm', 'template', 'postgresql', 'charts/cluster-config', '--namespace', 'cloudnative-pg',
                             '--set', 'component=postgresql'))
-object_store = resource(private_template, 'ObjectStore', 'platform-postgres-backups')
+object_store = resource(private_template, 'ObjectStore', 'k3s-postgres-backups')
 check(object_store.dig('spec', 'retentionPolicy') == '30d' &&
       object_store.dig('spec', 'configuration', 'destinationPath') == 's3://replace-me-postgresql/' &&
       object_store.dig('spec', 'configuration', 'wal', 'maxParallel') == 2,
@@ -208,8 +210,8 @@ check(webhook_policy.dig('metadata', 'namespace') == 'cloudnative-pg' &&
 api_egress_policies = private_template.select do |item|
   item['kind'] == 'NetworkPolicy' && item.dig('metadata', 'name') == 'allow-k3s-api-egress'
 end
-check(api_egress_policies.map { |item| item.dig('metadata', 'namespace') }.sort == %w[cloudnative-pg postgresql],
-      'Both controller and data namespaces need exact K3s API egress')
+check(api_egress_policies.map { |item| item.dig('metadata', 'namespace') } == ['cloudnative-pg'],
+      'The unified CloudNativePG namespace needs one exact K3s API egress policy')
 api_egress_policies.each do |policy|
   destinations = policy.dig('spec', 'egress', 0, 'to').map { |target| target.dig('ipBlock', 'cidr') }
   check(policy.dig('spec', 'podSelector') == {} &&

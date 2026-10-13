@@ -8,7 +8,7 @@ metadata:
 spec:
   destination:
     name: in-cluster
-    namespace: postgresql
+    namespace: cloudnative-pg
   project: default
   source:
     repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git

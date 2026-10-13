@@ -10,7 +10,7 @@ spec:
   forProvider:
     backend: database
     name: radar
-    dbName: platform-postgres
+    dbName: k3s-postgres
     username: radar
     rotationPeriod: 2592000
   providerConfigRef:

@@ -1,7 +1,7 @@
 apiVersion: postgresql.cnpg.io/v1
 kind: Cluster
 metadata:
-  name: platform-postgres
+  name: k3s-postgres
   annotations:
     argocd.argoproj.io/sync-wave: "1"
 spec:
@@ -18,7 +18,7 @@ spec:
   smartShutdownTimeout: 180
   inheritedMetadata:
     labels:
-      app.kubernetes.io/name: platform-postgres
+      app.kubernetes.io/name: k3s-postgres
       app.kubernetes.io/component: database
     annotations:
       k8up.io/backup: "false"
@@ -58,7 +58,7 @@ spec:
       whenUnsatisfiable: DoNotSchedule
       labelSelector:
         matchLabels:
-          cnpg.io/cluster: platform-postgres
+          cnpg.io/cluster: k3s-postgres
   postgresql:
     parameters:
       max_connections: "100"
@@ -87,14 +87,14 @@ spec:
       - hostssl all grafana all reject
       - hostssl all radar all reject
   certificates:
-    serverTLSSecret: platform-postgres-server-tls
-    serverCASecret: platform-postgres-server-tls
+    serverTLSSecret: k3s-postgres-server-tls
+    serverCASecret: k3s-postgres-server-tls
   monitoring:
     enablePodMonitor: true
   plugins:
     - name: barman-cloud.cloudnative-pg.io
       isWALArchiver: true
       parameters:
-        barmanObjectName: platform-postgres-backups
+        barmanObjectName: k3s-postgres-backups
   backup:
     target: prefer-standby

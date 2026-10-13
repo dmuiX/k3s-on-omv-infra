@@ -1,34 +1,29 @@
 # CloudNativePG platform
 
 `Application/cloudnative-pg` is the automatically reconciled Wave-6 owner for
-CloudNativePG, the Barman Cloud plugin and `platform-postgres`. Controller
-workloads, webhooks, certificates, PDBs and controller NetworkPolicies run in
-the dedicated `cloudnative-pg` namespace. Database clusters, credentials,
-ObjectStores and database NetworkPolicies remain in `postgresql`.
+CloudNativePG, the Barman Cloud plugin and `k3s-postgres`. Controllers,
+webhooks, certificates, database clusters, credentials, ObjectStores, PDBs and
+NetworkPolicies all run in the dedicated `cloudnative-pg` namespace.
 
-The operator uses the chart's cluster-wide RBAC mode because its ServiceAccount
-is outside the managed data namespace, but `WATCH_NAMESPACE=postgresql` keeps
-reconciliation scoped to that namespace. Cross-namespace NetworkPolicies permit
-only the operator-to-instance management port and Barman plugin RPC path needed
-by this layout. It remains non-pruning until backup, restore, PITR, failover and
-application-connectivity acceptance is completed.
-
-Moving an existing installation is a controlled migration, not an ordinary
-rolling update. With pruning disabled, Argo creates the new controller resources
-but intentionally does not delete the former copies in `postgresql`. During the
-cutover, prevent old and new operators from reconciling the same Cluster at the
-same time, verify the new webhook Service and both controller Deployments, and
-then remove only the reviewed old chart resources. Never enable broad pruning as
-a namespace-cleanup shortcut; PostgreSQL retained resources and recovery
-evidence share the Application.
+The chart uses namespace-scoped RBAC and reconciliation. It remains non-pruning
+until backup, restore, PITR, failover and application-connectivity acceptance is
+completed. Moving an existing installation is a controlled migration, not an
+ordinary rolling update. Never enable broad pruning as a namespace-cleanup
+shortcut; retained PostgreSQL resources and recovery evidence share the
+Application.
 
 ## OpenBao-managed database credentials
+
+The central `vault-secrets-operator` Application owns only the operator. This
+CloudNativePG Application owns its namespace-local ServiceAccount,
+`VaultConnection`, `VaultAuth`, and bootstrap `VaultStaticSecret` resources so
+secret delivery cannot own or prune the database namespace.
 
 OpenBao is authoritative for the fixed Grafana and Radar login passwords. Each
 login is represented by an OpenBao database static role with a 30-day rotation
 period. CNPG creates and retains each login role but has no `passwordSecret`, so
 it does not overwrite OpenBao's password. OpenBao's PostgreSQL connection uses
-the stable `platform-postgres-rw.postgresql.svc` endpoint and a dedicated
+the stable `k3s-postgres-rw.cloudnative-pg.svc` endpoint and a dedicated
 `openbao_manager` login. Its randomly generated password is created once in
 OpenBao KV v2 at `kv/postgresql/openbao-manager` with CAS=0 by the guarded
 Bootstrap Ansible action. CNPG receives that credential through VSO; it is not
@@ -37,7 +32,7 @@ stored in inventory or Git.
 The manager login is not a superuser and cannot create databases. It has only
 `CREATEROLE`, a connection limit of five, and a dedicated Kubernetes Role that
 lets the Crossplane provider read only the manager Secret. The provider's
-OpenBao policy is limited to the `platform-postgres` database configuration and
+OpenBao policy is limited to the `k3s-postgres` database configuration and
 static-role endpoints; it cannot manage ACL policies, auth roles, mounts or KV
 data. Ansible installs narrow read-only VSO policies for the manager, Grafana,
 and Radar identities as part of the one-time OpenBao trust bootstrap; it never

@@ -1,12 +1,12 @@
 # Cluster and PostgreSQL maintenance runbook
 
 K3s mutations remain owned by the bootstrap repository; GitOps owns
-`Cluster/platform-postgres`. Every mutating live step requires fresh approval.
+`Cluster/k3s-postgres`. Every mutating live step requires fresh approval.
 
 ## Before maintenance
 
 - [ ] Argo CD `Application/cloudnative-pg` exists and reports Synced with generic child health Healthy.
-- [ ] CloudNativePG `Cluster/platform-postgres` explicitly reports `Cluster in healthy state`.
+- [ ] CloudNativePG `Cluster/k3s-postgres` explicitly reports `Cluster in healthy state`.
 - [ ] Both `DatabaseRole` and `Database` resources report their current generations applied.
 - [ ] The scheduled backup has run and the Barman ObjectStore reports a usable recovery window.
 - [ ] One primary and two standbys are healthy, distributed and caught up.

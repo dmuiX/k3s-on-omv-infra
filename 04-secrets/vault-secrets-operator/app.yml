@@ -30,9 +30,6 @@ spec:
                 limits:
                   cpu: 500m
                   memory: 256Mi
-    - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
-      targetRevision: main
-      path: 04-secrets/vault-secrets-operator/workload
   syncPolicy:
     automated:
       prune: false

@@ -8,7 +8,7 @@ metadata:
 spec:
   destination:
     name: in-cluster
-    namespace: postgresql
+    namespace: cloudnative-pg
   project: default
   sources:
     - repoURL: https://cloudnative-pg.github.io/charts

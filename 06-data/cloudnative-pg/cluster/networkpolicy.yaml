@@ -38,20 +38,17 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      cnpg.io/cluster: platform-postgres
+      cnpg.io/cluster: k3s-postgres
   policyTypes: [Ingress, Egress]
   ingress:
     - from:
         - podSelector:
             matchLabels:
-              cnpg.io/cluster: platform-postgres
+              cnpg.io/cluster: k3s-postgres
       ports:
         - {protocol: TCP, port: 5432}
     - from:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: cloudnative-pg
-          podSelector:
+        - podSelector:
             matchLabels:
               app.kubernetes.io/name: cloudnative-pg
       ports:
@@ -93,14 +90,11 @@ spec:
     - to:
         - podSelector:
             matchLabels:
-              cnpg.io/cluster: platform-postgres
+              cnpg.io/cluster: k3s-postgres
       ports:
         - {protocol: TCP, port: 5432}
     - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: cloudnative-pg
-          podSelector:
+        - podSelector:
             matchLabels:
               app.kubernetes.io/name: plugin-barman-cloud
       ports:

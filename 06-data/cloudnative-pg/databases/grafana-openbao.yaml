@@ -7,7 +7,7 @@ metadata:
     argocd.argoproj.io/sync-wave: "1"
 spec:
   cluster:
-    name: platform-postgres
+    name: k3s-postgres
   name: openbao_manager
   login: true
   superuser: false
@@ -30,16 +30,16 @@ spec:
   deletionPolicy: Orphan
   forProvider:
     backend: database
-    name: platform-postgres
+    name: k3s-postgres
     allowedRoles:
       - grafana
       - radar
     postgresql:
-      - connectionUrl: "postgresql://{{username}}:{{password}}@platform-postgres-rw.postgresql.svc:5432/postgres?sslmode=verify-full&sslrootcert=/openbao/postgresql-tls/ca.crt"
+      - connectionUrl: "postgresql://{{username}}:{{password}}@k3s-postgres-rw.cloudnative-pg.svc:5432/postgres?sslmode=verify-full&sslrootcert=/openbao/postgresql-tls/ca.crt"
         username: openbao_manager
         passwordSecretRef:
           name: openbao-manager-credentials
-          namespace: postgresql
+          namespace: cloudnative-pg
           key: password
   providerConfigRef:
     name: openbao
@@ -55,7 +55,7 @@ spec:
   forProvider:
     backend: database
     name: grafana
-    dbName: platform-postgres
+    dbName: k3s-postgres
     username: grafana
     rotationPeriod: 2592000
   providerConfigRef:
@@ -65,7 +65,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
 metadata:
   name: crossplane-read-openbao-manager-credential
-  namespace: postgresql
+  namespace: cloudnative-pg
 rules:
   - apiGroups: [""]
     resources: ["secrets"]
@@ -76,7 +76,7 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: crossplane-read-openbao-manager-credential
-  namespace: postgresql
+  namespace: cloudnative-pg
 subjects:
   - kind: ServiceAccount
     name: provider-vault

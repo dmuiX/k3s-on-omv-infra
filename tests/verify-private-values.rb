@@ -66,7 +66,7 @@ apps = Dir.glob(File.join(ROOT, '[0-9][0-9]-*', '*', '{*app.yml,application.yml}
 end.compact.to_h { |app| [app.dig('metadata', 'name'), app] }
 expected_apps = %w[argocd-config argocd-route grafana-route kube-prometheus-stack monitoring-crds
                    cert-manager cert-manager-config k8up longhorn longhorn-route openbao openbao-config
-                   openbao-pki openbao-route postgresql postgresql-vso-credentials provider-vault
+                   cloudnative-pg openbao-pki openbao-route postgresql-vso-credentials provider-vault
                    provider-vault-config vault-secrets-operator vault-secrets-webhook]
 check(apps.keys.sort == expected_apps.sort && apps.values.map { |app| wave(app) }.uniq.sort == [1, 2, 3, 4, 5, 6, 7, 8],
       'Public root must own the complete automatically reconciled platform inventory')
@@ -165,7 +165,7 @@ check(Base64.strict_decode64(repo_password.dig('data', 'password')) ==
         'vault:kv/data/k8up/r2-credentials#secret-access-key',
       'Pinned backup chart must consume only canonical K8up credential paths')
 postgresql = render('postgresql')
-postgresql_store = postgresql.find { |r| r['kind'] == 'ObjectStore' && r.dig('metadata', 'name') == 'platform-postgres-backups' }
+postgresql_store = postgresql.find { |r| r['kind'] == 'ObjectStore' && r.dig('metadata', 'name') == 'k3s-postgres-backups' }
 postgresql_webhook_policy = postgresql.find do |r|
   r['kind'] == 'NetworkPolicy' && r.dig('metadata', 'name') == 'allow-k3s-api-to-cloudnative-pg-webhook'
 end

@@ -57,7 +57,7 @@ assert pg['username'] == 'openbao_manager' &&
        pg.dig('passwordSecretRef', 'name') == 'openbao-manager-credentials' &&
        pg.dig('passwordSecretRef', 'key') == 'password', 'Manager credential reference is incomplete'
 assert connection.dig('spec', 'forProvider', 'backend') == 'database' &&
-       connection.dig('spec', 'forProvider', 'name') == 'platform-postgres' &&
+       connection.dig('spec', 'forProvider', 'name') == 'k3s-postgres' &&
        !connection.dig('spec', 'forProvider').key?('path'), 'Connection must use the exact provider-vault backend/name schema'
 assert static_role.dig('spec', 'forProvider', 'rotationPeriod') == 2_592_000,
        'Static role rotation must be a 30-day period in seconds'
@@ -99,16 +99,21 @@ assert resource(radar, 'SecretBackendStaticRole', 'radar').dig('spec', 'forProvi
 radar_db_role = resource(docs('06-data/cloudnative-pg/databases/radar.yaml'), 'DatabaseRole', 'radar')
 assert !radar_db_role.dig('spec').key?('passwordSecret'), 'CNPG must not own Radar password rotation'
 
-gitops_vso = docs('04-secrets/vault-secrets-operator/workload/resources.yaml')
+vso_operator_app = docs('04-secrets/vault-secrets-operator/app.yml').first
+assert vso_operator_app.dig('spec', 'sources').length == 1 &&
+       vso_operator_app.dig('spec', 'sources', 0, 'chart') == 'vault-secrets-operator',
+       'The central VSO Application must own only the operator'
+gitops_vso = docs('06-data/cloudnative-pg/credentials/vso.yaml')
 assert(gitops_vso.select { |item| item['kind'] == 'VaultConnection' }.all? do |item|
   item.dig('spec', 'address') == 'http://openbao-active.openbao.svc.cluster.local:8200'
 end, 'VSO must use the OpenBao in-cluster listener')
 bootstrap_static_secrets = gitops_vso.select { |item| item['kind'] == 'VaultStaticSecret' }
-assert gitops_vso.any? { |item| item['kind'] == 'Namespace' && item.dig('metadata', 'name') == 'postgresql' } &&
+assert gitops_vso.all? { |item| item.dig('metadata', 'namespace') == 'cloudnative-pg' } &&
+       gitops_vso.all? { |item| item.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '0' } &&
        bootstrap_static_secrets.any? { |item| item.dig('spec', 'path') == 'postgresql/openbao-manager' } &&
        bootstrap_static_secrets.any? { |item| item.dig('spec', 'path') == 'postgresql/r2-credentials' } &&
        bootstrap_static_secrets.all? { |item| item.dig('spec', 'destination', 'transformation', 'excludeRaw') == true },
-       'Wave-4 VSO prerequisites must establish PostgreSQL inputs without the raw payload key'
+       'CloudNativePG must own its namespace-local VSO prerequisites without the raw payload key'
 credential_app = docs('07-secrets/postgresql-vso/app.yml').first
 assert credential_app.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '7',
        'Per-application credentials must reconcile after PostgreSQL roles'

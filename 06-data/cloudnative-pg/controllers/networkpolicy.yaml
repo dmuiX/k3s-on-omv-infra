@@ -57,12 +57,9 @@ spec:
         - {protocol: TCP, port: 8080}
   egress:
     - to:
-        - namespaceSelector:
+        - podSelector:
             matchLabels:
-              kubernetes.io/metadata.name: postgresql
-          podSelector:
-            matchLabels:
-              cnpg.io/cluster: platform-postgres
+              cnpg.io/cluster: k3s-postgres
       ports:
         - {protocol: TCP, port: 8000}
     - to:
@@ -86,12 +83,9 @@ spec:
   policyTypes: [Ingress, Egress]
   ingress:
     - from:
-        - namespaceSelector:
+        - podSelector:
             matchLabels:
-              kubernetes.io/metadata.name: postgresql
-          podSelector:
-            matchLabels:
-              cnpg.io/cluster: platform-postgres
+              cnpg.io/cluster: k3s-postgres
         - podSelector:
             matchLabels:
               app.kubernetes.io/name: cloudnative-pg

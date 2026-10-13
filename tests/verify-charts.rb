@@ -91,8 +91,8 @@ Dir.mktmpdir('infra-helm-check-') do |dir|
   cert_manager = render('cert-manager', env)
   k8up = render('k8up', env)
   secrets_webhook = render('vault-secrets-webhook', env)
-  cnpg = render('postgresql', env, 'cloudnative-pg')
-  barman = render('postgresql', env, 'plugin-barman-cloud')
+  cnpg = render('cloudnative-pg', env, 'cloudnative-pg')
+  barman = render('cloudnative-pg', env, 'plugin-barman-cloud')
   auxiliary = k8up + secrets_webhook + cnpg + barman
   check((crds + monitoring + longhorn + openbao + cert_manager + auxiliary).none? do |resource|
     %w[Application ApplicationSet].include?(resource['kind'])
@@ -151,7 +151,7 @@ Dir.mktmpdir('infra-helm-check-') do |dir|
             'Backup Schedule must sync after its Secrets')
     end
     if component == 'postgresql'
-      object_store = find_resource(resources, 'ObjectStore', 'platform-postgres-backups')
+      object_store = find_resource(resources, 'ObjectStore', 'k3s-postgres-backups')
       check(object_store.dig('spec', 'retentionPolicy') == '30d' &&
             object_store.dig('spec', 'configuration', 's3Credentials', 'accessKeyId', 'name') ==
               'postgresql-r2-credentials' &&
