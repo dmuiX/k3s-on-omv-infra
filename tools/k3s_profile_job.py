@@ -19,7 +19,7 @@ def build_job(name, node, image, action, expected_ip, peers, host_source, cleanu
     if len(peers) != 2 or len(set(peers + [expected_ip])) != 3:
         raise ValueError('Exactly two different non-target peers required')
     args = [action, '--expected-ip', expected_ip]
-    if action == 'activate':
+    if action in {'activate', 'finish'}:
         args += ['--peers', *peers, '--cleanup-source-base64', base64.b64encode(cleanup_source).decode()]
     command = ['nsenter', '--target', '1', '--mount', '--uts', '--ipc', '--net', '--pid',
                '--root=/proc/1/root', '--wd=/', '--', '/usr/bin/python3', '-B', '-c', host_source.decode(), *args]

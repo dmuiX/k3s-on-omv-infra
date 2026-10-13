@@ -63,10 +63,10 @@ def inspect(expected_ip):
     cg = Path('/sys/fs/cgroup/system.slice/k3s.service')
     ms = dict((k, int(v)) for k, v in (l.split() for l in (cg / 'memory.stat').read_text().splitlines()))
     report['working_set_bytes'] = int((cg / 'memory.current').read_text()) - ms['inactive_file']
-    for suffix in ['timer', 'service']:
-        result = subprocess.run(['systemctl', 'show', UNIT + '.' + suffix, '-p', 'ActiveState', '--value'],
+    for name in [UNIT + '.timer', UNIT + '.service', UNIT + '-delayed.timer', UNIT + '-delayed.service']:
+        result = subprocess.run(['systemctl', 'show', name, '-p', 'ActiveState', '--value'],
                                 capture_output=True, text=True, timeout=6)
-        report['cleanup_' + suffix + '_state'] = result.stdout.strip() or 'not-loaded'
+        report[name.replace('k3s-profile-ticket35-', '').replace('.', '_') + '_state'] = result.stdout.strip() or 'not-loaded'
     for directory in [Path('/etc'), Path('/etc/rancher'), OVERLAY.parent.parent]:
         safe_dir(directory)
     if OVERLAY.parent.exists() or OVERLAY.parent.is_symlink():
@@ -153,13 +153,26 @@ def activate(expected_ip, peers, source):
             'profiling_restart_queued': True, 'rollback_timer': UNIT + '.timer'}
 
 
-def finish():
+def finish(peers=None, source=None):
     if OVERLAY.exists() or OVERLAY.is_symlink():
-        subprocess.run(['systemctl', 'start', '--no-block', UNIT + '.service'], check=True, timeout=6)
-        # The service job now owns cleanup independently; do not keep a stale
-        # timer waiting after the explicitly requested normal restart.
+        import ipaddress
+        if not source or not peers or len(peers) != 2:
+            raise RuntimeError('Cleanup requires its validated snapshot and two peers')
+        peers = [str(ipaddress.ip_address(peer)) for peer in peers]
+        if len(set(peers)) != 2:
+            raise RuntimeError('Cleanup peers must differ')
+        dest = install_snapshot(source)
+        # Self-restarting containerd can lose this Job's terminal status. Give
+        # the diagnostic container time to exit and publish status first. The
+        # same immutable helper rechecks peer health when the timer fires.
+        cmd = ['systemd-run', '--unit=' + UNIT + '-delayed', '--on-active=15s',
+               '--timer-property=AccuracySec=1s', '--property=Type=oneshot',
+               '--property=User=root', '--property=TimeoutStartSec=30s',
+               '--property=UMask=0077', '/usr/bin/python3', str(dest), '--peers', *peers]
+        subprocess.run(cmd, check=True, capture_output=True, timeout=8)
+        # Only cancel the original watchdog after the replacement owns cleanup.
         subprocess.run(['systemctl', 'stop', UNIT + '.timer'], capture_output=True, timeout=6)
-        return {'normal_restart_cleanup_queued': True}
+        return {'normal_restart_cleanup_queued': True, 'delay_seconds': 15}
     return {'overlay_already_absent': True, 'extra_restart_requested': False}
 
 
@@ -182,7 +195,8 @@ def main():
         # Rollback must also work if a profiling start failed (MainPID == 0).
         if not target_matches(args.expected_ip):
             raise RuntimeError('Wrong host identity')
-        result = finish()
+        result = finish(args.peers, base64.b64decode(args.cleanup_source_base64, validate=True)
+                        if args.cleanup_source_base64 else None)
     print(json.dumps(result, sort_keys=True))
 
 
