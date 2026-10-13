@@ -35,7 +35,7 @@ spec:
       - grafana
       - radar
     postgresql:
-      - connectionUrl: "postgresql://{{username}}:{{password}}@platform-postgres-rw.postgresql.svc:5432/postgres?sslmode=require"
+      - connectionUrl: "postgresql://{{username}}:{{password}}@platform-postgres-rw.postgresql.svc:5432/postgres?sslmode=verify-full&sslrootcert=/openbao/postgresql-tls/ca.crt"
         username: openbao_manager
         passwordSecretRef:
           name: openbao-manager-credentials

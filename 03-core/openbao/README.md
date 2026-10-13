@@ -81,6 +81,14 @@ maintenance operation:
 6. verify the UI/API health, Kubernetes Auth, PKI issuance and audit writes. Run
    the isolated VSO compatibility PoC again before adding the TLS listener.
 
+The same activation boundary applies when the reviewed pod template adds the
+optional `postgresql-ca` volume. Existing `OnDelete` pods do not gain that mount
+until replaced. After each replacement, verify that the mounted `ca.crt`
+fingerprint matches the current PostgreSQL server Secret trust chain before
+accepting the OpenBao database backend. A newly created optional Secret is
+projected automatically only into pods whose template already declares the
+volume.
+
 Never replace two voters concurrently. Stop immediately on a sealed pod, missing
 peer, failed readiness, failed audit write or loss of leadership. Before the
 first pod replacement, rollback is a Git revert. After any `2.7.1` node has

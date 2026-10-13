@@ -170,8 +170,12 @@ check(wave(health) <= applications.map { |app| wave(app) }.min,
 # health check must be seeded in Argo CD before the first root sync; wave 1
 # alone does not order resources within the wave.
 health_keys = health.fetch('data').keys
-check(health_keys == ['resource.customizations.health.argoproj.io_Application'],
-      'Argo must retain only the child Application health passthrough')
+check(health_keys.sort == [
+        'resource.customizations.health.argoproj.io_Application',
+        'resource.customizations.health.secrets.hashicorp.com_VaultDynamicSecret',
+        'resource.customizations.health.secrets.hashicorp.com_VaultStaticSecret'
+      ].sort,
+      'Argo must retain only reviewed child and static-secret health contracts')
 crd_app = apps.fetch('monitoring-crds')
 monitoring = apps.fetch('kube-prometheus-stack')
 %w[longhorn cert-manager kube-prometheus-stack openbao vault-secrets-webhook].each do |name|

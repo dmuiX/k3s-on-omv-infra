@@ -1,4 +1,30 @@
 {{- if eq .Values.component "postgresql" }}
+# OpenBao's database plugin verifies the CNPG service identity with the same
+# internal CA that signs the server certificate. The Secret contains only
+# public certificate material and is mounted read-only into OpenBao.
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: postgresql-ca
+  namespace: openbao
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  secretName: postgresql-ca
+  duration: 2160h
+  renewBefore: 360h
+  privateKey:
+    algorithm: RSA
+    size: 2048
+    rotationPolicy: Always
+  usages:
+    - client auth
+  commonName: openbao-postgresql-ca-carrier
+  issuerRef:
+    group: cert-manager.io
+    kind: ClusterIssuer
+    name: openbao-pki-services
+---
 # VSO owns postgresql-r2-credentials. Keep this chart limited to the
 # non-secret repository configuration and its fixed Secret key contract.
 apiVersion: barmancloud.cnpg.io/v1
@@ -7,7 +33,7 @@ metadata:
   name: platform-postgres-backups
   namespace: postgresql
   annotations:
-    argocd.argoproj.io/sync-wave: "1"
+    argocd.argoproj.io/sync-wave: "0"
 spec:
   configuration:
     destinationPath: {{ printf "s3://%s/" (required "PostgreSQL backup bucket is required" .Values.postgresqlBackup.bucket) | quote }}

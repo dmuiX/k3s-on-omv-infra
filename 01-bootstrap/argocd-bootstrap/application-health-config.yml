@@ -38,3 +38,49 @@ data:
       hs.message = "Waiting for child Application health"
     end
     return hs
+  resource.customizations.health.secrets.hashicorp.com_VaultDynamicSecret: |
+    local hs = {status = "Progressing", message = "Waiting for synchronized dynamic destination Secret"}
+    if obj.status == nil or obj.status.conditions == nil then return hs end
+    for _, condition in ipairs(obj.status.conditions) do
+      if condition.type == "Ready" then
+        if condition.observedGeneration == nil or obj.metadata == nil or
+           condition.observedGeneration ~= obj.metadata.generation then
+          hs.message = "Waiting for current VaultDynamicSecret generation"
+          return hs
+        end
+        if condition.status == "True" then
+          hs.status = "Healthy"
+          hs.message = condition.message or "Dynamic destination Secret synchronized"
+        elseif condition.status == "False" then
+          hs.status = "Degraded"
+          hs.message = condition.message or "Dynamic destination Secret synchronization failed"
+        else
+          hs.message = condition.message or "Waiting for dynamic destination Secret synchronization"
+        end
+        return hs
+      end
+    end
+    return hs
+  resource.customizations.health.secrets.hashicorp.com_VaultStaticSecret: |
+    local hs = {status = "Progressing", message = "Waiting for synchronized destination Secret"}
+    if obj.status == nil or obj.status.conditions == nil then return hs end
+    for _, condition in ipairs(obj.status.conditions) do
+      if condition.type == "Ready" then
+        if condition.observedGeneration == nil or obj.metadata == nil or
+           condition.observedGeneration ~= obj.metadata.generation then
+          hs.message = "Waiting for current VaultStaticSecret generation"
+          return hs
+        end
+        if condition.status == "True" then
+          hs.status = "Healthy"
+          hs.message = condition.message or "Destination Secret synchronized"
+        elseif condition.status == "False" then
+          hs.status = "Degraded"
+          hs.message = condition.message or "Destination Secret synchronization failed"
+        else
+          hs.message = condition.message or "Waiting for destination Secret synchronization"
+        end
+        return hs
+      end
+    end
+    return hs

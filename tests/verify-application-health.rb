@@ -6,10 +6,23 @@ require 'open3'
 ROOT = File.expand_path('..', __dir__)
 config = YAML.load_file(File.join(ROOT, '01-bootstrap/argocd-bootstrap', 'application-health-config.yml'))
 application_key = 'resource.customizations.health.argoproj.io_Application'
+dynamic_secret_key = 'resource.customizations.health.secrets.hashicorp.com_VaultDynamicSecret'
+static_secret_key = 'resource.customizations.health.secrets.hashicorp.com_VaultStaticSecret'
 data = config.fetch('data')
-raise 'Only generic Application health may be customized' unless data.keys == [application_key]
+expected_keys = [application_key, dynamic_secret_key, static_secret_key]
+raise 'Only reviewed Application and VaultStaticSecret health may be customized' unless data.keys.sort == expected_keys.sort
 
 lua = data.fetch(application_key)
+dynamic_secret_lua = data.fetch(dynamic_secret_key)
+static_secret_lua = data.fetch(static_secret_key)
+raise 'VaultDynamicSecret health must require its Ready condition' unless
+  dynamic_secret_lua.include?('condition.type == "Ready"') &&
+  dynamic_secret_lua.include?('condition.status == "True"') &&
+  dynamic_secret_lua.include?('condition.observedGeneration')
+raise 'VaultStaticSecret health must require its Ready condition' unless
+  static_secret_lua.include?('condition.type == "Ready"') &&
+  static_secret_lua.include?('condition.status == "True"') &&
+  static_secret_lua.include?('condition.observedGeneration')
 %w[longhorn.io postgres-operator.crunchydata.com].each do |workload_detail|
   raise "Application health must not inspect #{workload_detail}" if lua.include?(workload_detail)
 end
