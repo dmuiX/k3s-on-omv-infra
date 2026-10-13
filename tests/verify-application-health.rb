@@ -8,8 +8,11 @@ config = YAML.load_file(File.join(ROOT, '01-bootstrap/argocd-bootstrap', 'applic
 application_key = 'resource.customizations.health.argoproj.io_Application'
 dynamic_secret_key = 'resource.customizations.health.secrets.hashicorp.com_VaultDynamicSecret'
 static_secret_key = 'resource.customizations.health.secrets.hashicorp.com_VaultStaticSecret'
+oidc_keys = %w[OidcKey OidcScope OidcClient OidcProvider].map do |kind|
+  "resource.customizations.health.identity.vault.upbound.io_#{kind}"
+end
 data = config.fetch('data')
-expected_keys = [application_key, dynamic_secret_key, static_secret_key, 'resource.exclusions']
+expected_keys = [application_key, dynamic_secret_key, static_secret_key, *oidc_keys, 'resource.exclusions']
 raise 'Only reviewed health contracts and resource exclusions may be configured' unless data.keys.sort == expected_keys.sort
 
 lua = data.fetch(application_key)
@@ -23,6 +26,13 @@ raise 'VaultStaticSecret health must require its Ready condition' unless
   static_secret_lua.include?('condition.type == "Ready"') &&
   static_secret_lua.include?('condition.status == "True"') &&
   static_secret_lua.include?('condition.observedGeneration')
+oidc_keys.each do |key|
+  oidc_lua = data.fetch(key)
+  raise "#{key} health must expose Crossplane readiness and failures" unless
+    oidc_lua.include?('condition.type == "Ready"') &&
+    oidc_lua.include?('condition.status == "True"') &&
+    oidc_lua.include?('condition.reason == "ReconcileError"')
+end
 %w[longhorn.io postgres-operator.crunchydata.com].each do |workload_detail|
   raise "Application health must not inspect #{workload_detail}" if lua.include?(workload_detail)
 end

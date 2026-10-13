@@ -181,6 +181,10 @@ check(wave(health) <= applications.map { |app| wave(app) }.min,
 health_keys = health.fetch('data').keys
 check(health_keys.sort == [
         'resource.customizations.health.argoproj.io_Application',
+        'resource.customizations.health.identity.vault.upbound.io_OidcClient',
+        'resource.customizations.health.identity.vault.upbound.io_OidcKey',
+        'resource.customizations.health.identity.vault.upbound.io_OidcProvider',
+        'resource.customizations.health.identity.vault.upbound.io_OidcScope',
         'resource.customizations.health.secrets.hashicorp.com_VaultDynamicSecret',
         'resource.customizations.health.secrets.hashicorp.com_VaultStaticSecret',
         'resource.exclusions'
