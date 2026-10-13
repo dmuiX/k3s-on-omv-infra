@@ -67,7 +67,8 @@ check(cluster.dig('spec', 'postgresql', 'parameters', 'max_connections') == '100
       'PostgreSQL connection/memory/WAL defaults changed')
 check(cluster.dig('spec', 'certificates', 'serverTLSSecret') == 'k3s-postgres-server-tls' &&
       cluster.dig('spec', 'plugins', 0) == {
-        'name' => 'barman-cloud.cloudnative-pg.io', 'isWALArchiver' => true,
+        'name' => 'barman-cloud.cloudnative-pg.io', 'enabled' => true,
+        'isWALArchiver' => true,
         'parameters' => {'barmanObjectName' => 'k3s-postgres-backups'}
       }, 'TLS or Barman plugin wiring is incomplete')
 certificate = resource(kustomized, 'Certificate', 'k3s-postgres-server')
