@@ -271,6 +271,72 @@ kind after withdrawal, not only successful removal of an unused kind.
 No live activation, privilege, registration, resource or restart was changed
 while coordinating this dependency.
 
+## Isolated real-component lifecycle proof: 2026-10-13
+
+A disposable, agentless K3s API used a snapshot of the installed
+`v1.37.1+k3s1` binary. Real Crossplane **v2.4.2** core/init and provider-vault
+**v4.0.4** amd64 runtime/package were used, not mocked controllers. Immutable
+image content was read/exported from the existing cache; the public upstream OCI
+package was mirrored read-only inside the test network with SHA-256 verification.
+All 248 MRDs were established; only synthetic Policy/Mount types were activated.
+
+Boundaries: internal Docker network, no published ports, no privileged/host-PID/
+host-network containers or added capabilities; no production data/credential/
+kubeconfig mounts. Only code and newly generated test configuration/TLS were
+mounted. API 1.5 GiB, Crossplane 640 MiB, provider 768 MiB, registry 96 MiB;
+CPU and PID bounds, owner labels, immutable container IDs, persistent state and
+independent systemd cleanup deadlines. Foreground control only, no AI workers.
+
+Thirteen live checks passed:
+
+1. The actual API rejects Active → Inactive.
+2. Narrowing MRAP leaves an existing Active MRD active.
+3. Deleting only the empty Mount CRD recreates it with a new UID.
+4. Orphan deletion of only its MRD leaves the CRD in place.
+5. Explicit reconciliation of the real pinned ProviderRevision recreates the
+   missing MRD **Inactive**, because SafeStart and the narrowed MRAP apply.
+6. Removing its still-empty CRD after that reset leaves it absent.
+7. A protected synthetic Policy instance retains its original UID.
+8. MRAP expansion reactivates the MRD/recreates the CRD and starts the real
+   provider Mount controller without another provider restart.
+9. Repeating empty reset/withdrawal does not unregister the started controller.
+10. Its deleted-Mount informer emits retry errors after withdrawal.
+11. One targeted test-provider restart removes that unused controller.
+12. Final rollback through MRAP starts it again without an additional restart.
+13. Both protected Policy instance **and** Policy CRD UIDs remain unchanged.
+
+The runtime controller labels and informer behavior were verified independently
+of resource existence. Initial/final controller sets exclude/include Mount as
+expected. Guard regressions cover wrong ID/owner, non-internal network,
+production client overrides, server-side apply, and API errors versus proven
+NotFound (unknown resource aliases must never count as absence).
+
+Setup-only issues were corrected before lifecycle acceptance: explicit internal
+node/advertise IP for the route-less network; generated test kubeconfig ownership;
+CLI boolean spelling; initial discovery refresh; named disposable TLS and DAC
+readability with all capabilities dropped; exact `/cache/xpkg` directory mount;
+bootstrap ServiceAccount; mirror the actual amd64 package rather than the
+separate README/SBOM extensions artifact. Missing cache-directory creation caused
+an opaque `io: read/write on closed pipe` via an ignored cache-store error in
+crossplane-runtime **v2.4.2**; this was a test setup fault, not a production leak.
+A safety deadline actually removed an early controller fixture and was reconciled
+without replaying any production operation.
+
+Final cleanup: all owner-bound containers, test volume, internal network and
+active timers removed/stopped; generated test keys deleted; public code/proof
+remains private locally. Independent metadata-only production recheck confirms
+all seven original managed-instance UIDs, ProviderConfig and seven usage UIDs
+still exist. All three production nodes remain Ready. Production configuration,
+registrations, resources and services were not changed/restarted by this test.
+
+This proves the registration/ownership/reactivation mechanism, **not** exact
+production RAM savings or database/OIDC maintenance safety. The package-generated
+Deployment was intentionally unscheduled (no test worker nodes); its real runtime
+was exercised directly in Docker. Production requires exact-set approval, writer
+coordination/#46 reservations, fresh zero-instance checks with race protection,
+rollback source, preserved UID checks and functional database/OIDC acceptance
+before/after the targeted provider rollout. No blanket 242-type deletion approved.
+
 ## Live acceptance and rollback
 
 - Use the same single-owner Argo path; pin each selected operation to the tested
