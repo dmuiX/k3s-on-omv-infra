@@ -32,8 +32,8 @@ check(authored_source['repoURL'] == 'https://github.com/dmuiX/k3s-on-omv-infra.g
 check(cm['apiVersion'] == 'v1' && cm['kind'] == 'ConfigMap' &&
       cm.dig('metadata', 'name') == 'longhorn-storageclass' && cm.dig('metadata', 'namespace') == 'longhorn',
       'Override must match the chart ConfigMap exactly')
-check(cm.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-options') == 'Prune=false',
-      'Protect the controller-owned class template from accidental pruning')
+check(cm.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-options').nil?,
+      'The reviewed direct-ownership handoff requires a prune-eligible legacy template')
 check(cm.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '-1',
       'Sync the encrypted template before chart workloads')
 check(cm.fetch('data').keys == ['storageclass.yaml'], 'No key material belongs in the ConfigMap')

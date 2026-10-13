@@ -75,13 +75,15 @@ that separate, reviewed transition before merging and syncing this simplified
 source; do not use the new core Node manifests as substitutes for the existing
 Longhorn custom resources.
 
-**Rollout changes an existing class.** Longhorn's ConfigMap controller detects the
-changed template and **deletes/recreates `StorageClass/longhorn` itself**; direct
-Kubernetes parameter patching would fail because the fields are immutable. Do not
-manually race this controller with another StorageClass owner. Freeze new PVC
-creation during the approved transition. Existing PVs/PVCs and their data remain
-in place. The ConfigMap has `Prune=false`; no destructive Argo sync hook or
-`Force/Replace` sync option is used.
+**StorageClass ownership transfer is staged.** This revision keeps the existing
+ConfigMap template as the sole desired owner but makes it prune-eligible. Verify
+that this exact revision is live before a later reviewed change disables chart
+StorageClass generation and adopts `StorageClass/longhorn` directly. Never combine
+both stages into one unverified sync: a retained legacy ConfigMap would leave
+Longhorn and Argo competing for the same StorageClass. The later stage must preserve
+all immutable fields exactly, freeze new PVC creation, and verify the ConfigMap is
+gone after adoption. Existing PVs/PVCs and their data remain in place; no
+`Force/Replace` sync option is authorized.
 
 **Before publishing/syncing**, create and independently back up
 `longhorn/longhorn-volume-encryption`. All four CSI Secret references (including

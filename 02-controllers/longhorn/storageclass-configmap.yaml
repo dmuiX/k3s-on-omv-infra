@@ -11,7 +11,8 @@ metadata:
     app.kubernetes.io/name: longhorn
     app.kubernetes.io/instance: longhorn
   annotations:
-    argocd.argoproj.io/sync-options: Prune=false
+    # A later reviewed handoff replaces this template with one directly owned
+    # StorageClass. Keep it prune-eligible only after this revision is live.
     argocd.argoproj.io/sync-wave: "-1"
 data:
   storageclass.yaml: |
