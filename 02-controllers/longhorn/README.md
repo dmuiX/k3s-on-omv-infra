@@ -114,9 +114,12 @@ OpenBao cluster merely to change the underlying storage encryption.
 - UI Service: **ClusterIP**, because the shared Gateway provides LAN/VPN access.
 - Pod Security `privileged` labels target the Longhorn namespace through Argo's
   `managedNamespaceMetadata` and `CreateNamespace=true`, not Application `spec.labels`.
-- Manager requests: 100m CPU / 256Mi RAM; memory limit: 512Mi. Instance-manager CPU
-  reservation remains 12% per configured setting; measure total CSI/engine/replica
-  overhead rather than treating the manager's request as the whole storage budget.
+- Manager requests: 100m CPU / 256Mi RAM; memory limit: 1Gi. Encrypted-volume
+  discovery can transiently run a roughly 445Mi `cryptsetup` process inside the
+  manager cgroup during startup, so the steady-state manager footprint alone is
+  not a safe basis for this limit. Instance-manager CPU reservation uses Longhorn's
+  native 12% V1/V2 default; measure total CSI/engine/replica overhead rather than
+  treating the manager's request as the whole storage budget.
 
 Three nodes provide useful failure tolerance only when all volume replicas are
 healthy on distinct nodes. Increase replica counts on **existing** volumes

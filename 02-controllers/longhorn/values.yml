@@ -35,6 +35,8 @@ longhornManager:
       cpu: 100m
       memory: 256Mi
     limits:
-      memory: 512Mi
+      # Encrypted-volume discovery can transiently add a ~445 MiB cryptsetup
+      # process to the manager's own memory during startup.
+      memory: 1Gi
 preUpgradeChecker:
      jobEnabled: false # necessary as its kind of a egg chicken problem: longhorn-pre-upgrade is a PreSync hook, but its pod needs longhorn-service-account, which will be created while its deploying
