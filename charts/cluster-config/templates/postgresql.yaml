@@ -120,4 +120,29 @@ spec:
       ports:
         - protocol: TCP
           port: 6443
+---
+# kube-router on this cluster does not populate a selector set for the
+# late-created Radar namespace. Restrict the compatibility grant to the Pod
+# CIDRs of Radar's allowed nodes; PostgreSQL authentication remains mandatory.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-radar-postgres-pod-cidrs
+  namespace: cloudnative-pg
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: k3s-postgres
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+{{- range required "Radar source Pod CIDRs are required" .Values.postgresqlNetwork.radarSourcePodCIDRs }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+{{- end }}
+      ports:
+        - protocol: TCP
+          port: 5432
 {{- end }}

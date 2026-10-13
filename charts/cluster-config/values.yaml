@@ -54,3 +54,6 @@ postgresqlNetwork:
     - 192.0.2.1/32
   apiServerMasqueradeSourceCIDRs:
     - 198.51.100.1/32
+  # Pod CIDRs of nodes on which Radar is permitted to run.
+  radarSourcePodCIDRs:
+    - 192.0.2.0/24

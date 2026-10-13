@@ -181,6 +181,10 @@ Dir.mktmpdir('infra-helm-check-') do |dir|
             object_store.dig('spec', 'configuration', 's3Credentials', 'region', 'key') == 'AWS_REGION' &&
             resources.none? { |resource| resource['kind'] == 'Secret' },
             'PostgreSQL Barman configuration or VSO Secret boundary is incomplete')
+      radar_policy = find_resource(resources, 'NetworkPolicy', 'allow-radar-postgres-pod-cidrs')
+      check(radar_policy.dig('spec', 'ingress', 0, 'from', 0, 'ipBlock', 'cidr') == '192.0.2.0/24' &&
+            radar_policy.dig('spec', 'ingress', 0, 'ports', 0, 'port') == 5432,
+            'PostgreSQL must render the topology-specific Radar Pod-CIDR grant')
     end
     if component == 'restore'
       restore = resources.find { |resource| resource['kind'] == 'Restore' }
