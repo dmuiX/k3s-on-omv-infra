@@ -382,7 +382,7 @@ Dir.mktmpdir('infra-helm-check-') do |dir|
   manager = find_resource(longhorn, 'DaemonSet', 'longhorn-manager')
   container = manager.dig('spec', 'template', 'spec', 'containers').find { |c| c['name'] == 'longhorn-manager' }
   check(container.dig('resources', 'requests', 'memory') == '256Mi', 'Manager memory request was ignored')
-  check(container.dig('resources', 'limits', 'memory') == '512Mi', 'Manager memory limit was ignored')
+  check(container.dig('resources', 'limits', 'memory') == '1Gi', 'Manager memory limit was ignored')
   check(longhorn.none? { |r| %w[Gateway Ingress HelmRelease HelmRepository].include?(r['kind']) },
         'Unexpected routing or Flux resource rendered by Longhorn')
   puts 'PASS: pinned Helm renders and private templates, early monitoring CRDs, Longhorn-backed monitoring, PostgreSQL controllers'
