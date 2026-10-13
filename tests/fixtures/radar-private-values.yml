@@ -13,3 +13,8 @@ httpRoute:
       namespace: kube-system
       sectionName: websecure
   hostnames: [radar.example.invalid]
+  rules:
+    - matches:
+        - path: {type: PathPrefix, value: /}
+      backendRefs:
+        - {group: "", kind: Service, name: radar, port: 9280, weight: 1}
