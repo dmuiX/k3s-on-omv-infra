@@ -142,6 +142,11 @@ check(operator_policy.dig('metadata', 'namespace') == 'cloudnative-pg' &&
         rule.fetch('ports', []).any? { |port| port['port'] == 9443 }
       end, 'Public manifests must isolate the CloudNativePG webhook in its controller namespace')
 postgres_policy = resource(policies, 'NetworkPolicy', 'allow-postgres')
+radar_postgres_policy = resource(policies, 'NetworkPolicy', 'allow-radar-postgres')
+check(radar_postgres_policy.dig('spec', 'ingress', 0, 'from', 0,
+                                'namespaceSelector', 'matchLabels', 'kubernetes.io/metadata.name') == 'radar' &&
+      radar_postgres_policy.dig('spec', 'ingress', 0, 'ports', 0, 'port') == 5432,
+      'Radar must have a dedicated namespace-scoped PostgreSQL ingress grant')
 instance_rule = postgres_policy.dig('spec', 'ingress').find do |rule|
   rule.fetch('from', []).any? { |source| source.dig('podSelector', 'matchLabels', 'cnpg.io/cluster') == 'k3s-postgres' }
 end
