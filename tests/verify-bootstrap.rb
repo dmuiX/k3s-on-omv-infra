@@ -288,15 +288,21 @@ check(grafana_database&.dig('ssl_mode') == 'require' &&
 grafana_secret_ignore = monitoring.fetch('spec').fetch('ignoreDifferences').find do |entry|
   entry['group'] == '' && entry['kind'] == 'Secret' && entry['name'] == 'kube-prometheus-stack-grafana'
 end
+grafana_checksum_ignore = monitoring.fetch('spec').fetch('ignoreDifferences').find do |entry|
+  entry['group'] == 'apps' && entry['kind'] == 'Deployment' &&
+    entry['name'] == 'kube-prometheus-stack-grafana'
+end
 grafana_volume_ignore = monitoring.fetch('spec').fetch('ignoreDifferences').find do |entry|
   entry['group'] == '' && entry['kind'] == 'PersistentVolumeClaim' &&
     entry['name'] == 'kube-prometheus-stack-grafana'
 end
 check(grafana_volume_ignore && grafana_volume_ignore['jsonPointers'] == ['/spec/volumeName'],
       'Grafana retained-PV prebinding must ignore only the immutable volumeName')
-check(grafana_secret_ignore && grafana_secret_ignore['jsonPointers'].sort ==
-      ['/data/admin-password', '/data/admin-user'],
-      'Argo must ignore only the chart-generated Grafana administrator data fields')
+check(grafana_secret_ignore && grafana_secret_ignore['jsonPointers'] == ['/data'],
+      'Argo must preserve all chart-generated Grafana administrator Secret data')
+check(grafana_checksum_ignore && grafana_checksum_ignore['jsonPointers'] ==
+      ['/spec/template/metadata/annotations/checksum~1secret'],
+      'Argo must ignore only Grafana pod-template drift derived from its generated administrator Secret')
 { 'prometheus' => ['20Gi', 'longhorn-monitoring'],
   'alertmanager' => ['1Gi', 'longhorn'] }.each do |component, (size, storage_class)|
   spec = component == 'prometheus' ? 'prometheusSpec' : 'alertmanagerSpec'
