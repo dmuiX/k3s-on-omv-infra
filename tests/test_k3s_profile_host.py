@@ -131,7 +131,7 @@ class JobTests(unittest.TestCase):
         self.assertEqual(spec['nodeName'], 'test-node')
         self.assertEqual(spec['restartPolicy'], 'Never')
         self.assertEqual(obj['spec']['backoffLimit'], 0)
-        self.assertEqual(obj['spec']['activeDeadlineSeconds'], 45)
+        self.assertEqual(obj['spec']['activeDeadlineSeconds'], 180)
         self.assertIn('--root=/proc/1/root', spec['containers'][0]['command'])
         self.assertEqual(spec['containers'][0]['command'][-3:], ['inspect', '--expected-ip', '127.0.0.1'])
 

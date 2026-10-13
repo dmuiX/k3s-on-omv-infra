@@ -28,7 +28,10 @@ def build_job(name, node, image, action, expected_ip, peers, host_source, cleanu
             'metadata': {'name': name, 'namespace': 'kube-system', 'labels': labels,
                          'annotations': {'ram-diagnostics/host-source-sha256': hashlib.sha256(host_source).hexdigest(),
                                          'ram-diagnostics/cleanup-source-sha256': hashlib.sha256(cleanup_source).hexdigest()}},
-            'spec': {'backoffLimit': 0, 'activeDeadlineSeconds': 45, 'ttlSecondsAfterFinished': 300,
+            # Host commands remain individually bounded. Allow kubelet/containerd
+            # reconnection after the restart before the Job deadline controller
+            # can race a successful container exit/status publication.
+            'spec': {'backoffLimit': 0, 'activeDeadlineSeconds': 180, 'ttlSecondsAfterFinished': 300,
                      'parallelism': 1, 'completions': 1,
                      'template': {'metadata': {'labels': labels},
                                   'spec': {'nodeName': node, 'hostPID': True, 'hostNetwork': True,
