@@ -1,0 +1,33 @@
+# Argo owns the encrypted default Longhorn class directly. The chart's generated
+# StorageClass template is disabled so this resource has exactly one owner.
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: longhorn
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "false"
+    argocd.argoproj.io/sync-wave: "-1"
+provisioner: driver.longhorn.io
+allowVolumeExpansion: true
+reclaimPolicy: Retain
+volumeBindingMode: Immediate
+parameters:
+  numberOfReplicas: "3"
+  staleReplicaTimeout: "30"
+  fromBackup: ""
+  fsType: ext4
+  dataLocality: disabled
+  unmapMarkSnapChainRemoved: ignored
+  disableRevisionCounter: "true"
+  dataEngine: v1
+  backupTargetName: default
+  encrypted: "true"
+  # Independent local Secret; never fetch OpenBao's volume key from OpenBao.
+  csi.storage.k8s.io/provisioner-secret-name: longhorn-volume-encryption
+  csi.storage.k8s.io/provisioner-secret-namespace: longhorn
+  csi.storage.k8s.io/node-publish-secret-name: longhorn-volume-encryption
+  csi.storage.k8s.io/node-publish-secret-namespace: longhorn
+  csi.storage.k8s.io/node-stage-secret-name: longhorn-volume-encryption
+  csi.storage.k8s.io/node-stage-secret-namespace: longhorn
+  csi.storage.k8s.io/node-expand-secret-name: longhorn-volume-encryption
+  csi.storage.k8s.io/node-expand-secret-namespace: longhorn

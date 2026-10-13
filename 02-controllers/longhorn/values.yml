@@ -17,8 +17,8 @@ defaultSettings:
     v1: "3"
     v2: "3"
 persistence:
-  # The last Argo source overrides the chart's longhorn-storageclass ConfigMap
-  # with storageclass-configmap.yaml to add encryption. Keep both in sync.
+  # Argo owns the encrypted StorageClass directly in storageclass.yaml.
+  createStorageClass: false
   # Keep K3s local-path as the only default; PVCs opt into Longhorn explicitly.
   defaultClass: false
   defaultClassReplicaCount: 3

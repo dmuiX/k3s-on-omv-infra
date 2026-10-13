@@ -9,7 +9,7 @@ ruby tests/verify-application-health.rb # minimal child Application health passt
 ruby tests/verify-openbao-pki.rb # native PKI identities/RBAC/issuers/certificate render
 ruby tests/verify-postgresql.rb # CNPG HA/storage/backup/policy and pinned chart renders
 ruby tests/verify-ingress.rb     # no live-specific resources selected by the public root
-ruby tests/verify-longhorn-encryption.rb # Helm override and complete key references
+ruby tests/verify-longhorn-encryption.rb # single-owner StorageClass and complete key references
 ruby tests/verify-pi-placement.rb # explicit restricted-Pi tolerations; monitoring exclusion
 ruby tests/verify-charts.rb      # pinned Helm renders + safe local templates (network)
 ruby tests/verify-ram-budget.rb  # safe metric filtering, selective activation, authored-resource visibility
@@ -23,8 +23,8 @@ registry access. `LUA=/path/to/lua` overrides automatic selection. They need no
 kubeconfig or cluster.
 The chart test additionally needs Helm and network access. It renders each pinned
 upstream chart with the Git values in an isolated temporary Helm cache, applies
-the same Longhorn ConfigMap override, node annotations, and monitoring
-StorageClass as Argo, and validates the desired state.
+the same directly owned Longhorn StorageClasses and node annotations as Argo,
+and validates the desired state.
 Chart diagnostics and Secret values are never printed. The RAM regression check
 optionally accepts an unpacked pinned monitoring chart and a baseline values file:
 `ruby tests/verify-ram-budget.rb /path/to/kube-prometheus-stack /path/to/baseline.yml`.

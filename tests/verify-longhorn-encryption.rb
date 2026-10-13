@@ -13,8 +13,7 @@ def check(condition, message)
 end
 
 app = document('02-controllers/longhorn/app.yml')
-cm = document('02-controllers/longhorn/storageclass-configmap.yaml')
-sc = YAML.safe_load(cm.fetch('data').fetch('storageclass.yaml'))
+sc = document('02-controllers/longhorn/storageclass.yaml')
 sources = app.dig('spec', 'sources')
 
 check(app['kind'] == 'Application' && app.dig('metadata', 'name') == 'longhorn',
@@ -27,16 +26,10 @@ check(authored_source['repoURL'] == 'https://github.com/dmuiX/k3s-on-omv-infra.g
       authored_source['targetRevision'] == 'main' &&
       authored_source['path'] == '02-controllers/longhorn' &&
       authored_source.dig('directory', 'include') ==
-        '{storageclass-configmap.yaml,node-default-tags.yaml,monitoring-storage.yaml,monitoring-network-policy.yaml}',
+        '{storageclass.yaml,node-default-tags.yaml,monitoring-storage.yaml,monitoring-network-policy.yaml}',
       'Longhorn node annotations and StorageClasses must be the final branch-tracked Argo source')
-check(cm['apiVersion'] == 'v1' && cm['kind'] == 'ConfigMap' &&
-      cm.dig('metadata', 'name') == 'longhorn-storageclass' && cm.dig('metadata', 'namespace') == 'longhorn',
-      'Override must match the chart ConfigMap exactly')
-check(cm.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-options').nil?,
-      'The reviewed direct-ownership handoff requires a prune-eligible legacy template')
-check(cm.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '-1',
-      'Sync the encrypted template before chart workloads')
-check(cm.fetch('data').keys == ['storageclass.yaml'], 'No key material belongs in the ConfigMap')
+check(sc.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '-1',
+      'Sync the encrypted class before chart workloads')
 check(sc['apiVersion'] == 'storage.k8s.io/v1' && sc['kind'] == 'StorageClass', 'Invalid class template')
 check(sc.dig('metadata', 'name') == 'longhorn', 'Encrypt the standard longhorn class, not a second class')
 check(sc.dig('metadata', 'annotations', 'storageclass.kubernetes.io/is-default-class') == 'false',
@@ -45,6 +38,21 @@ check(sc['provisioner'] == 'driver.longhorn.io' && sc['allowVolumeExpansion'] ==
       'Incorrect CSI driver or missing expansion')
 check(sc['reclaimPolicy'] == 'Retain' && sc['volumeBindingMode'] == 'Immediate', 'Wrong lifecycle policy')
 params = sc.fetch('parameters')
+expected_params = {
+  'numberOfReplicas' => '3', 'staleReplicaTimeout' => '30', 'fromBackup' => '',
+  'fsType' => 'ext4', 'dataLocality' => 'disabled', 'unmapMarkSnapChainRemoved' => 'ignored',
+  'disableRevisionCounter' => 'true', 'dataEngine' => 'v1', 'backupTargetName' => 'default',
+  'encrypted' => 'true',
+  'csi.storage.k8s.io/provisioner-secret-name' => 'longhorn-volume-encryption',
+  'csi.storage.k8s.io/provisioner-secret-namespace' => 'longhorn',
+  'csi.storage.k8s.io/node-publish-secret-name' => 'longhorn-volume-encryption',
+  'csi.storage.k8s.io/node-publish-secret-namespace' => 'longhorn',
+  'csi.storage.k8s.io/node-stage-secret-name' => 'longhorn-volume-encryption',
+  'csi.storage.k8s.io/node-stage-secret-namespace' => 'longhorn',
+  'csi.storage.k8s.io/node-expand-secret-name' => 'longhorn-volume-encryption',
+  'csi.storage.k8s.io/node-expand-secret-namespace' => 'longhorn'
+}
+check(params == expected_params, 'Direct adoption must preserve every StorageClass parameter exactly')
 check(params['encrypted'] == 'true' && params['dataEngine'] == 'v1' && params['fsType'] == 'ext4',
       'V1 encrypted filesystem provisioning not explicit')
 check(params['numberOfReplicas'] == '3', 'New encrypted volumes must use three Longhorn replicas')
@@ -59,12 +67,15 @@ check(params.keys.grep(/secret-(name|namespace)\z/).size == 8, 'Unexpected CSI c
 check(!params.key?('CRYPTO_KEY_VALUE') && !sc.key?('data') && !sc.key?('stringData'),
       'Key material must not be rendered into the public class')
 check(params.values.none? { |value| value.start_with?('vault:') }, 'No OpenBao dependency for volume unlock')
-%w[02-controllers/longhorn/config-app.yml 02-controllers/longhorn/storageclass-encrypted.yaml].each do |path|
+%w[02-controllers/longhorn/config-app.yml 02-controllers/longhorn/storageclass-encrypted.yaml
+   02-controllers/longhorn/storageclass-configmap.yaml].each do |path|
   check(!File.exist?(File.join(ROOT, path)), 'Retired additional-class proposal is still selected')
 end
 
 # No workload/PVC-name changes or default-class switch are part of this rollout.
 values = document('02-controllers/longhorn/values.yml')
+check(values.dig('persistence', 'createStorageClass') == false,
+      'The chart must not create a duplicate StorageClass template')
 check(values.dig('persistence', 'defaultClass') == false, 'Original class default changed')
 check(values.dig('persistence', 'defaultClassReplicaCount') == 3, 'New PVC replica default must be three')
 check(!values.fetch('defaultSettings').key?('guaranteedInstanceManagerCPU'),
@@ -85,4 +96,4 @@ openbao = document('03-core/openbao/values.yml')
         'OpenBao must use right-sized encrypted Longhorn claims')
 end
 check(openbao.dig('server', 'ha', 'replicas') == 3, 'OpenBao must run one Raft voter per node')
-puts 'PASS: encrypted standard longhorn class, multi-source ConfigMap override, three replicas, complete CSI references'
+puts 'PASS: one directly owned encrypted Longhorn class, three replicas, complete CSI references'

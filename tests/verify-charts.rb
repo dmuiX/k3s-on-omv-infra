@@ -79,12 +79,10 @@ Dir.mktmpdir('infra-helm-check-') do |dir|
   crds = render('monitoring-crds', env)
   monitoring = render('kube-prometheus-stack', env)
   longhorn = render('longhorn', env)
-  # Argo's last source intentionally replaces the chart's ConfigMap with the
-  # reviewed encrypted StorageClass template.
-  longhorn_override = yaml_docs(File.read(File.join(ROOT, '02-controllers/longhorn', 'storageclass-configmap.yaml'))).first
-  longhorn_index = longhorn.index { |resource| resource['kind'] == 'ConfigMap' && resource.dig('metadata', 'name') == 'longhorn-storageclass' }
-  check(longhorn_index, 'Pinned Longhorn chart lost its storage-class ConfigMap')
-  longhorn[longhorn_index] = longhorn_override
+  check(longhorn.none? { |resource|
+          resource['kind'] == 'ConfigMap' && resource.dig('metadata', 'name') == 'longhorn-storageclass'
+        }, 'Pinned Longhorn chart must not render a duplicate storage-class ConfigMap')
+  longhorn.concat(yaml_docs(File.read(File.join(ROOT, '02-controllers/longhorn', 'storageclass.yaml'))))
   longhorn.concat(yaml_docs(File.read(File.join(ROOT, '02-controllers/longhorn', 'node-default-tags.yaml'))))
   longhorn.concat(yaml_docs(File.read(File.join(ROOT, '02-controllers/longhorn', 'monitoring-storage.yaml'))))
   openbao = render('openbao', env)
@@ -291,8 +289,7 @@ Dir.mktmpdir('infra-helm-check-') do |dir|
     check(kinds.include?(r['kind']), 'Rendered monitor has no corresponding bootstrap CRD')
   end
 
-  storage_cm = find_resource(longhorn, 'ConfigMap', 'longhorn-storageclass')
-  storage = YAML.safe_load(storage_cm.fetch('data').fetch('storageclass.yaml'))
+  storage = find_resource(longhorn, 'StorageClass', 'longhorn')
   check(storage.dig('metadata', 'name') == 'longhorn', 'Wrong StorageClass name')
   check(storage['provisioner'] == 'driver.longhorn.io', 'Wrong storage provisioner')
   check(storage.dig('metadata', 'annotations', 'storageclass.kubernetes.io/is-default-class') == 'false',
