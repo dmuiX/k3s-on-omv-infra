@@ -164,6 +164,69 @@ set. No CRD/MRD was deleted in this investigation. Acceptance must compare warm
 profiles under equivalent leader roles and workload, plus sustained memory/watch
 counts—not cold memory immediately after a restart.
 
+## Read-only feasibility research: 2026-10-13
+
+Current `origin/main` was refreshed to `16e69e0d89e79622aaf81cb6d5e4a8bfc75939d7`.
+The later Radar OIDC change adds four required Vault types; the old assumption
+that only the two database types are needed is no longer valid. Radar is healthy
+and its four objects exist. Current Argo exclusions no longer exclude the whole
+legacy identity group, but the live default MRAP still names only two types.
+
+A complete 253-type Vault API inventory used strictly negotiated
+`PartialObjectMetadataList` responses, with no full-payload fallback. Only
+name/namespace/UID/count were retained; labels/annotations/spec/status/credential
+fields were not persisted or printed. All 253 requests succeeded. Empty lists
+returned `items: null`, handled by a regression-checked parser.
+
+- 248 managed resource types: **242 empty candidates**, six nonempty retained.
+- Empty candidates: 124 namespaced and 118 cluster-scoped types.
+- Retain `SecretBackendConnection` (one instance), `SecretBackendStaticRole`
+  (two), and `OidcClient`, `OidcKey`, `OidcProvider`, `OidcScope` (one each).
+- Retain provider-configuration infrastructure: the existing `ProviderConfig`
+  and seven `ProviderConfigUsage` references; do not include the other three
+  configuration CRDs in the managed-type deletion set.
+- No live Compositions/CompositionRevisions/XRDs were listed. Fresh current Git
+  headers reference those six managed kinds. This is a point-in-time inventory,
+  not authorization or a guarantee against concurrent future creation.
+
+Exact source/lifecycle checks:
+
+- Crossplane **v2.4.2** forbids Active → Inactive via its MRD CEL rule.
+- Its package establisher preserves current Active state when desired is
+  Inactive. Updating the activation list or upgrading alone is not a reset.
+- The SafeStart-capable package creates missing MRDs as Inactive; narrow MRAP
+  activation can then activate only the retained types. This reset/reconcile
+  sequence must be demonstrated on an isolated test cluster before production.
+- CRDs have both MRD and ProviderRevision owners. Deleting an MRD alone does not
+  reliably remove its CRD; deleting only an Active CRD causes re-creation.
+- Provider-vault **v4.0.4** uses crossplane-runtime **v2.2.0**. Its CRD gate
+  releases startup callbacks only once and removes them afterward; setting a
+  gate false does not stop already-started controllers. A targeted provider
+  rollout after withdrawing unused CRDs is therefore part of the candidate
+  migration, not a K3s restart. The provider's get/list/watch CRD permissions
+  were verified, and its revision advertises SafeStart.
+
+Proposed order, **not executed**: extend future activation to all six retained
+kinds; test a single synthetic inactive-reset/CRD-withdrawal/provider-rollout
+cycle plus automatic re-registration/rollback; freeze creation for the exact
+unused set; recheck zero instances/current references; recreate only empty MRDs
+Inactive under the pinned package; remove only their empty CRDs with UID-bound
+preconditions; roll out only the provider; verify preserved seven instances,
+configuration UIDs, OIDC/database behavior, watch counts and warm leader-equivalent
+memory. Fresh source/ownership checks and explicit approval are required before
+any destructive production step. Do not uninstall the whole provider.
+
+Private inventory/candidate artifacts are retained locally. No CRD/MRD/resource
+was deleted, no live activation/configuration changed and no restart occurred
+in this research pass. Expected removable CRDs: 242 (389 → 147 if the migration
+works as tested); no exact GiB savings are promised.
+
+Sources: Crossplane `v2.4.2` `apis/apiextensions/v1alpha1/mrd_types.go`,
+`internal/controller/pkg/revision/{reconciler,establisher}.go`,
+`internal/controller/apiextensions/managed/{reconciler,crd}.go`;
+provider-vault `v4.0.4` `cmd/provider/main.go`; crossplane-runtime `v2.2.0`
+`pkg/{gate/gate,reconciler/customresourcesgate/reconciler}.go`.
+
 ## Live acceptance and rollback
 
 - Use the same single-owner Argo path; pin each selected operation to the tested
