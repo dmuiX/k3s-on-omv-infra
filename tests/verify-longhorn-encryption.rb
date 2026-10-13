@@ -67,8 +67,8 @@ end
 values = document('02-controllers/longhorn/values.yml')
 check(values.dig('persistence', 'defaultClass') == false, 'Original class default changed')
 check(values.dig('persistence', 'defaultClassReplicaCount') == 3, 'New PVC replica default must be three')
-check(values.dig('defaultSettings', 'guaranteedInstanceManagerCPU') == {'v1' => '12', 'v2' => '12'},
-      'Longhorn 1.12 instance-manager CPU setting must use the consolidated V1/V2 map')
+check(!values.fetch('defaultSettings').key?('guaranteedInstanceManagerCPU'),
+      'Default instance-manager CPU reservations must not be redundantly overridden')
 monitoring_policy = document('02-controllers/longhorn/monitoring-network-policy.yaml')
 check(monitoring_policy['kind'] == 'NetworkPolicy' &&
       monitoring_policy.dig('spec', 'podSelector', 'matchLabels') == {'app' => 'longhorn-manager'} &&
