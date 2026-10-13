@@ -9,10 +9,10 @@ The user subsequently explicitly renewed the request to implement the three
 measures. This revision applies only the reviewed monitoring/provider/cache
 changes through their existing GitOps owners. No CRD, managed external resource,
 Secret, PVC, PV, Longhorn volume, or retained TSDB/WAL data may be deleted.
-The user separately approved two NAS-only profiling/cleanup restarts and later
-conditionally requested comparison/profiling on the other two nodes. NAS
-maintenance is complete; changing either other host still requires a usable,
-explicitly agreed maintenance access path. No unproven process memory limit or
+The user separately approved two NAS-only profiling/cleanup restarts and then
+explicitly requested the same procedure on Pi and Wyse through the described
+short-lived privileged diagnostic Jobs. All three procedures are complete.
+No further host maintenance or automatic recurring restart was enabled. No unproven process memory limit or
 root-wide manual sync is part of this work.
 
 ## Fresh preflight
@@ -49,7 +49,7 @@ root-wide manual sync is part of this work.
    existing exclusions and visibility of every authored desired resource.
    Already active MRDs/CRDs stay registered; Active → Inactive is forbidden by
    Crossplane and would require a separate destructive migration.
-3. **K3s diagnosis — NAS completed, other nodes pending access gate:** the exact
+3. **K3s diagnosis — completed on all three nodes:** the exact
    installed K3s source confirms delegated authentication/authorization for
    profiling. All three etcd members passed health checks before NAS activation.
    An immutable root-owned cleanup helper, serialized cleanup lease, health
@@ -58,8 +58,14 @@ root-wide manual sync is part of this work.
    Sanitized heap/goroutine stack profiles were captured without requesting
    cmdline, environment, arbitrary memory or credential objects. The helper
    removed only its overlay and queued the second normal restart. Normal mode
-   returns HTTP 404 for authenticated profiling; timer is inactive/unloaded,
-   no cleanup job remains, and all three nodes/API targets are healthy.
+   returns HTTP 404 for authenticated profiling. Pi/Wyse used sequential,
+   digest-pinned, tokenless, bounded Jobs and the same owned cleanup helper,
+   protected by an exclusive renewable Kubernetes maintenance Lease. Their
+   unauthenticated profiling requests also returned 403. All profiling overlays
+   are absent, all original/delayed cleanup timers/services are inactive, and
+   all temporary diagnostic Jobs/Pods were removed with UID-bound deletion.
+   The maintenance Lease is released; all three etcd members/nodes/API targets
+   are healthy.
 
 ## Validation
 
@@ -83,23 +89,42 @@ resource is force-replaced. Rendered Secret contents are never printed.
   and must not be attributed solely to filtering.
 - Exact reviewed Argo exclusions are loaded; controller reports 197 cached API
   resource types. The default MRAP contains exactly the two required types.
-  All 253 loaded rules remain healthy; retained latency/storage metrics exist.
-- All nine protected PVC UIDs and twelve volume UIDs/replica counts remain intact.
+  The 253 original rules were healthy at the NAS gate; 264 current rules are
+  healthy at final peer acceptance (other actors added monitoring concurrently).
+  Retained latency/storage metric families remain present.
+- The original nine PVCs/twelve volumes were preserved at NAS acceptance. The
+  fresh peer-maintenance inventory contains twelve PVCs/fifteen volumes after
+  the separate database rollout; all their UIDs/replica counts were preserved.
 - NAS K3s working set fell from 4.21 GiB preflight to 1.87 GiB after the normal
   second restart. NAS process RSS is approximately 1.4 GiB versus about 3.7 GiB
   beforehand; goroutines decreased from ~24,600 to ~5,000.
 - This is a measured short-term restart effect, not proof of durable remediation
   or a memory leak. Heap samples highlight OpenAPI/schema encoding, CRD/CEL
   validation and watch/cache allocations. Sampled bytes are not exact RSS.
-- Existing scraped peer data: Wyse RSS ~3.56 GiB / ~18,200 goroutines; Pi RSS
-  ~1.96 GiB / ~23,800 goroutines. Direct SSH is denied, and a full Pi metrics
-  request timed out; peer comparison therefore uses already-ingested metrics.
-  No host configuration or restart was performed on either peer.
-- Eight cleanup-helper regression tests pass, including transport timeout,
-  exact health reply, busy lease, symlink/content/permissions rejection,
-  no-quorum deferral, and exactly-once restart behavior. Its actual root-owned
-  production systemd entrypoint also completed successfully, followed by real
-  service/endpoint/quorum/storage verification.
+- Wyse working set immediately before activation: 4.05 GiB; normal-mode
+  acceptance: 1.83 GiB. RSS fell from ~3.62 to ~1.40 GiB; the captured fresh
+  goroutine profile contains 4,355 goroutines (previous telemetry ~18,200).
+- Pi initial working set: 2.23 GiB; normal-mode acceptance: 1.34 GiB. Its
+  process PID had already changed before our activation, at which point working
+  set was 1.33 GiB. Thus the initial-to-final reduction cannot be attributed
+  solely to this procedure; the cause of that earlier restart remains unknown.
+  Its captured fresh goroutine profile contains 4,399 goroutines (initial
+  telemetry ~23,800). Both peers show similar OpenAPI/encoding/watch paths.
+- Twenty regression tests pass across cleanup, atomic overlay publication,
+  filesystem boundaries, exact health reply/timeout, wrong-target/peer refusal,
+  timer-before-publication ordering, delayed cleanup and bounded tokenless Jobs.
+  Actual immutable production entrypoints were exercised and accepted via real
+  profiling/normal endpoints, PID/start identities, etcd health and protected
+  storage checks—not merely Job/controller metadata.
+- Two Job-reporting problems were reproduced: a 45-second deadline raced a
+  successful exit on Wyse, and Pi's containerd restart lost an activation
+  container's exit status (`Unknown`/255). No activation was blindly replayed.
+  Job timeout was raised to 180 seconds; cleanup now uses a managed 15-second
+  delay so its diagnostic container exits before the host runtime restarts.
+  The updated Pi cleanup Job completed successfully before normal-host/endpoint
+  acceptance. Direct activation can still lose runtime status, so independent
+  host verification remains mandatory; a failed Job alone does not prove an
+  unexecuted restart.
 
 ## Live acceptance and rollback
 
