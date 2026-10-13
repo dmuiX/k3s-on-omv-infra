@@ -26,8 +26,8 @@ spec:
       path: 08-monitoring/kube-prometheus-stack/workload
   syncPolicy:
     automated:
-      # Pause database endpoint changes during the initial CNPG rebuild.
-      enabled: false
+      # Reconcile automatically while preserving resources during the CRD handoff.
+      enabled: true
       prune: false # CRDs move to monitoring-crds; do not prune them during handoff.
       selfHeal: true
       allowEmpty: false

@@ -18,7 +18,8 @@ spec:
       include: "{LimitRange.yaml,argocd-server-svc.yaml,argocd-cmd-params-cm.yml}"
   syncPolicy:
     automated:
-      prune: true
+      enabled: true
+      prune: false
       selfHeal: true
     syncOptions:
       - PruneLast=true

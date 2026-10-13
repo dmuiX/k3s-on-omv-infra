@@ -39,6 +39,15 @@ applications = app_files.flat_map { |path| YAML.load_stream(File.read(path)).com
 check(applications.all? { |app| app['kind'] == 'Application' }, 'Root discovers unexpected resources')
 apps = applications.to_h { |app| [app.dig('metadata', 'name'), app] }
 check(apps.size == applications.size, 'Duplicate Application names')
+root_automated = root.dig('spec', 'syncPolicy', 'automated')
+check(root_automated.is_a?(Hash) && root_automated['enabled'] != false &&
+      root_automated['prune'] == false && root_automated['selfHeal'] == true &&
+      applications.all? do |app|
+        automated = app.dig('spec', 'syncPolicy', 'automated')
+        automated.is_a?(Hash) && automated['enabled'] == true &&
+          automated['prune'] == false && automated['selfHeal'] == true
+      end,
+      'Root and child Applications must auto-sync and self-heal without automatic pruning')
 
 pki_path = '05-platform/openbao-pki/application.yml'
 postgresql_path = '06-data/cloudnative-pg/app.yml'

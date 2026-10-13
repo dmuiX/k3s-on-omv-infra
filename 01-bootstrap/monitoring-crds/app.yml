@@ -24,6 +24,7 @@ spec:
       ref: values
   syncPolicy:
     automated:
+      enabled: true
       prune: false # Never delete monitoring CRDs (and their instances) during migration.
       selfHeal: true
       allowEmpty: false

@@ -27,7 +27,8 @@ spec:
         include: pdb.yaml
   syncPolicy:
     automated:
-      prune: true
+      enabled: true
+      prune: false
       selfHeal: true
       allowEmpty: false
     retry:

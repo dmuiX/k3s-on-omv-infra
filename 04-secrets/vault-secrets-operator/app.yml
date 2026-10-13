@@ -32,6 +32,7 @@ spec:
                   memory: 256Mi
   syncPolicy:
     automated:
+      enabled: true
       prune: false
       selfHeal: true
     syncOptions:

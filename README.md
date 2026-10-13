@@ -106,7 +106,9 @@ bootstrap. Secrets such as Cloudflare tokens and backup passwords live
 in OpenBao, not Git. The public templates use non-secret `vault:` references;
 the private values file contains identifiers and private network endpoints, not
 credentials.
-The root and child Applications' automation and pruning settings require review before deployment.
+The root and all child Applications auto-sync and self-heal, but deliberately use
+`automated.prune: false`. Resource deletion therefore requires a separate reviewed
+cleanup instead of occurring as a side effect of a Git change.
 The Grafana subchart creates its initial random administrator Secret in-cluster.
 Argo ignores only the generated `admin-user` and `admin-password` data fields so
 subsequent Helm renders do not rotate them. The values are never committed or
@@ -124,9 +126,10 @@ OpenBao API configuration is limited to explicit ownership boundaries. The
 bootstrap Ansible workflow owns mounts, Kubernetes auth setup and trust policies,
 PKI configuration, initialization/seal/custody operations, and protected
 one-time inputs. The pinned Crossplane provider is allowed only to manage the
-PostgreSQL connection configuration and static database roles; it cannot manage
-OpenBao policies, auth roles, mounts or KV data. Argo CD owns the Kubernetes
-resources, while Crossplane reconciles only that bounded OpenBao database state.
+PostgreSQL connection configuration, static database roles, and application-owned
+Identity OIDC resources; it cannot manage OpenBao policies, auth roles, mounts or
+KV data. Argo CD owns the Kubernetes resources, while Crossplane reconciles only
+that bounded OpenBao state.
 Do not add generic OpenBao Jobs, CronJobs or polling reconcilers.
 
 The root intentionally retains `automated.prune: false`, and the former
