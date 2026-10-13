@@ -227,6 +227,50 @@ Sources: Crossplane `v2.4.2` `apis/apiextensions/v1alpha1/mrd_types.go`,
 provider-vault `v4.0.4` `cmd/provider/main.go`; crossplane-runtime `v2.2.0`
 `pkg/{gate/gate,reconciler/customresourcesgate/reconciler}.go`.
 
+## Dependency: bootstrap issue #46
+
+User clarification identifies the parallel migration as
+https://github.com/dmuiX/k3s-on-omv-bootstrap/issues/46, "Move steady-state
+OpenBao configuration to Crossplane GitOps". Its current researched ownership
+matrix adds twelve explicitly mapped future managed kinds beyond the six
+already in use:
+
+- `vault.vault.upbound.io`: `Mount`, `Policy`;
+- `kv.vault.upbound.io`: `SecretBackendV2`;
+- `auth.vault.upbound.io`: `Backend`;
+- `password.vault.upbound.io`: `Policy`;
+- `kubernetes.vault.upbound.io`: `AuthBackendRole`;
+- `database.vault.upbound.io`: `SecretBackendRole`;
+- `identity.vault.upbound.io`: `Group`, `OidcRole`;
+- `pki.vault.upbound.io`: `SecretBackendRole`, `SecretBackendConfigUrls`,
+  `SecretBackendCrlConfig`.
+
+All twelve resolve to installed pinned MRDs and currently have zero instances
+in the metadata inventory. **Zero today does not mean permanently unused.**
+Reserve them in the coordination matrix; do not withdraw types belonging to an
+active #46 stage. Other currently empty definitions may remain available but
+Inactive, then be activated through Git only when the corresponding reviewed
+stage needs them. Keep the complete pinned provider package rather than a
+six-kind-only fork. The earlier 242-empty count is an inventory, not a final
+approved destructive set.
+
+Reactivation requires the MRAP/Helm future-activation list, matching Argo
+visibility and health handling, CRD establishment/SafeStart acceptance, and #46's
+security/adoption gates. Keep bootstrap trust root, provider's own policy/auth
+role, ProviderConfig/ServiceAccount/package/runtime and secret custody outside
+provider ownership. Reservation/registration is not authorization to expand the
+provider's OpenBao privileges. Existing object adoption remains Observe-only,
+Orphan and non-pruning until exact importer/no-rotation/drift/rollback evidence.
+
+Potential newly created OIDC assignments or other later-selected types require
+an additional reviewed mapping; unsupported imports, global destructive OIDC
+reset, human enrollment and one-shot PKI key ceremonies are not implied by the
+reservation. The test migration must prove reactivation of an additional reserved
+kind after withdrawal, not only successful removal of an unused kind.
+
+No live activation, privilege, registration, resource or restart was changed
+while coordinating this dependency.
+
 ## Live acceptance and rollback
 
 - Use the same single-owner Argo path; pin each selected operation to the tested
