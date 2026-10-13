@@ -92,8 +92,11 @@ rendered = {}
   check(wave(app) == stage && wave(apps.fetch(dependency)) <= stage &&
         (!service || wave(apps.fetch('cert-manager-config')) <= stage),
         "#{name} is scheduled before its backend/certificate dependency")
-  chart_source, values_source = app.dig('spec', 'sources')
-  check(chart_source['repoURL'] == public_url && chart_source['path'] == 'charts/cluster-config' &&
+  sources = app.dig('spec', 'sources')
+  chart_source = sources.find { |source| source['path'] == 'charts/cluster-config' }
+  values_source = sources.find { |source| source['ref'] == 'values' }
+  check(chart_source && values_source &&
+        chart_source['repoURL'] == public_url && chart_source['path'] == 'charts/cluster-config' &&
         chart_source.dig('helm', 'valueFiles') == ['$values/clusters/omv/values.yml'] &&
         chart_source.dig('helm', 'parameters', 0) == { 'name' => 'component', 'value' => component } &&
         values_source['repoURL'] == 'https://github.com/dmuiX/k3s-on-omv-live.git' &&

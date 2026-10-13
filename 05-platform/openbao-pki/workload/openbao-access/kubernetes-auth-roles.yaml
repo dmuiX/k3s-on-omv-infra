@@ -1,0 +1,63 @@
+apiVersion: kubernetes.vault.upbound.io/v1alpha1
+kind: AuthBackendRole
+metadata:
+  name: cert-manager-pki-services
+  annotations:
+    crossplane.io/external-name: auth/kubernetes/role/cert-manager-pki-services
+spec:
+  deletionPolicy: Orphan
+  managementPolicies:
+    - Observe
+  providerConfigRef:
+    name: openbao
+  forProvider:
+    backend: kubernetes
+    roleName: cert-manager-pki-services
+    boundServiceAccountNames:
+      - openbao-pki-services
+    boundServiceAccountNamespaces:
+      - cert-manager
+    audience: vault://openbao-pki-services
+    aliasNameSource: serviceaccount_uid
+    tokenPolicies:
+      - cert-manager-pki-services-sign
+    tokenTtl: 3600
+    tokenMaxTtl: 3600
+    tokenExplicitMaxTtl: 0
+    tokenPeriod: 0
+    tokenNumUses: 0
+    tokenBoundCidrs: []
+    tokenType: default
+    tokenNoDefaultPolicy: true
+---
+apiVersion: kubernetes.vault.upbound.io/v1alpha1
+kind: AuthBackendRole
+metadata:
+  name: cert-manager-pki-clients
+  annotations:
+    crossplane.io/external-name: auth/kubernetes/role/cert-manager-pki-clients
+spec:
+  deletionPolicy: Orphan
+  managementPolicies:
+    - Observe
+  providerConfigRef:
+    name: openbao
+  forProvider:
+    backend: kubernetes
+    roleName: cert-manager-pki-clients
+    boundServiceAccountNames:
+      - openbao-pki-clients
+    boundServiceAccountNamespaces:
+      - cert-manager
+    audience: vault://openbao-pki-clients
+    aliasNameSource: serviceaccount_uid
+    tokenPolicies:
+      - cert-manager-pki-clients-sign
+    tokenTtl: 3600
+    tokenMaxTtl: 3600
+    tokenExplicitMaxTtl: 0
+    tokenPeriod: 0
+    tokenNumUses: 0
+    tokenBoundCidrs: []
+    tokenType: default
+    tokenNoDefaultPolicy: true

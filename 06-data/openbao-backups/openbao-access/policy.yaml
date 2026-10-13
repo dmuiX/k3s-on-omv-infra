@@ -1,0 +1,23 @@
+apiVersion: vault.vault.upbound.io/v1alpha1
+kind: Policy
+metadata:
+  name: openbao-snapshot
+  annotations:
+    crossplane.io/external-name: openbao-snapshot
+spec:
+  deletionPolicy: Orphan
+  managementPolicies:
+    - Observe
+  providerConfigRef:
+    name: openbao
+  forProvider:
+    name: openbao-snapshot
+    policy: |
+      # Native Raft backup plus only the dedicated R2 credential object.
+      path "sys/storage/raft/snapshot" {
+        capabilities = ["read"]
+      }
+
+      path "kv/data/openbao-snapshots/r2-credentials" {
+        capabilities = ["read"]
+      }

@@ -1,0 +1,34 @@
+apiVersion: vault.vault.upbound.io/v1alpha1
+kind: Policy
+metadata:
+  name: postgresql-vso-read
+  annotations:
+    crossplane.io/external-name: postgresql-vso-read
+spec:
+  deletionPolicy: Orphan
+  managementPolicies:
+    - Observe
+  providerConfigRef:
+    name: openbao
+  forProvider:
+    name: postgresql-vso-read
+    policy: |
+      path "auth/token/renew-self" {
+        capabilities = ["update"]
+      }
+
+      path "kv/data/postgresql/openbao-manager" {
+        capabilities = ["read"]
+      }
+
+      path "kv/metadata/postgresql/openbao-manager" {
+        capabilities = ["read"]
+      }
+
+      path "kv/data/postgresql/r2-credentials" {
+        capabilities = ["read"]
+      }
+
+      path "kv/metadata/postgresql/r2-credentials" {
+        capabilities = ["read"]
+      }

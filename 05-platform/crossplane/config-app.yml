@@ -10,10 +10,16 @@ spec:
     name: in-cluster
     namespace: crossplane-system
   project: default
-  source:
-    repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
-    targetRevision: main
-    path: 03-core/crossplane/provider-config
+  sources:
+    - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
+      targetRevision: main
+      path: 03-core/crossplane/provider-config
+    # VSW is removed by #42. Observe its existing OpenBao access contract from
+    # the first provider-ready wave instead of making the Wave 4 controller wait
+    # on this Wave 5 ProviderConfig during the temporary ownership handoff.
+    - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
+      targetRevision: main
+      path: 04-secrets/vault-secrets-webhook/openbao-access
   syncPolicy:
     automated:
       enabled: true

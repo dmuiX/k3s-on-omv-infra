@@ -7,6 +7,8 @@ ruby tests/verify-bootstrap.rb   # multi-source Helm, waves, values, storage con
 ruby tests/verify-cert-manager-network-policy.rb # wave-2 ownership and exact private API egress
 ruby tests/verify-application-health.rb # minimal child Application health passthrough (Lua or pinned npx fallback)
 ruby tests/verify-openbao-pki.rb # native PKI identities/RBAC/issuers/certificate render
+ruby tests/verify-openbao-ownership.rb # consumer-owned OpenBao access contracts
+ruby tests/verify-openbao-configuration.rb # shared OpenBao configuration and provider self-boundary
 ruby tests/verify-postgresql.rb # CNPG HA/storage/backup/policy and pinned chart renders
 ruby tests/verify-ingress.rb     # no live-specific resources selected by the public root
 ruby tests/verify-longhorn-encryption.rb # Helm override and complete key references

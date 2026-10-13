@@ -1,0 +1,24 @@
+apiVersion: kubernetes.vault.upbound.io/v1alpha1
+kind: AuthBackendRole
+metadata:
+  name: openbao-snapshot
+  annotations:
+    crossplane.io/external-name: auth/kubernetes/role/openbao-snapshot
+spec:
+  deletionPolicy: Orphan
+  managementPolicies:
+    - Observe
+  providerConfigRef:
+    name: openbao
+  forProvider:
+    backend: kubernetes
+    roleName: openbao-snapshot
+    boundServiceAccountNames:
+      - openbao-snapshot
+    boundServiceAccountNamespaces:
+      - openbao
+    audience: ""
+    tokenPolicies:
+      - openbao-snapshot
+    tokenTtl: 900
+    tokenNoDefaultPolicy: true

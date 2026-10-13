@@ -5,3 +5,4 @@ resources:
   - rbac.yaml
   - issuers.yaml
   - openbao-internal-certificate.yaml
+  - openbao-access

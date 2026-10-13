@@ -36,8 +36,9 @@ raise "Kustomize failed: #{stderr}" unless result.success?
 resources = YAML.load_stream(output).compact
 find_all = ->(kind) { resources.select { |resource| resource['kind'] == kind } }
 check(resources.map { |resource| resource['kind'] }.sort ==
-      %w[Certificate ClusterIssuer ClusterIssuer Role RoleBinding ServiceAccount ServiceAccount].sort,
-      'PKI workload must contain only issuers, certificate and cert-manager identity/RBAC resources')
+      %w[AuthBackendRole AuthBackendRole Certificate ClusterIssuer ClusterIssuer Policy Policy Role RoleBinding
+         SecretBackendRole SecretBackendRole ServiceAccount ServiceAccount].sort,
+      'PKI workload must contain only issuers, certificate, identity/RBAC and observe-only OpenBao resources')
 check(resources.none? { |resource| %w[Job CronJob ConfigMap NetworkPolicy].include?(resource['kind']) },
       'PKI workload must not render a custom polling reconciler')
 

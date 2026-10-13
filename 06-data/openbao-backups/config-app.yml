@@ -20,6 +20,9 @@ spec:
         parameters:
           - name: component
             value: backups
+    - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
+      targetRevision: main
+      path: 06-data/openbao-backups/openbao-access
     - repoURL: https://github.com/dmuiX/k3s-on-omv-live.git
       targetRevision: main
       ref: values

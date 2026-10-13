@@ -73,7 +73,7 @@ check(cert_manager_network_source && cert_manager_private_source &&
 postgres_infra_sources = postgresql_app.fetch('spec').fetch('sources').select do |candidate|
   candidate['repoURL'] == source['repoURL']
 end
-check(postgres_infra_sources.length == 3 &&
+check(postgres_infra_sources.length == 4 &&
       postgres_infra_sources.all? { |candidate| candidate['targetRevision'] == INFRA_REVISION },
       'All same-repository PostgreSQL sources must track the Infra main branch')
 # Public Applications own all resources; only their real value overrides are private.
@@ -187,12 +187,18 @@ check(wave(health) <= applications.map { |app| wave(app) }.min,
 health_keys = health.fetch('data').keys
 check(health_keys.sort == [
         'resource.customizations.health.argoproj.io_Application',
+        'resource.customizations.health.auth.vault.upbound.io_Backend',
         'resource.customizations.health.identity.vault.upbound.io_OidcClient',
         'resource.customizations.health.identity.vault.upbound.io_OidcKey',
         'resource.customizations.health.identity.vault.upbound.io_OidcProvider',
         'resource.customizations.health.identity.vault.upbound.io_OidcScope',
+        'resource.customizations.health.kubernetes.vault.upbound.io_AuthBackendRole',
+        'resource.customizations.health.kv.vault.upbound.io_SecretBackendV2',
+        'resource.customizations.health.pki.vault.upbound.io_SecretBackendRole',
         'resource.customizations.health.secrets.hashicorp.com_VaultDynamicSecret',
         'resource.customizations.health.secrets.hashicorp.com_VaultStaticSecret',
+        'resource.customizations.health.vault.vault.upbound.io_Mount',
+        'resource.customizations.health.vault.vault.upbound.io_Policy',
         'resource.exclusions'
       ].sort,
       'Argo must retain only reviewed health contracts and resource exclusions')
@@ -253,8 +259,10 @@ check(postgres_sources.count { |entry| entry['chart'] } == 2 &&
   'longhorn-route' => ['longhorn', 5], 'openbao-route' => ['openbao', 5],
   'cert-manager-config' => ['certificates', 5], 'openbao-config' => ['backups', 6] }.each do |name, (component, stage)|
   app = apps.fetch(name)
-  chart, private_values = app.dig('spec', 'sources')
-  check(wave(app) == stage && chart['path'] == 'charts/cluster-config' &&
+  sources = app.dig('spec', 'sources')
+  chart = sources.find { |source| source['path'] == 'charts/cluster-config' }
+  private_values = sources.find { |source| source['ref'] == 'values' }
+  check(wave(app) == stage && chart && private_values &&
         chart.dig('helm', 'parameters', 0) == { 'name' => 'component', 'value' => component } &&
         chart.dig('helm', 'valueFiles') == ['$values/clusters/omv/values.yml'] &&
         chart['targetRevision'] == INFRA_REVISION &&

@@ -11,8 +11,17 @@ static_secret_key = 'resource.customizations.health.secrets.hashicorp.com_VaultS
 oidc_keys = %w[OidcKey OidcScope OidcClient OidcProvider].map do |kind|
   "resource.customizations.health.identity.vault.upbound.io_#{kind}"
 end
+crossplane_keys = [
+  'resource.customizations.health.vault.vault.upbound.io_Policy',
+  'resource.customizations.health.kubernetes.vault.upbound.io_AuthBackendRole',
+  'resource.customizations.health.auth.vault.upbound.io_Backend',
+  'resource.customizations.health.vault.vault.upbound.io_Mount',
+  'resource.customizations.health.kv.vault.upbound.io_SecretBackendV2',
+  'resource.customizations.health.pki.vault.upbound.io_SecretBackendRole'
+]
 data = config.fetch('data')
-expected_keys = [application_key, dynamic_secret_key, static_secret_key, *oidc_keys, 'resource.exclusions']
+expected_keys = [application_key, dynamic_secret_key, static_secret_key, *oidc_keys, *crossplane_keys,
+                 'resource.exclusions']
 raise 'Only reviewed health contracts and resource exclusions may be configured' unless data.keys.sort == expected_keys.sort
 
 lua = data.fetch(application_key)
@@ -33,6 +42,14 @@ oidc_keys.each do |key|
     oidc_lua.include?('condition.status == "True"') &&
     oidc_lua.include?('condition.reason == "ReconcileError"')
 end
+crossplane_keys.each do |key|
+  crossplane_lua = data.fetch(key)
+  raise "#{key} health must use only the generic Crossplane Ready contract" unless
+    crossplane_lua.include?('condition.type == "Ready"') &&
+    crossplane_lua.include?('condition.status == "True"') &&
+    crossplane_lua.include?('condition.status == "False"') &&
+    !crossplane_lua.include?('condition.reason ==')
+end
 %w[longhorn.io postgres-operator.crunchydata.com].each do |workload_detail|
   raise "Application health must not inspect #{workload_detail}" if lua.include?(workload_detail)
 end
@@ -41,6 +58,8 @@ def lua_literal(value)
   case value
   when Hash
     '{' + value.map { |key, child| "[#{key.dump}]=#{lua_literal(child)}" }.join(', ') + '}'
+  when Array
+    '{' + value.map { |child| lua_literal(child) }.join(', ') + '}'
   when String then value.dump
   else raise "Unexpected fixture type: #{value.class}"
   end
@@ -86,4 +105,21 @@ fixtures.each do |input, expected|
   raise "Expected #{expected.inspect}, got #{stdout.inspect}" unless stdout == expected.join("\n")
 end
 
-puts "PASS: generic Argo Application sync and health propagation (#{fixtures.length} cases)"
+crossplane_fixtures = [
+  [{}, ['Progressing', 'Waiting for Crossplane Ready condition']],
+  [{'status' => {'conditions' => [{'type' => 'Ready', 'status' => 'True', 'message' => 'observed'}]}},
+   ['Healthy', 'observed']],
+  [{'status' => {'conditions' => [{'type' => 'Ready', 'status' => 'False', 'reason' => 'Unavailable'}]}},
+   ['Degraded', 'Unavailable']]
+]
+crossplane_keys.each do |key|
+  crossplane_fixtures.each do |input, expected|
+    program = "local function evaluate(obj)\n#{data.fetch(key)}\nend\n" \
+              "local result = evaluate(#{lua_literal(input)})\nio.write(result.status .. '\\n' .. result.message)\n"
+    stdout, stderr, status = Open3.capture3(*lua_command, '-e', program)
+    raise "#{key} Lua health test failed: #{stderr}" unless status.success?
+    raise "#{key}: expected #{expected.inspect}, got #{stdout.inspect}" unless stdout == expected.join("\n")
+  end
+end
+
+puts "PASS: generic Argo Application and Crossplane Ready health contracts"

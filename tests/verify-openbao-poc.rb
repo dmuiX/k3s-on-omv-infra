@@ -89,8 +89,12 @@ assert File.read(File.join(ROOT, '../k3s-on-omv-bootstrap/ansible/roles/gitops_b
        File.read(File.join(ROOT, '../k3s-on-omv-bootstrap/ansible/roles/gitops_bootstrap/files/openbao-access/policy_files/radar-vso-read.hcl')).include?('database/static-creds/radar'),
        'VSO read policies must be limited to one static role each'
 provider_policy = File.read(File.join(ROOT, '../k3s-on-omv-bootstrap/ansible/roles/gitops_bootstrap/files/openbao-access/policy_files/crossplane-provider-vault.hcl'))
-assert !provider_policy.include?('sys/policies/acl') && !provider_policy.include?('auth/kubernetes/role'),
-       'Crossplane provider must not receive policy or auth-role administration privileges'
+provider_policy.scan(/path\s+"([^"]+)"\s*\{(.*?)\}/m).each do |path, body|
+  next unless path.start_with?('sys/policies/acl') || path.start_with?('auth/kubernetes/role')
+
+  assert (body.scan(/"([^"]+)"/).flatten & %w[create update delete patch sudo]).empty?,
+         "Crossplane provider must not administer policy or auth-role path #{path}"
+end
 openbao_values = YAML.load_file(File.join(ROOT, '03-core/openbao/values.yml'))
 ca_volume = openbao_values.dig('server', 'volumes').find { |volume| volume['name'] == 'postgresql-ca' }
 ca_mount = openbao_values.dig('server', 'volumeMounts').find { |mount| mount['name'] == 'postgresql-ca' }

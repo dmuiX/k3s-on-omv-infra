@@ -42,6 +42,9 @@ spec:
       kustomize: {}
     - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
       targetRevision: main
+      path: 06-data/cloudnative-pg/openbao-access
+    - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
+      targetRevision: main
       path: 06-data/cloudnative-pg/controllers
       directory:
         include: "{namespace.yaml,networkpolicy.yaml,pdbs.yaml}"

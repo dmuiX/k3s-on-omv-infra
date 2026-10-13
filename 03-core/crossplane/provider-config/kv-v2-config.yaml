@@ -1,0 +1,14 @@
+apiVersion: kv.vault.upbound.io/v1alpha1
+kind: SecretBackendV2
+metadata:
+  name: kv-config
+  annotations:
+    crossplane.io/external-name: kv/config
+spec:
+  deletionPolicy: Orphan
+  managementPolicies:
+    - Observe
+  forProvider:
+    mount: kv
+  providerConfigRef:
+    name: openbao

@@ -1,0 +1,22 @@
+apiVersion: vault.vault.upbound.io/v1alpha1
+kind: Policy
+metadata:
+  name: radar-vso-read
+  annotations:
+    crossplane.io/external-name: radar-vso-read
+spec:
+  deletionPolicy: Orphan
+  managementPolicies:
+    - Observe
+  providerConfigRef:
+    name: openbao
+  forProvider:
+    name: radar-vso-read
+    policy: |
+      path "auth/token/renew-self" {
+        capabilities = ["update"]
+      }
+
+      path "database/static-creds/radar" {
+        capabilities = ["read"]
+      }

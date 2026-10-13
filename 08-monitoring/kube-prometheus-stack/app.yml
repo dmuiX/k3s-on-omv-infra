@@ -24,6 +24,9 @@ spec:
     - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
       targetRevision: main
       path: 08-monitoring/kube-prometheus-stack/workload
+    - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
+      targetRevision: main
+      path: 08-monitoring/kube-prometheus-stack/openbao-access
   syncPolicy:
     automated:
       # Reconcile automatically while preserving resources during the CRD handoff.

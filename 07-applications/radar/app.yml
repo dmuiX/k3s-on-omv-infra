@@ -29,6 +29,9 @@ spec:
         releaseName: radar-platform
         valueFiles:
           - $private/clusters/omv/values.yml
+    - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
+      targetRevision: main
+      path: 07-applications/radar/openbao-access
     - repoURL: https://github.com/dmuiX/k3s-on-omv-live.git
       targetRevision: main
       ref: private

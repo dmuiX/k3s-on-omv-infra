@@ -4,5 +4,15 @@
 # Never delete an MRD/CRD or an external resource to enforce this list.
 provider:
   defaultActivations:
+    - authbackendroles.kubernetes.vault.upbound.io
+    - backends.auth.vault.upbound.io
+    - mounts.vault.vault.upbound.io
+    - oidcclients.identity.vault.upbound.io
+    - oidckeys.identity.vault.upbound.io
+    - oidcproviders.identity.vault.upbound.io
+    - oidcscopes.identity.vault.upbound.io
+    - policies.vault.vault.upbound.io
     - secretbackendconnections.database.vault.upbound.io
+    - secretbackendroles.pki.vault.upbound.io
     - secretbackendstaticroles.database.vault.upbound.io
+    - secretbackendv2s.kv.vault.upbound.io

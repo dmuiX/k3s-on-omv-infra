@@ -1,0 +1,26 @@
+apiVersion: vault.vault.upbound.io/v1alpha1
+kind: Policy
+metadata:
+  name: human-admin
+  annotations:
+    crossplane.io/external-name: human-admin
+spec:
+  deletionPolicy: Orphan
+  managementPolicies:
+    - Observe
+  forProvider:
+    name: human-admin
+    policy: |
+      # Personal administrator only; not for the webhook or configuration Job.
+      # This policy is highly privileged and can grant further permissions.
+      path "sys/mounts"          { capabilities = ["read"] }
+      path "sys/mounts/*"        { capabilities = ["create", "read", "update", "delete", "list", "sudo"] }
+      path "sys/auth"            { capabilities = ["read"] }
+      path "sys/auth/*"          { capabilities = ["create", "read", "update", "delete", "list", "sudo"] }
+      path "sys/policies/acl"    { capabilities = ["list"] }
+      path "sys/policies/acl/*"  { capabilities = ["create", "read", "update", "delete", "list"] }
+      path "auth/*"             { capabilities = ["create", "read", "update", "delete", "list", "sudo"] }
+      path "identity/*"         { capabilities = ["create", "read", "update", "delete", "list", "sudo"] }
+      path "kv/*"               { capabilities = ["create", "read", "update", "delete", "list", "patch"] }
+  providerConfigRef:
+    name: openbao

@@ -31,7 +31,6 @@ data:
         - alicloud.vault.upbound.io
         - approle.vault.upbound.io
         - audit.vault.upbound.io
-        - auth.vault.upbound.io
         - aws.vault.upbound.io
         - azure.vault.upbound.io
         - cert.vault.upbound.io
@@ -42,8 +41,6 @@ data:
         - github.vault.upbound.io
         - jwt.vault.upbound.io
         - kmip.vault.upbound.io
-        - kubernetes.vault.upbound.io
-        - kv.vault.upbound.io
         - ldap.vault.upbound.io
         - managed.vault.upbound.io
         - mfa.vault.upbound.io
@@ -51,7 +48,6 @@ data:
         - nomad.vault.upbound.io
         - okta.vault.upbound.io
         - password.vault.upbound.io
-        - pki.vault.upbound.io
         - quota.vault.upbound.io
         - rabbitmq.vault.upbound.io
         - raft.vault.upbound.io
@@ -61,8 +57,17 @@ data:
         - token.vault.upbound.io
         - transform.vault.upbound.io
         - transit.vault.upbound.io
-        - vault.vault.upbound.io
       kinds: ['*']
+    # Argo exclusions cannot express "all kinds except". Keep the exact
+    # stage-1 APIs visible and enumerate the other kinds in their API groups.
+    - apiGroups: [kubernetes.vault.upbound.io]
+      kinds: [AuthBackendConfig, SecretBackend, SecretBackendRole]
+    - apiGroups: [kv.vault.upbound.io]
+      kinds: [Secret, SecretV2]
+    - apiGroups: [pki.vault.upbound.io]
+      kinds: [SecretBackendCert, SecretBackendConfigCA, SecretBackendConfigUrls, SecretBackendCrlConfig, SecretBackendIntermediateCertRequest, SecretBackendIntermediateSetSigned, SecretBackendRootCert, SecretBackendRootSignIntermediate, SecretBackendSign]
+    - apiGroups: [vault.vault.upbound.io]
+      kinds: [Audit, Token, VaultNamespace]
     - apiGroups: [apiextensions.crossplane.io]
       kinds: [ManagedResourceDefinition]
   # Expose only the generic child Application contract required by app-of-apps waves.
@@ -92,6 +97,96 @@ data:
       hs.message = status.health.message or ""
     else
       hs.message = "Waiting for child Application health"
+    end
+    return hs
+  resource.customizations.health.vault.vault.upbound.io_Policy: |
+    local hs = {status = "Progressing", message = "Waiting for Crossplane Ready condition"}
+    if obj.status == nil or obj.status.conditions == nil then return hs end
+    for _, condition in ipairs(obj.status.conditions) do
+      if condition.type == "Ready" then
+        hs.message = condition.message or condition.reason or hs.message
+        if condition.status == "True" then
+          hs.status = "Healthy"
+        elseif condition.status == "False" then
+          hs.status = "Degraded"
+        end
+        return hs
+      end
+    end
+    return hs
+  resource.customizations.health.kubernetes.vault.upbound.io_AuthBackendRole: |
+    local hs = {status = "Progressing", message = "Waiting for Crossplane Ready condition"}
+    if obj.status == nil or obj.status.conditions == nil then return hs end
+    for _, condition in ipairs(obj.status.conditions) do
+      if condition.type == "Ready" then
+        hs.message = condition.message or condition.reason or hs.message
+        if condition.status == "True" then
+          hs.status = "Healthy"
+        elseif condition.status == "False" then
+          hs.status = "Degraded"
+        end
+        return hs
+      end
+    end
+    return hs
+  resource.customizations.health.auth.vault.upbound.io_Backend: |
+    local hs = {status = "Progressing", message = "Waiting for Crossplane Ready condition"}
+    if obj.status == nil or obj.status.conditions == nil then return hs end
+    for _, condition in ipairs(obj.status.conditions) do
+      if condition.type == "Ready" then
+        hs.message = condition.message or condition.reason or hs.message
+        if condition.status == "True" then
+          hs.status = "Healthy"
+        elseif condition.status == "False" then
+          hs.status = "Degraded"
+        end
+        return hs
+      end
+    end
+    return hs
+  resource.customizations.health.vault.vault.upbound.io_Mount: |
+    local hs = {status = "Progressing", message = "Waiting for Crossplane Ready condition"}
+    if obj.status == nil or obj.status.conditions == nil then return hs end
+    for _, condition in ipairs(obj.status.conditions) do
+      if condition.type == "Ready" then
+        hs.message = condition.message or condition.reason or hs.message
+        if condition.status == "True" then
+          hs.status = "Healthy"
+        elseif condition.status == "False" then
+          hs.status = "Degraded"
+        end
+        return hs
+      end
+    end
+    return hs
+  resource.customizations.health.kv.vault.upbound.io_SecretBackendV2: |
+    local hs = {status = "Progressing", message = "Waiting for Crossplane Ready condition"}
+    if obj.status == nil or obj.status.conditions == nil then return hs end
+    for _, condition in ipairs(obj.status.conditions) do
+      if condition.type == "Ready" then
+        hs.message = condition.message or condition.reason or hs.message
+        if condition.status == "True" then
+          hs.status = "Healthy"
+        elseif condition.status == "False" then
+          hs.status = "Degraded"
+        end
+        return hs
+      end
+    end
+    return hs
+  resource.customizations.health.pki.vault.upbound.io_SecretBackendRole: |
+    local hs = {status = "Progressing", message = "Waiting for Crossplane Ready condition"}
+    if obj.status == nil or obj.status.conditions == nil then return hs end
+    for _, condition in ipairs(obj.status.conditions) do
+      if condition.type == "Ready" then
+        hs.message = condition.message or condition.reason or hs.message
+        if condition.status == "True" then
+          hs.status = "Healthy"
+        elseif condition.status == "False" then
+          hs.status = "Degraded"
+        end
+        return hs
+      end
     end
     return hs
   resource.customizations.health.identity.vault.upbound.io_OidcKey: |

@@ -4,7 +4,10 @@ kind: ProviderConfig
 metadata:
   name: openbao
   annotations:
-    argocd.argoproj.io/sync-wave: "1"
+    # This source also contains OpenBao managed resources. Establish their
+    # provider reference first so Argo cannot wait on resources from an earlier
+    # child wave that have no ProviderConfig yet.
+    argocd.argoproj.io/sync-wave: "-1"
 spec:
   address: http://openbao-active.openbao.svc.cluster.local:8200
   credentials:

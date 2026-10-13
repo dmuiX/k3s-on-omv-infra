@@ -1,0 +1,130 @@
+apiVersion: pki.vault.upbound.io/v1alpha1
+kind: SecretBackendRole
+metadata:
+  name: services
+  annotations:
+    crossplane.io/external-name: pki-services/roles/services
+spec:
+  deletionPolicy: Orphan
+  managementPolicies:
+    - Observe
+  providerConfigRef:
+    name: openbao
+  forProvider:
+    backend: pki-services
+    name: services
+    issuerRef: default
+    allowedDomains:
+      - svc
+      - svc.cluster.local
+    allowedDomainsTemplate: false
+    allowSubdomains: true
+    allowBareDomains: false
+    allowGlobDomains: false
+    allowWildcardCertificates: false
+    allowAnyName: false
+    enforceHostnames: true
+    allowIpSans: false
+    allowedUriSans: []
+    allowedUriSansTemplate: false
+    allowedOtherSans: []
+    allowedSerialNumbers: []
+    allowedUserIds: []
+    allowLocalhost: false
+    cnValidations:
+      - hostname
+    serverFlag: true
+    clientFlag: false
+    codeSigningFlag: false
+    emailProtectionFlag: false
+    keyType: rsa
+    keyBits: 2048
+    keyUsage:
+      - DigitalSignature
+      - KeyEncipherment
+    extKeyUsage: []
+    extKeyUsageOids: []
+    policyIdentifiers: []
+    ou: []
+    organization: []
+    country: []
+    locality: []
+    province: []
+    streetAddress: []
+    postalCode: []
+    basicConstraintsValidForNonCa: false
+    ttl: "7776000"
+    maxTtl: "7776000"
+    notBeforeDuration: "30"
+    requireCn: false
+    useCsrCommonName: true
+    useCsrSans: true
+    usePss: false
+    signatureBits: 0
+    generateLease: false
+    noStore: false
+---
+apiVersion: pki.vault.upbound.io/v1alpha1
+kind: SecretBackendRole
+metadata:
+  name: clients
+  annotations:
+    crossplane.io/external-name: pki-clients/roles/clients
+spec:
+  deletionPolicy: Orphan
+  managementPolicies:
+    - Observe
+  providerConfigRef:
+    name: openbao
+  forProvider:
+    backend: pki-clients
+    name: clients
+    issuerRef: default
+    allowedDomains:
+      - clients.cluster.local
+    allowedDomainsTemplate: false
+    allowSubdomains: true
+    allowBareDomains: false
+    allowGlobDomains: false
+    allowWildcardCertificates: false
+    allowAnyName: false
+    enforceHostnames: true
+    allowIpSans: false
+    allowedUriSans: []
+    allowedUriSansTemplate: false
+    allowedOtherSans: []
+    allowedSerialNumbers: []
+    allowedUserIds: []
+    allowLocalhost: false
+    cnValidations:
+      - hostname
+    serverFlag: false
+    clientFlag: true
+    codeSigningFlag: false
+    emailProtectionFlag: false
+    keyType: rsa
+    keyBits: 2048
+    keyUsage:
+      - DigitalSignature
+      - KeyEncipherment
+    extKeyUsage: []
+    extKeyUsageOids: []
+    policyIdentifiers: []
+    ou: []
+    organization: []
+    country: []
+    locality: []
+    province: []
+    streetAddress: []
+    postalCode: []
+    basicConstraintsValidForNonCa: false
+    ttl: "7776000"
+    maxTtl: "7776000"
+    notBeforeDuration: "30"
+    requireCn: false
+    useCsrCommonName: true
+    useCsrSans: true
+    usePss: false
+    signatureBits: 0
+    generateLease: false
+    noStore: false

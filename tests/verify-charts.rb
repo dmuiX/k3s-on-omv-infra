@@ -113,8 +113,22 @@ Dir.mktmpdir('infra-helm-check-') do |dir|
         'Radar route must follow authenticated workload reconciliation')
   core = find_resource(crossplane, 'Deployment', 'crossplane')
   init_args = core.dig('spec', 'template', 'spec', 'initContainers', 0, 'args')
-  check(init_args == ['core', 'init', '--activation', 'secretbackendconnections.database.vault.upbound.io',
-                     '--activation', 'secretbackendstaticroles.database.vault.upbound.io'],
+  expected_activations = %w[
+    authbackendroles.kubernetes.vault.upbound.io
+    backends.auth.vault.upbound.io
+    mounts.vault.vault.upbound.io
+    oidcclients.identity.vault.upbound.io
+    oidckeys.identity.vault.upbound.io
+    oidcproviders.identity.vault.upbound.io
+    oidcscopes.identity.vault.upbound.io
+    policies.vault.vault.upbound.io
+    secretbackendconnections.database.vault.upbound.io
+    secretbackendroles.pki.vault.upbound.io
+    secretbackendstaticroles.database.vault.upbound.io
+    secretbackendv2s.kv.vault.upbound.io
+  ]
+  expected_init_args = ['core', 'init'] + expected_activations.flat_map { |name| ['--activation', name] }
+  check(init_args == expected_init_args,
         'Crossplane must initialize only the declared managed resource APIs')
   auxiliary = k8up + secrets_webhook + cnpg + barman + crossplane
   check((crds + monitoring + longhorn + openbao + cert_manager + auxiliary).none? do |resource|

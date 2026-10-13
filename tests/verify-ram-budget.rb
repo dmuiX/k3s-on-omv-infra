@@ -45,7 +45,22 @@ check(!regex.match?('unrelated_metric'), 'Filter must not drop unrelated metrics
 
 crossplane = docs('03-core/crossplane/values.yml').first
 activations = crossplane.dig('provider', 'defaultActivations')
-check(activations == %w[secretbackendconnections.database.vault.upbound.io secretbackendstaticroles.database.vault.upbound.io], 'Only declared database managed resources may activate automatically')
+expected_activations = %w[
+  authbackendroles.kubernetes.vault.upbound.io
+  backends.auth.vault.upbound.io
+  mounts.vault.vault.upbound.io
+  oidcclients.identity.vault.upbound.io
+  oidckeys.identity.vault.upbound.io
+  oidcproviders.identity.vault.upbound.io
+  oidcscopes.identity.vault.upbound.io
+  policies.vault.vault.upbound.io
+  secretbackendconnections.database.vault.upbound.io
+  secretbackendroles.pki.vault.upbound.io
+  secretbackendstaticroles.database.vault.upbound.io
+  secretbackendv2s.kv.vault.upbound.io
+]
+check(activations == expected_activations,
+      'Only authored database, OIDC, and stage-1 observation APIs may activate')
 activation_policy = docs('03-core/crossplane/workload/activation-policy.yaml').first
 check(activation_policy.dig('metadata', 'name') == 'default' && activation_policy.dig('spec', 'activate') == activations,
       'The existing default policy must be reconciled; Helm init only creates it once')
@@ -64,9 +79,22 @@ def excluded?(exclusions, group, kind)
       entry.fetch('kinds').any? { |pattern| File.fnmatch?(pattern, kind) }
   end
 end
-check(excluded?(exclusions, 'pki.vault.upbound.io', 'SecretBackend'), 'Unused legacy provider APIs must not occupy Argo caches')
+check(excluded?(exclusions, 'pki.vault.upbound.io', 'SecretBackendCert'), 'Unused PKI provider APIs must not occupy Argo caches')
+check(excluded?(exclusions, 'kv.vault.upbound.io', 'SecretV2'), 'Unused KV provider APIs must not occupy Argo caches')
+check(excluded?(exclusions, 'vault.vault.upbound.io', 'Token'), 'Unused core Vault provider APIs must not occupy Argo caches')
+check(excluded?(exclusions, 'kubernetes.vault.upbound.io', 'AuthBackendConfig'), 'Unused Kubernetes provider APIs must not occupy Argo caches')
 check(excluded?(exclusions, 'database.vault.m.upbound.io', 'SecretBackendConnection'), 'Unused namespaced provider APIs must not occupy Argo caches')
 check(excluded?(exclusions, 'apiextensions.crossplane.io', 'ManagedResourceDefinition'), 'Generated MRDs must not occupy Argo caches')
+[
+  ['vault.vault.upbound.io', 'Policy'],
+  ['kubernetes.vault.upbound.io', 'AuthBackendRole'],
+  ['auth.vault.upbound.io', 'Backend'],
+  ['vault.vault.upbound.io', 'Mount'],
+  ['kv.vault.upbound.io', 'SecretBackendV2'],
+  ['pki.vault.upbound.io', 'SecretBackendRole']
+].each do |group, kind|
+  check(!excluded?(exclusions, group, kind), "Stage-1 observation API excluded from GitOps: #{group}/#{kind}")
+end
 %w[OidcKey OidcScope OidcClient OidcProvider].each do |kind|
   check(!excluded?(exclusions, 'identity.vault.upbound.io', kind),
         "Application-owned OpenBao identity resource excluded from GitOps: #{kind}")

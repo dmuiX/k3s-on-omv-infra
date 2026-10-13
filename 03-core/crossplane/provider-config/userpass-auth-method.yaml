@@ -1,0 +1,15 @@
+apiVersion: auth.vault.upbound.io/v1alpha1
+kind: Backend
+metadata:
+  name: userpass
+  annotations:
+    crossplane.io/external-name: userpass
+spec:
+  deletionPolicy: Orphan
+  managementPolicies:
+    - Observe
+  forProvider:
+    path: userpass
+    type: userpass
+  providerConfigRef:
+    name: openbao

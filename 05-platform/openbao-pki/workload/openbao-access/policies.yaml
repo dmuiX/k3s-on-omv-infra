@@ -1,0 +1,37 @@
+apiVersion: vault.vault.upbound.io/v1alpha1
+kind: Policy
+metadata:
+  name: cert-manager-pki-services-sign
+  annotations:
+    crossplane.io/external-name: cert-manager-pki-services-sign
+spec:
+  deletionPolicy: Orphan
+  managementPolicies:
+    - Observe
+  providerConfigRef:
+    name: openbao
+  forProvider:
+    name: cert-manager-pki-services-sign
+    policy: |-
+      path "pki-services/sign/services" {
+        capabilities = ["update"]
+      }
+---
+apiVersion: vault.vault.upbound.io/v1alpha1
+kind: Policy
+metadata:
+  name: cert-manager-pki-clients-sign
+  annotations:
+    crossplane.io/external-name: cert-manager-pki-clients-sign
+spec:
+  deletionPolicy: Orphan
+  managementPolicies:
+    - Observe
+  providerConfigRef:
+    name: openbao
+  forProvider:
+    name: cert-manager-pki-clients-sign
+    policy: |-
+      path "pki-clients/sign/clients" {
+        capabilities = ["update"]
+      }
