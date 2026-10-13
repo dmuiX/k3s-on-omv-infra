@@ -12,7 +12,6 @@ ruby tests/verify-ingress.rb     # no live-specific resources selected by the pu
 ruby tests/verify-longhorn-encryption.rb # Helm override and complete key references
 ruby tests/verify-pi-placement.rb # explicit restricted-Pi tolerations; monitoring exclusion
 ruby tests/verify-charts.rb      # pinned Helm renders + safe local templates (network)
-ruby tests/verify-ram-budget.rb  # safe metric filtering, selective activation, authored-resource visibility
 ```
 
 The ordinary Ruby checks need this repository; the OpenBao PKI check also calls
@@ -25,12 +24,7 @@ The chart test additionally needs Helm and network access. It renders each pinne
 upstream chart with the Git values in an isolated temporary Helm cache, applies
 the same Longhorn ConfigMap override, node annotations, and monitoring
 StorageClass as Argo, and validates the desired state.
-Chart diagnostics and Secret values are never printed. The RAM regression check
-optionally accepts an unpacked pinned monitoring chart and a baseline values file:
-`ruby tests/verify-ram-budget.rb /path/to/kube-prometheus-stack /path/to/baseline.yml`.
-It verifies that only the API server ServiceMonitor changes, excluding the existing
-ignored Grafana credential randomness and its checksum. Live rules and dashboards
-must be checked independently before activating the metric filter.
+Chart diagnostics and Secret values are never printed.
 Restore tests verify decimal ordinal-to-resource/PVC/path mapping from CLI, JSON
 and YAML values (including the upper bound) and reject malformed, fractional,
 negative, boolean, null, quoted-string and out-of-range ordinals instead of silently

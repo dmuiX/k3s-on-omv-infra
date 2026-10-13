@@ -1,8 +1,0 @@
-# Activate only managed resource APIs declared by this repository, not every API
-# shipped by a provider. Existing active MRDs cannot be deactivated in-place;
-# this setting prevents blanket activation on future installs/package upgrades.
-# Never delete an MRD/CRD or an external resource to enforce this list.
-provider:
-  defaultActivations:
-    - secretbackendconnections.database.vault.upbound.io
-    - secretbackendstaticroles.database.vault.upbound.io

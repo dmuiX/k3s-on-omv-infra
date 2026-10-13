@@ -173,10 +173,9 @@ health_keys = health.fetch('data').keys
 check(health_keys.sort == [
         'resource.customizations.health.argoproj.io_Application',
         'resource.customizations.health.secrets.hashicorp.com_VaultDynamicSecret',
-        'resource.customizations.health.secrets.hashicorp.com_VaultStaticSecret',
-        'resource.exclusions'
+        'resource.customizations.health.secrets.hashicorp.com_VaultStaticSecret'
       ].sort,
-      'Argo must retain only reviewed health contracts and resource exclusions')
+      'Argo must retain only reviewed child and static-secret health contracts')
 crd_app = apps.fetch('monitoring-crds')
 monitoring = apps.fetch('kube-prometheus-stack')
 %w[longhorn cert-manager kube-prometheus-stack openbao vault-secrets-webhook].each do |name|
