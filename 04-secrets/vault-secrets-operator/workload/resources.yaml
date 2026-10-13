@@ -51,6 +51,8 @@ spec:
     create: true
     name: openbao-manager-credentials
     type: kubernetes.io/basic-auth
+    transformation:
+      excludeRaw: true
 ---
 apiVersion: secrets.hashicorp.com/v1beta1
 kind: VaultStaticSecret
@@ -67,3 +69,5 @@ spec:
     create: true
     name: postgresql-r2-credentials
     type: Opaque
+    transformation:
+      excludeRaw: true

@@ -58,6 +58,8 @@ spec:
     create: true
     name: grafana-db-credentials
     type: kubernetes.io/basic-auth
+    transformation:
+      excludeRaw: true
   rolloutRestartTargets:
     - kind: Deployment
       name: kube-prometheus-stack-grafana
@@ -99,3 +101,5 @@ spec:
     create: true
     name: radar-db-credentials
     type: kubernetes.io/basic-auth
+    transformation:
+      excludeRaw: true
