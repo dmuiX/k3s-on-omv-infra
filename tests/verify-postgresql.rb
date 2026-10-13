@@ -152,6 +152,11 @@ operator_source = postgres_policy.dig('spec', 'ingress').flat_map { |rule| rule.
 end
 check(operator_source && !operator_source.key?('namespaceSelector'),
       'PostgreSQL policy must select the namespace-local CNPG controller')
+radar_source = postgres_policy.dig('spec', 'ingress').flat_map { |rule| rule.fetch('from', []) }.find do |source|
+  source.dig('namespaceSelector', 'matchLabels', 'kubernetes.io/metadata.name') == 'radar'
+end
+check(radar_source && !radar_source.key?('podSelector'),
+      'PostgreSQL must accept Radar only from its dedicated namespace')
 openbao_source = postgres_policy.dig('spec', 'ingress').flat_map { |rule| rule.fetch('from', []) }.find do |source|
   source.dig('namespaceSelector', 'matchLabels', 'kubernetes.io/metadata.name') == 'openbao'
 end
