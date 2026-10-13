@@ -75,7 +75,18 @@ spec:
         - protocol: TCP
           port: 9280
   egress:
-    # K3s evaluates kubernetes.default.svc traffic after DNAT on this cluster.
+    # K3s service traffic can be evaluated before DNAT. Restrict access to the
+    # cluster service ranges and only the three required destination ports.
+    - to:
+      {{- range required "Private K3s service CIDRs are required" .Values.clusterNetwork.serviceCIDRs }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+      {{- end }}
+      ports:
+        - {protocol: TCP, port: 443}
+        - {protocol: TCP, port: 5432}
+        - {protocol: TCP, port: 8200}
+    # Direct API endpoint traffic is evaluated after DNAT on this cluster.
     - to:
       {{- range required "Private K3s API endpoint CIDRs are required" .Values.clusterNetwork.kubernetesApiServerEndpointCIDRs }}
         - ipBlock:

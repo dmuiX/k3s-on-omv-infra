@@ -1,4 +1,6 @@
 clusterNetwork:
+  serviceCIDRs:
+    - 192.0.2.0/24
   kubernetesApiServerEndpointCIDRs:
     - 192.0.2.1/32
 

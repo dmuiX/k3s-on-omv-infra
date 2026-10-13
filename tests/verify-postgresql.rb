@@ -142,6 +142,11 @@ check(operator_policy.dig('metadata', 'namespace') == 'cloudnative-pg' &&
         rule.fetch('ports', []).any? { |port| port['port'] == 9443 }
       end, 'Public manifests must isolate the CloudNativePG webhook in its controller namespace')
 postgres_policy = resource(policies, 'NetworkPolicy', 'allow-postgres')
+instance_rule = postgres_policy.dig('spec', 'ingress').find do |rule|
+  rule.fetch('from', []).any? { |source| source.dig('podSelector', 'matchLabels', 'cnpg.io/cluster') == 'k3s-postgres' }
+end
+check(instance_rule && [5432, 8000].all? { |port| instance_rule.fetch('ports').any? { |item| item['port'] == port } },
+      'PostgreSQL instances must retain database and manager connectivity to their peers')
 operator_source = postgres_policy.dig('spec', 'ingress').flat_map { |rule| rule.fetch('from', []) }.find do |source|
   source.dig('podSelector', 'matchLabels', 'app.kubernetes.io/name') == 'cloudnative-pg'
 end

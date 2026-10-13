@@ -16,6 +16,7 @@ spec:
               cnpg.io/cluster: k3s-postgres
       ports:
         - {protocol: TCP, port: 5432}
+        - {protocol: TCP, port: 8000}
     - from:
         - podSelector:
             matchLabels:

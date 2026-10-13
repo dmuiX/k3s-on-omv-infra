@@ -79,4 +79,4 @@ httpRoute:
     argocd.argoproj.io/sync-wave: "1"
 
 podAnnotations:
-  checksum/radar-platform-auth-contract: v2
+  checksum/radar-platform-auth-contract: v3
