@@ -49,10 +49,11 @@ spec:
     - from:
         - namespaceSelector:
             matchLabels:
-              kubernetes.io/metadata.name: crossplane-system
+              kubernetes.io/metadata.name: openbao
           podSelector:
             matchLabels:
-              bootstrap.k3s-on-omv.dev/openbao-postgres-client: "true"
+              app.kubernetes.io/name: openbao
+              component: server
       ports:
         - {protocol: TCP, port: 5432}
   egress:

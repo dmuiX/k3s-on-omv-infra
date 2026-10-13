@@ -146,6 +146,13 @@ operator_source = postgres_policy.dig('spec', 'ingress').flat_map { |rule| rule.
 end
 check(operator_source && !operator_source.key?('namespaceSelector'),
       'PostgreSQL policy must select the namespace-local CNPG controller')
+openbao_source = postgres_policy.dig('spec', 'ingress').flat_map { |rule| rule.fetch('from', []) }.find do |source|
+  source.dig('namespaceSelector', 'matchLabels', 'kubernetes.io/metadata.name') == 'openbao'
+end
+check(openbao_source &&
+      openbao_source.dig('podSelector', 'matchLabels', 'app.kubernetes.io/name') == 'openbao' &&
+      openbao_source.dig('podSelector', 'matchLabels', 'component') == 'server',
+      'PostgreSQL must accept database-engine connections from OpenBao servers')
 
 alerts = resource(kustomized, 'PrometheusRule', 'k3s-postgres')
 alert_names = alerts.dig('spec', 'groups').flat_map { |group| group['rules'] }.map { |rule| rule['alert'] }
