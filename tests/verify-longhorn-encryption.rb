@@ -19,15 +19,15 @@ sources = app.dig('spec', 'sources')
 
 check(app['kind'] == 'Application' && app.dig('metadata', 'name') == 'longhorn',
       'Use the existing Longhorn Application, not a second owner')
-check(sources.any? { |source| source['chart'] == 'longhorn' && source['targetRevision'] == '1.11.1' },
-      'Longhorn must use its pinned Helm chart')
+check(sources.any? { |source| source['chart'] == 'longhorn' && source['targetRevision'] == '1.12.1' },
+      'Longhorn must use the pinned release containing the encrypted-volume cleanup fix')
 check(sources.any? { |source| source['ref'] == 'values' }, 'Longhorn Git values source missing')
 authored_source = sources.last
 check(authored_source['repoURL'] == 'https://github.com/dmuiX/k3s-on-omv-infra.git' &&
       authored_source['targetRevision'] == 'main' &&
       authored_source['path'] == '02-controllers/longhorn' &&
       authored_source.dig('directory', 'include') ==
-        '{storageclass-configmap.yaml,node-default-tags.yaml,monitoring-storage.yaml,bootstrap-storage-canaries.yaml}',
+        '{storageclass-configmap.yaml,node-default-tags.yaml,monitoring-storage.yaml,monitoring-network-policy.yaml,bootstrap-storage-canaries.yaml}',
       'Longhorn node annotations and StorageClasses must be the final branch-tracked Argo source')
 check(cm['apiVersion'] == 'v1' && cm['kind'] == 'ConfigMap' &&
       cm.dig('metadata', 'name') == 'longhorn-storageclass' && cm.dig('metadata', 'namespace') == 'longhorn',
@@ -67,6 +67,15 @@ end
 values = document('02-controllers/longhorn/values.yml')
 check(values.dig('persistence', 'defaultClass') == false, 'Original class default changed')
 check(values.dig('persistence', 'defaultClassReplicaCount') == 3, 'New PVC replica default must be three')
+monitoring_policy = document('02-controllers/longhorn/monitoring-network-policy.yaml')
+check(monitoring_policy['kind'] == 'NetworkPolicy' &&
+      monitoring_policy.dig('spec', 'podSelector', 'matchLabels') == {'app' => 'longhorn-manager'} &&
+      monitoring_policy.dig('spec', 'ingress', 0, 'from', 0, 'namespaceSelector', 'matchLabels',
+                            'kubernetes.io/metadata.name') == 'kube-prometheus-stack' &&
+      monitoring_policy.dig('spec', 'ingress', 0, 'from', 0, 'podSelector', 'matchLabels',
+                            'app.kubernetes.io/name') == 'prometheus' &&
+      monitoring_policy.dig('spec', 'ingress', 0, 'ports') == [{'protocol' => 'TCP', 'port' => 9500}],
+      'Longhorn 1.12 internal policy must retain only the reviewed Prometheus metrics ingress')
 openbao = document('03-core/openbao/values.yml')
 %w[dataStorage auditStorage].each do |storage|
   check(openbao.dig('server', storage, 'storageClass') == 'longhorn' &&

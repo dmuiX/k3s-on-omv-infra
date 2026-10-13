@@ -15,12 +15,15 @@ once the wildcard certificate is ready.
   `longhorn-storageclass` ConfigMap; the normal `longhorn` class encrypts new
   volumes by default. No passphrase or Kubernetes Secret is committed here.
 - `node-default-tags.yaml`: metadata-only core Kubernetes Nodes for OMV and Wyse.
-  In intra-Application wave `-1`, server-side apply adds Longhorn 1.11.1's
+  In intra-Application wave `-1`, server-side apply adds Longhorn's
   official `node.longhorn.io/default-node-tags` annotation before chart resources.
   `Prune=false` and `Delete=false` prevent Argo from deleting cluster Nodes.
 - `monitoring-storage.yaml`: encrypted two-replica Prometheus StorageClass. Its
   node selector uses the `monitoring-storage` tags that Longhorn initializes from
   the Kubernetes Node annotations.
+- `monitoring-network-policy.yaml`: additive cross-namespace Prometheus access to
+  manager metrics on TCP 9500. Longhorn 1.12 enables internal ingress policies by
+  default; ServiceMonitor discovery alone does not authorize this traffic.
 - `bootstrap-storage-canaries.yaml`: retained 1 GiB standard and monitoring PVCs
   mounted by one minimal Deployment. They prove attached three-node and OMV/Wyse
   replica placement before OpenBao initialization, independently of later waves.
@@ -54,7 +57,7 @@ second encrypted class. **`local-path` remains the cluster default** for PVCs
 without a class; manually created UI volumes are outside this StorageClass rule.
 Existing volumes are **not** converted, even though their class name is unchanged.
 
-Longhorn 1.11.1 does not expose encryption/CSI key references in its Helm values.
+Longhorn 1.12.1 does not expose encryption/CSI key references in its Helm values.
 The Application therefore uses `storageclass-configmap.yaml` as its final Argo
 source, intentionally overriding the chart's ConfigMap. Argo may report a
 `RepeatedResourceWarning`; the last source is the desired owner. Do not deploy
@@ -166,7 +169,15 @@ Longhorn's chart renders the StorageClass specification inside a ConfigMap for
 its components to create. Seeing that ConfigMap or an Argo `Healthy` status does
 not by itself prove working CSI provisioning/mounts.
 
-If a fresh-install test fails, stop subsequent syncs and diagnose; do not blindly
-uninstall the chart, delete its namespace/CRDs, or remove the host data path. Once
-volumes exist, recovery/rollback must preserve them and follow Longhorn's supported
-upgrade/recovery procedures rather than an assumed safe version downgrade.
+Longhorn 1.12.1 supersedes 1.11.1 because upstream bug #11510 can leave an
+LUKS mapping and V1 iSCSI session deadlocked after instance-manager loss. The fix
+landed in 1.12.0; use the current stable 1.12.1 patch release. Before syncing this
+upgrade, require healthy replicas, current external recovery evidence, no stale
+host sessions, Kubernetes 1.25 or newer, and confirmation that no V2 backing-image
+migration applies. Existing V1 encrypted volumes remain V1. Do not interrupt or
+force-delete instance managers during rollout.
+
+If a fresh-install or upgrade test fails, stop subsequent syncs and diagnose; do
+not blindly uninstall the chart, delete its namespace/CRDs, or remove the host data
+path. Once volumes exist, recovery/rollback must preserve them and follow Longhorn's
+supported upgrade/recovery procedures rather than an assumed safe version downgrade.

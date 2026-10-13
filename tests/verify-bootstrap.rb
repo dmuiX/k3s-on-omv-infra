@@ -326,7 +326,7 @@ end
 check(!longhorn.fetch('spec').key?('labels'), 'Misplaced Application labels')
 longhorn_files = Dir.glob(File.join(ROOT, '02-controllers/longhorn', '*.{yml,yaml}'))
 check(longhorn_files.map { |f| File.basename(f) }.sort ==
-      %w[app.yml bootstrap-storage-canaries.yaml monitoring-storage.yaml node-default-tags.yaml storageclass-configmap.yaml values.yml],
+      %w[app.yml bootstrap-storage-canaries.yaml monitoring-network-policy.yaml monitoring-storage.yaml node-default-tags.yaml storageclass-configmap.yaml values.yml],
       'Longhorn folder must contain only its Application, values and reviewed storage resources')
 longhorn_authored = longhorn_files.flat_map { |file| YAML.load_stream(File.read(file)).compact }
 check(longhorn_authored.none? { |resource| %w[HelmRelease HelmRepository].include?(resource['kind']) },
@@ -447,7 +447,7 @@ check(longhorn_sources.any? { |entry| entry['chart'] == 'longhorn' } &&
       longhorn_sources.any? { |entry| entry['path'] == '02-controllers/longhorn' &&
         entry['targetRevision'] == INFRA_REVISION &&
         entry.dig('directory', 'include') ==
-          '{storageclass-configmap.yaml,node-default-tags.yaml,monitoring-storage.yaml,bootstrap-storage-canaries.yaml}' },
+          '{storageclass-configmap.yaml,node-default-tags.yaml,monitoring-storage.yaml,monitoring-network-policy.yaml,bootstrap-storage-canaries.yaml}' },
       'Longhorn must combine its pinned chart, Git values, node annotations and storage resources')
 puts 'PASS: one public root, multi-source Helm, CRD/storage wave order, selected monitoring storage and three-node OpenBao'
 puts applications.sort_by { |app| [wave(app), app.dig('metadata', 'name')] }.map { |app| "  #{wave(app)}: #{app.dig('metadata', 'name')}" }
