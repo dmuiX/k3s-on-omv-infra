@@ -12,7 +12,7 @@ spec:
   project: default
   sources:
     - repoURL: https://charts.longhorn.io
-      targetRevision: 1.11.1
+      targetRevision: 1.12.1
       chart: longhorn
       helm:
         valueFiles:
@@ -28,7 +28,7 @@ spec:
       targetRevision: main
       path: 02-controllers/longhorn
       directory:
-        include: "{storageclass-configmap.yaml,node-default-tags.yaml,monitoring-storage.yaml,bootstrap-storage-canaries.yaml}"
+        include: "{storageclass-configmap.yaml,node-default-tags.yaml,monitoring-storage.yaml,monitoring-network-policy.yaml,bootstrap-storage-canaries.yaml}"
   syncPolicy:
     managedNamespaceMetadata:
       labels:
