@@ -9,5 +9,5 @@ spec:
   address: http://openbao-active.openbao.svc.cluster.local:8200
   credentials:
     source: Kubernetes
-  role: crossplane-provider-vault
+  role: postgresql-static-role-manager
   mountPath: kubernetes

@@ -40,7 +40,7 @@ config = docs('03-core/crossplane/provider-config/config.yaml').first
 assert(config['apiVersion'] == 'vault.upbound.io/v1beta1' && config['kind'] == 'ProviderConfig',
        'Wrong cluster-scoped ProviderConfig GVK')
 assert(config.dig('spec', 'credentials', 'source') == 'Kubernetes' &&
-       config.dig('spec', 'role') == 'crossplane-provider-vault' &&
+       config.dig('spec', 'role') == 'postgresql-static-role-manager' &&
        config.dig('spec', 'mountPath') == 'kubernetes' &&
        !config.dig('spec', 'credentials').key?('kubernetes'), 'Wrong ProviderConfig auth')
 assert(config.dig('spec', 'address') == 'http://openbao-active.openbao.svc.cluster.local:8200',
@@ -69,18 +69,18 @@ assert manager.dig('spec', 'passwordSecret', 'name') == 'openbao-manager-credent
        manager.dig('spec', 'superuser') == false && manager.dig('spec', 'createdb') == false,
        'CNPG manager role must use its VSO credential with least privileges'
 bootstrap_config = YAML.load_file(File.join(ROOT, '../k3s-on-omv-bootstrap/ansible/roles/gitops_bootstrap/files/openbao-access/config.json'))
-grafana_identity = bootstrap_config.fetch('roles').find { |item| item['name'] == 'grafana-vso' }
-radar_identity = bootstrap_config.fetch('roles').find { |item| item['name'] == 'radar-vso' }
-assert grafana_identity && grafana_identity['service_account'] == 'grafana-vso' &&
+grafana_identity = bootstrap_config.fetch('roles').find { |item| item['name'] == 'grafana-postgresql-reader' }
+radar_identity = bootstrap_config.fetch('roles').find { |item| item['name'] == 'radar-postgresql-reader' }
+assert grafana_identity && grafana_identity['service_account'] == 'grafana-postgresql-reader' &&
        grafana_identity['namespace'] == 'kube-prometheus-stack' &&
-       grafana_identity['policies'] == ['grafana-vso-read'] &&
-       radar_identity && radar_identity['service_account'] == 'radar-vso' &&
-       radar_identity['namespace'] == 'radar' && radar_identity['policies'] == ['radar-vso-read'],
+       grafana_identity['policies'] == ['grafana-postgresql-read'] &&
+       radar_identity && radar_identity['service_account'] == 'radar-postgresql-reader' &&
+       radar_identity['namespace'] == 'radar' && radar_identity['policies'] == ['radar-postgresql-read'],
        'Ansible trust bootstrap must bind each VSO identity to its own database policy and namespace'
-assert File.read(File.join(ROOT, '../k3s-on-omv-bootstrap/ansible/roles/gitops_bootstrap/files/openbao-access/policy_files/grafana-vso-read.hcl')).include?('database/static-creds/grafana') &&
-       File.read(File.join(ROOT, '../k3s-on-omv-bootstrap/ansible/roles/gitops_bootstrap/files/openbao-access/policy_files/radar-vso-read.hcl')).include?('database/static-creds/radar'),
+assert File.read(File.join(ROOT, '../k3s-on-omv-bootstrap/ansible/roles/gitops_bootstrap/files/openbao-access/policy_files/grafana-postgresql-read.hcl')).include?('database/static-creds/grafana') &&
+       File.read(File.join(ROOT, '../k3s-on-omv-bootstrap/ansible/roles/gitops_bootstrap/files/openbao-access/policy_files/radar-postgresql-read.hcl')).include?('database/static-creds/radar'),
        'VSO read policies must be limited to one static role each'
-provider_policy = File.read(File.join(ROOT, '../k3s-on-omv-bootstrap/ansible/roles/gitops_bootstrap/files/openbao-access/policy_files/crossplane-provider-vault.hcl'))
+provider_policy = File.read(File.join(ROOT, '../k3s-on-omv-bootstrap/ansible/roles/gitops_bootstrap/files/openbao-access/policy_files/postgresql-static-role-manager.hcl'))
 assert !provider_policy.include?('sys/policies/acl') && !provider_policy.include?('auth/kubernetes/role'),
        'Crossplane provider must not receive policy or auth-role administration privileges'
 openbao_values = YAML.load_file(File.join(ROOT, '03-core/openbao/values.yml'))
@@ -129,8 +129,8 @@ assert grafana_vds.dig('spec', 'allowStaticCreds') == true &&
        grafana_vds.dig('spec', 'rolloutRestartTargets', 0, 'name') == 'kube-prometheus-stack-grafana',
        'VSO must materialize Grafana static credentials and restart Grafana on rotation'
 radar_vds = resource(radar_credentials, 'VaultDynamicSecret', 'radar-postgresql')
-grafana_auth = resource(grafana_credentials, 'VaultAuth', 'openbao-grafana')
-radar_auth = resource(radar_credentials, 'VaultAuth', 'openbao-radar')
+grafana_auth = resource(grafana_credentials, 'VaultAuth', 'grafana-postgresql-reader')
+radar_auth = resource(radar_credentials, 'VaultAuth', 'radar-postgresql-reader')
 assert grafana_vds.dig('spec', 'allowStaticCreds') == true &&
        grafana_vds.dig('spec', 'destination', 'name') == 'grafana-db-credentials' &&
        grafana_auth.dig('spec', 'kubernetes', 'role') == grafana_identity['name'],

@@ -1,14 +1,14 @@
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: radar-vso
+  name: radar-postgresql-reader
   namespace: radar
 automountServiceAccountToken: false
 ---
 apiVersion: secrets.hashicorp.com/v1beta1
 kind: VaultConnection
 metadata:
-  name: openbao-radar
+  name: openbao
   namespace: radar
 spec:
   address: http://openbao-active.openbao.svc.cluster.local:8200
@@ -16,16 +16,16 @@ spec:
 apiVersion: secrets.hashicorp.com/v1beta1
 kind: VaultAuth
 metadata:
-  name: openbao-radar
+  name: radar-postgresql-reader
   namespace: radar
 spec:
   method: kubernetes
   mount: kubernetes
   kubernetes:
-    role: radar-vso
-    serviceAccount: radar-vso
+    role: radar-postgresql-reader
+    serviceAccount: radar-postgresql-reader
     tokenExpirationSeconds: 600
-  vaultConnectionRef: openbao-radar
+  vaultConnectionRef: openbao
 ---
 apiVersion: secrets.hashicorp.com/v1beta1
 kind: VaultDynamicSecret
@@ -33,7 +33,7 @@ metadata:
   name: radar-postgresql
   namespace: radar
 spec:
-  vaultAuthRef: openbao-radar
+  vaultAuthRef: radar-postgresql-reader
   mount: database
   path: static-creds/radar
   allowStaticCreds: true

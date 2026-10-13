@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: grafana-vso
+  name: grafana-postgresql-reader
   namespace: kube-prometheus-stack
   annotations:
     argocd.argoproj.io/sync-wave: "-2"
@@ -10,7 +10,7 @@ automountServiceAccountToken: false
 apiVersion: secrets.hashicorp.com/v1beta1
 kind: VaultConnection
 metadata:
-  name: openbao-grafana
+  name: openbao
   namespace: kube-prometheus-stack
   annotations:
     argocd.argoproj.io/sync-wave: "-2"
@@ -20,7 +20,7 @@ spec:
 apiVersion: secrets.hashicorp.com/v1beta1
 kind: VaultAuth
 metadata:
-  name: openbao-grafana
+  name: grafana-postgresql-reader
   namespace: kube-prometheus-stack
   annotations:
     argocd.argoproj.io/sync-wave: "-2"
@@ -28,10 +28,10 @@ spec:
   method: kubernetes
   mount: kubernetes
   kubernetes:
-    role: grafana-vso
-    serviceAccount: grafana-vso
+    role: grafana-postgresql-reader
+    serviceAccount: grafana-postgresql-reader
     tokenExpirationSeconds: 600
-  vaultConnectionRef: openbao-grafana
+  vaultConnectionRef: openbao
 ---
 apiVersion: secrets.hashicorp.com/v1beta1
 kind: VaultDynamicSecret
@@ -41,7 +41,7 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "-1"
 spec:
-  vaultAuthRef: openbao-grafana
+  vaultAuthRef: grafana-postgresql-reader
   mount: database
   path: static-creds/grafana
   allowStaticCreds: true
