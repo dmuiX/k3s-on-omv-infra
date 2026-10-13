@@ -89,9 +89,9 @@ endpoint `/32` list from the same Live values in wave 2. K3s evaluates that
 connection after Service DNAT on endpoint port 6443; no LAN address is committed
 to this public repository.
 Authored Kustomize resources remain in Git, but rendered upstream chart output
-is deliberately not vendored. The encrypted Longhorn StorageClass ConfigMap is
-an explicit final Argo source overriding the chart resource that Longhorn
-reconciles. Certificate issuance and UI routes follow OpenBao/webhook together
+is deliberately not vendored. Argo directly owns the encrypted Longhorn
+StorageClass while chart generation is disabled, so no duplicate template owner
+is required. Certificate issuance and UI routes follow OpenBao/webhook together
 in wave 5. PostgreSQL and backup configuration reconcile in wave 6. Consumer-owned
 credentials and Grafana/monitoring reconcile in wave 8 with resource-level ordering.
 

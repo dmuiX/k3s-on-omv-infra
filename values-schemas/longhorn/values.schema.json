@@ -380,6 +380,9 @@
     "persistence": {
       "type": "object",
       "properties": {
+        "createStorageClass": {
+          "type": "boolean"
+        },
         "defaultClass": {
           "type": "boolean"
         },

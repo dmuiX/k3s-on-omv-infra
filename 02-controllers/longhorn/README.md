@@ -11,9 +11,9 @@ once the wildcard certificate is ready.
 - `app.yml`: version-pinned Longhorn Helm chart plus branch-tracking same-repository
   Git values and authored resources for node annotations and encrypted StorageClass configuration.
 - `values.yml`: three-replica storage defaults; no embedded Flux HelmRelease.
-- `storageclass-configmap.yaml`: reviewed final Argo source overriding the chart's
-  `longhorn-storageclass` ConfigMap; the normal `longhorn` class encrypts new
-  volumes by default. No passphrase or Kubernetes Secret is committed here.
+- `storageclass.yaml`: the single Argo-owned encrypted `longhorn` StorageClass.
+  Chart generation is disabled, so no duplicate ConfigMap override is required.
+  No passphrase or Kubernetes Secret is committed here.
 - `node-default-tags.yaml`: metadata-only core Kubernetes Nodes for OMV and Wyse.
   In intra-Application wave `-1`, server-side apply adds Longhorn's
   official `node.longhorn.io/default-node-tags` annotation before chart resources.
@@ -25,9 +25,9 @@ once the wildcard certificate is ready.
   manager metrics on TCP 9500. Longhorn 1.12 enables internal ingress policies by
   default; ServiceMonitor discovery alone does not authorize this traffic.
 Storage canaries are temporary acceptance resources, not steady-state GitOps
-workloads. Create them only for a guarded storage or upgrade test, verify both
-StorageClasses and payload checksums, then remove their workload, claims, retained
-PVs, and Longhorn backends after proving complete detach.
+workloads. Create them only for a guarded storage or upgrade test and verify both
+StorageClasses and payload checksums. Cleanup requires separate approval, exact
+resource identities, complete detach, and proof that no host artifact remains.
 - The public route template selects `longhorn-frontend:80` through the K3s
   Gateway; only the real hostname value comes from private Git.
 
@@ -59,12 +59,12 @@ without a class; manually created UI volumes are outside this StorageClass rule.
 Existing volumes are **not** converted, even though their class name is unchanged.
 
 Longhorn 1.13.0 does not expose encryption/CSI key references in its Helm values.
-The Application therefore uses `storageclass-configmap.yaml` as its final Argo
-source, intentionally overriding the chart's ConfigMap. Argo may report a
-`RepeatedResourceWarning`; the last source is the desired owner. Do not deploy
-with a standalone `helm upgrade -f values.yml`, because that omits the encrypted
-override. `verify-longhorn-encryption.rb` checks the source order and template.
-Update both values and override when changing replica count, filesystem or retention.
+The chart's StorageClass generation is therefore disabled and the Application owns
+`StorageClass/longhorn` directly from `storageclass.yaml`. This avoids duplicate
+resources and `RepeatedResourceWarning`. Do not deploy with a standalone
+`helm upgrade -f values.yml`, because that omits the encrypted class. The encryption
+test checks both the disabled chart template and the direct StorageClass contract.
+Update the authored class when changing replica count, filesystem, or retention.
 
 **Before merging source changes into the tracked `main` branch, stage the ownership
 handoff for clusters that already synced the former `longhorn.io/Node` manifests.**
@@ -75,15 +75,16 @@ that separate, reviewed transition before merging and syncing this simplified
 source; do not use the new core Node manifests as substitutes for the existing
 Longhorn custom resources.
 
-**StorageClass ownership transfer is staged.** This revision keeps the existing
-ConfigMap template as the sole desired owner but makes it prune-eligible. Verify
-that this exact revision is live before a later reviewed change disables chart
-StorageClass generation and adopts `StorageClass/longhorn` directly. Never combine
-both stages into one unverified sync: a retained legacy ConfigMap would leave
-Longhorn and Argo competing for the same StorageClass. The later stage must preserve
-all immutable fields exactly, freeze new PVC creation, and verify the ConfigMap is
-gone after adoption. Existing PVs/PVCs and their data remain in place; no
-`Force/Replace` sync option is authorized.
+**StorageClass ownership transfer is staged.** Before syncing this revision, the
+prerequisite handoff revision must already be live and the legacy
+`ConfigMap/longhorn-storageclass` must be verified prune-eligible. This revision
+disables chart generation, applies an exactly equivalent directly owned
+`StorageClass/longhorn`, and prunes the legacy ConfigMap last. Freeze new PVC
+creation during that sync. Accept the handoff only after the ConfigMap is absent,
+the StorageClass has one Argo owner, all immutable fields match, and existing
+volumes remain healthy. A retained legacy ConfigMap would leave Longhorn and Argo
+competing for the same object. Existing PVs/PVCs and their data remain in place;
+no `Force/Replace` sync option is authorized.
 
 **Before publishing/syncing**, create and independently back up
 `longhorn/longhorn-volume-encryption`. All four CSI Secret references (including
@@ -176,9 +177,9 @@ and volume health. Review cleanup separately because `Retain` leaves data behind
 Do not use real OpenBao data as the first storage test. Backup/restore testing is
 a separate gate; three replicas still require verified placement and rebuild behavior.
 
-Longhorn's chart renders the StorageClass specification inside a ConfigMap for
-its components to create. Seeing that ConfigMap or an Argo `Healthy` status does
-not by itself prove working CSI provisioning/mounts.
+Argo directly owns the encrypted StorageClass; chart generation is disabled.
+Seeing that object or an Argo `Healthy` status does not by itself prove working
+CSI provisioning or mounts.
 
 Longhorn 1.12.0 fixed upstream bug #11510, which can leave a LUKS mapping and
 V1 iSCSI session deadlocked after instance-manager loss. The cluster subsequently
