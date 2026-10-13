@@ -57,7 +57,7 @@ second encrypted class. **`local-path` remains the cluster default** for PVCs
 without a class; manually created UI volumes are outside this StorageClass rule.
 Existing volumes are **not** converted, even though their class name is unchanged.
 
-Longhorn 1.12.1 does not expose encryption/CSI key references in its Helm values.
+Longhorn 1.13.0 does not expose encryption/CSI key references in its Helm values.
 The Application therefore uses `storageclass-configmap.yaml` as its final Argo
 source, intentionally overriding the chart's ConfigMap. Argo may report a
 `RepeatedResourceWarning`; the last source is the desired owner. Do not deploy
@@ -117,9 +117,14 @@ OpenBao cluster merely to change the underlying storage encryption.
 - Manager requests: 100m CPU / 256Mi RAM; memory limit: 1Gi. Encrypted-volume
   discovery can transiently run a roughly 445Mi `cryptsetup` process inside the
   manager cgroup during startup, so the steady-state manager footprint alone is
-  not a safe basis for this limit. Instance-manager CPU reservation uses Longhorn's
-  native 12% V1/V2 default; measure total CSI/engine/replica overhead rather than
-  treating the manager's request as the whole storage budget.
+  not a safe basis for this limit.
+- The v1.13 global manager runs three replicas on distinct nodes with 100m CPU /
+  128Mi RAM requests, 500m CPU / 512Mi RAM limits, and a PDB requiring two
+  available replicas. The node-local manager upgrade retains the chart's native
+  rollout strategy so ownership transfers follow the supported v1.13 sequence.
+- Instance-manager CPU reservation uses Longhorn's native 12% V1/V2 default;
+  measure total CSI/engine/replica overhead rather than treating the managers'
+  requests as the whole storage budget.
 
 Three nodes provide useful failure tolerance only when all volume replicas are
 healthy on distinct nodes. Increase replica counts on **existing** volumes
@@ -172,13 +177,21 @@ Longhorn's chart renders the StorageClass specification inside a ConfigMap for
 its components to create. Seeing that ConfigMap or an Argo `Healthy` status does
 not by itself prove working CSI provisioning/mounts.
 
-Longhorn 1.12.1 supersedes 1.11.1 because upstream bug #11510 can leave an
-LUKS mapping and V1 iSCSI session deadlocked after instance-manager loss. The fix
-landed in 1.12.0; use the current stable 1.12.1 patch release. Before syncing this
-upgrade, require healthy replicas, current external recovery evidence, no stale
-host sessions, Kubernetes 1.25 or newer, and confirmation that no V2 backing-image
-migration applies. Existing V1 encrypted volumes remain V1. Do not interrupt or
-force-delete instance managers during rollout.
+Longhorn 1.12.0 fixed upstream bug #11510, which can leave a LUKS mapping and
+V1 iSCSI session deadlocked after instance-manager loss. The cluster subsequently
+moves to the current stable 1.13.0 release rather than stopping at the first fixed
+minor. Before syncing this upgrade, require healthy replicas, current external
+recovery evidence, no stale host sessions, Kubernetes 1.34 or newer, and
+confirmation that no V2 backing-image migration applies. The deployment is
+validated against K3s/Kubernetes 1.37.1. Existing V1 encrypted volumes and their
+1.12.1 engine images remain in place during the control-plane upgrade. Retain that
+engine image until every volume is separately stopped, detached, upgraded, attached,
+and data-validated; encrypted live engine upgrade is not accepted. Longhorn does
+not support downgrade after a successful upgrade; do not interrupt or force-delete
+instance managers during rollout. The chart pre-upgrade hook remains disabled to
+keep fresh bootstrap viable because it references a ServiceAccount created by the
+same sync; run the equivalent target-version pre-upgrade command explicitly before
+merging an upgrade.
 
 If a fresh-install or upgrade test fails, stop subsequent syncs and diagnose; do
 not blindly uninstall the chart, delete its namespace/CRDs, or remove the host data

@@ -19,7 +19,7 @@ sources = app.dig('spec', 'sources')
 
 check(app['kind'] == 'Application' && app.dig('metadata', 'name') == 'longhorn',
       'Use the existing Longhorn Application, not a second owner')
-check(sources.any? { |source| source['chart'] == 'longhorn' && source['targetRevision'] == '1.12.1' },
+check(sources.any? { |source| source['chart'] == 'longhorn' && source['targetRevision'] == '1.13.0' },
       'Longhorn must use the pinned release containing the encrypted-volume cleanup fix')
 check(sources.any? { |source| source['ref'] == 'values' }, 'Longhorn Git values source missing')
 authored_source = sources.last
