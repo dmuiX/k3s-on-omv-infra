@@ -11,10 +11,22 @@ spec:
     namespace: radar
   project: default
   sources:
+    - repoURL: https://skyhook-io.github.io/helm-charts
+      targetRevision: 1.16.0
+      chart: radar
+      helm:
+        releaseName: radar
+        valueFiles:
+          - $values/07-applications/radar/values-radar.yml
+          - $private/clusters/omv/radar-values.yml
+    - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
+      targetRevision: main
+      ref: values
     - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
       targetRevision: main
       path: 07-applications/radar
       helm:
+        releaseName: radar-platform
         valueFiles:
           - $private/clusters/omv/values.yml
     - repoURL: https://github.com/dmuiX/k3s-on-omv-live.git
@@ -40,3 +52,10 @@ spec:
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
+      - RespectIgnoreDifferences=true
+  ignoreDifferences:
+    - group: ""
+      kind: Secret
+      name: radar-auth
+      jsonPointers:
+        - /data/auth-secret

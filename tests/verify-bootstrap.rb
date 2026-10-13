@@ -93,7 +93,7 @@ end
 
 # Upstream controllers stay as Argo multi-source Helm Applications. Values are
 # reviewed in Git; generated chart output is deliberately not committed.
-helm_apps = %w[monitoring-crds kube-prometheus-stack cert-manager k8up longhorn openbao vault-secrets-webhook]
+helm_apps = %w[monitoring-crds kube-prometheus-stack cert-manager k8up longhorn openbao radar vault-secrets-webhook]
 helm_apps.each do |name|
   app = apps.fetch(name)
   spec = app.fetch('spec')
@@ -112,6 +112,11 @@ helm_apps.each do |name|
       check(name == 'openbao' && path == '$snapshot-values/clusters/omv/openbao-values.yml' &&
             private_source && private_source['targetRevision'] == LIVE_REVISION,
             'OpenBao snapshot values must use the protected Live main source')
+    elsif path.start_with?('$private/')
+      private_source = sources.find { |candidate| candidate['ref'] == 'private' }
+      check(name == 'radar' && path == '$private/clusters/omv/radar-values.yml' &&
+            private_source && private_source['targetRevision'] == LIVE_REVISION,
+            'Radar identity values must use the protected Live main source')
     else
       check(path.start_with?('$values/') && File.file?(File.join(ROOT, path.delete_prefix('$values/'))),
             "#{name} references a missing Git values file")
@@ -119,7 +124,8 @@ helm_apps.each do |name|
   end
 end
 upstream_dirs = %w[01-bootstrap/monitoring-crds 02-controllers/cert-manager 02-controllers/k8up 02-controllers/longhorn
-                   03-core/kube-prometheus-stack 03-core/openbao 04-secrets/vault-secrets-webhook]
+                   03-core/kube-prometheus-stack 03-core/openbao 04-secrets/vault-secrets-webhook
+                   07-applications/radar]
 check(upstream_dirs.none? { |dir| File.directory?(File.join(ROOT, dir, 'manifests')) },
       'Rendered upstream Helm manifest directories must not be committed')
 k8up_sources = apps.fetch('k8up').dig('spec', 'sources')

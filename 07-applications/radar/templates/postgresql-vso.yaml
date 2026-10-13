@@ -3,6 +3,8 @@ kind: ServiceAccount
 metadata:
   name: radar-vso
   namespace: radar
+  annotations:
+    argocd.argoproj.io/sync-wave: "-3"
 automountServiceAccountToken: false
 ---
 apiVersion: secrets.hashicorp.com/v1beta1
@@ -10,6 +12,8 @@ kind: VaultConnection
 metadata:
   name: openbao-radar
   namespace: radar
+  annotations:
+    argocd.argoproj.io/sync-wave: "-3"
 spec:
   address: http://openbao-active.openbao.svc.cluster.local:8200
 ---
@@ -18,6 +22,8 @@ kind: VaultAuth
 metadata:
   name: openbao-radar
   namespace: radar
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
 spec:
   method: kubernetes
   mount: kubernetes
@@ -32,6 +38,8 @@ kind: VaultDynamicSecret
 metadata:
   name: radar-postgresql
   namespace: radar
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
 spec:
   vaultAuthRef: openbao-radar
   mount: database
@@ -41,6 +49,13 @@ spec:
   destination:
     create: true
     name: radar-db-credentials
-    type: kubernetes.io/basic-auth
+    type: Opaque
     transformation:
       excludeRaw: true
+      templates:
+        dsn:
+          name: dsn
+          text: {{ `{{- printf "postgresql://%s:%s@k3s-postgres-rw.cloudnative-pg.svc:5432/radar?sslmode=require" (get .Secrets "username") (get .Secrets "password") -}}` | quote }}
+  rolloutRestartTargets:
+    - kind: Deployment
+      name: radar

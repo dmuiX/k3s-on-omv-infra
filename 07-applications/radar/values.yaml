@@ -1,3 +1,7 @@
+clusterNetwork:
+  kubernetesApiServerEndpointCIDRs:
+    - 192.0.2.1/32
+
 routes:
   radar:
     hostname: radar.example.invalid

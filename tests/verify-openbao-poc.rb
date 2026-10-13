@@ -147,6 +147,16 @@ assert oidc_key.dig('spec', 'forProvider', 'algorithm') == 'RS256' &&
        oidc_provider.dig('spec', 'forProvider', 'issuerHost') == private_routes.fetch('openbao').fetch('hostname') &&
        oidc_provider.dig('spec', 'forProvider', 'allowedClientIdsRefs') == [{'name' => 'radar'}],
        'Radar must own its bounded OpenBao OIDC provider and generated client secret'
+radar_role = resource(radar_resources, 'ClusterRole', 'radar')
+radar_rules = radar_role.dig('rules')
+assert radar_rules.none? { |rule| Array(rule['resources']).include?('secrets') } &&
+       radar_rules.none? { |rule| (Array(rule['verbs']) & %w[delete patch update]).any? } &&
+       resource(radar_resources, 'ClusterRoleBinding', 'radar-view').dig('subjects', 0, 'name') == 'radar:view',
+       'Radar must use read-only application RBAC without Secret access'
+radar_auth_secret = resource(radar_resources, 'Secret', 'radar-auth')
+assert radar_auth_secret.dig('metadata', 'annotations', 'helm.sh/resource-policy') == 'keep' &&
+       radar_auth_secret.dig('data', 'auth-secret').to_s.length > 40,
+       'Radar must generate and retain an independent session-signing secret'
 grafana_vds = resource(grafana_credentials, 'VaultDynamicSecret', 'grafana-postgresql')
 assert grafana_vds.dig('spec', 'allowStaticCreds') == true &&
        grafana_vds.dig('spec', 'path') == 'static-creds/grafana' &&
@@ -162,6 +172,9 @@ assert grafana_vds.dig('spec', 'allowStaticCreds') == true &&
        'VSO must materialize Grafana credentials using its bootstrapped OpenBao role'
 assert radar_vds.dig('spec', 'allowStaticCreds') == true &&
        radar_vds.dig('spec', 'destination', 'name') == 'radar-db-credentials' &&
+       radar_vds.dig('spec', 'destination', 'transformation', 'templates', 'dsn', 'text').include?(
+         'k3s-postgres-rw.cloudnative-pg.svc:5432/radar?sslmode=require') &&
+       radar_vds.dig('spec', 'rolloutRestartTargets', 0, 'name') == 'radar' &&
        radar_auth.dig('spec', 'kubernetes', 'role') == radar_identity['name'],
        'VSO must materialize Radar credentials using its bootstrapped OpenBao role'
 assert [grafana_vds, radar_vds].all? { |item|

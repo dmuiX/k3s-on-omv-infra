@@ -1,0 +1,82 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/skyhook-io/radar
+  tag: 1.16.0@sha256:2e57d0465fbac3be0248928251a1474084bc494690d61db73c541c3aff639055
+  pullPolicy: IfNotPresent
+
+serviceAccount:
+  create: true
+  name: radar
+
+# Radar's chart enables cluster-wide Secret and RBAC reads whenever auth is on.
+# Supply the narrower role from radar-platform instead.
+rbac:
+  create: false
+  helm: false
+  secrets: false
+  viewRBAC: false
+  viewWebhooks: false
+  viewNodeRuntime: false
+  podExec: false
+  podLogs: true
+  portForward: false
+  selfUpgrade: false
+  traffic: false
+  metrics: true
+
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: kubernetes.io/hostname
+              operator: NotIn
+              values: [raspi4]
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 1
+    memory: 1Gi
+
+persistence:
+  enabled: false
+
+timeline:
+  storage: postgres
+  retention: 720h
+  postgres:
+    existingSecret: radar-db-credentials
+    secretKey: dsn
+
+auth:
+  mode: oidc
+  existingSecret: radar-auth
+  existingSecretKey: auth-secret
+  cookieTTL: 4h
+  oidc:
+    existingSecret: radar-oidc-client
+    clientSecretKey: attribute.client_secret
+    groupsClaim: groups
+    insecureSkipVerify: false
+    enablePKCE: true
+
+cloud:
+  enabled: false
+
+mcp:
+  enabled: false
+
+usageReporting:
+  enabled: false
+
+httpRoute:
+  enabled: true
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+
+podAnnotations:
+  checksum/radar-platform-auth-contract: v1
