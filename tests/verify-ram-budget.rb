@@ -45,7 +45,10 @@ check(!regex.match?('unrelated_metric'), 'Filter must not drop unrelated metrics
 
 crossplane = docs('03-core/crossplane/values.yml').first
 activations = crossplane.dig('provider', 'defaultActivations')
-check(activations == %w[secretbackendconnections.database.vault.upbound.io secretbackendstaticroles.database.vault.upbound.io], 'Only declared database managed resources may activate automatically')
+check(activations == %w[secretbackendconnections.database.vault.upbound.io secretbackendstaticroles.database.vault.upbound.io
+                        oidcclients.identity.vault.upbound.io oidckeys.identity.vault.upbound.io
+                        oidcproviders.identity.vault.upbound.io oidcscopes.identity.vault.upbound.io],
+      'Only declared database and Radar OIDC managed resources may activate automatically')
 activation_policy = docs('03-core/crossplane/workload/activation-policy.yaml').first
 check(activation_policy.dig('metadata', 'name') == 'default' && activation_policy.dig('spec', 'activate') == activations,
       'The existing default policy must be reconciled; Helm init only creates it once')

@@ -337,6 +337,73 @@ coordination/#46 reservations, fresh zero-instance checks with race protection,
 rollback source, preserved UID checks and functional database/OIDC acceptance
 before/after the targeted provider rollout. No blanket 242-type deletion approved.
 
+## Prepared coordinated batch (not executed)
+
+The optional single-type production pilot was dropped. Current main
+`c14d18afd7cdff9450405edff61135abbe7e0e32` was merged into the preparation branch
+without losing its Radar/Argo/database changes. A new complete metadata-only
+253-type inventory again has zero errors, six populated managed kinds/seven
+instances, and protected ProviderConfig/seven usage references.
+
+**Exact proposal: 229 empty managed API registrations**, listed one per line in
+[`vault-registration-removal-candidates.txt`](vault-registration-removal-candidates.txt).
+Retain six in-use types plus twelve #46 target types and, conservatively, the
+conditional `OidcAssignment` API: **19 managed types total**, not only six.
+The five provider-configuration CRDs are outside this deletion set. Conditional
+reservation does not approve unsupported adoption or broaden provider ACLs.
+
+`tools/vault_registration_plan.py` is an offline **PLAN_ONLY** planner, with no
+Kubernetes client or execution option. It rejects partial/failed/stale inventory,
+changed package/capabilities/ownership, unhealthy revision, live composition
+ambiguity, duplicate/mismatched/wildcard identities, and retains nonempty,
+Git-referenced or activation-matched types. Inputs and exact per-type CRD/MRD UIDs
+are private; the candidate list is bound by plan SHA256
+`7648c43df626e044aa2717673392837a3099570d4d46de45e0ae2097893e1415`.
+Nineteen focused planner regressions pass; all 39 current Python tests pass.
+The initial real-input failure identified ProviderRevision's actual `spec.image`
+field; fixtures now match its three concrete health/active condition types.
+
+Prepared Git policy expands Helm/default MRAP to all **six existing required**
+DB/Radar OIDC kinds, with exact equality regression. The existing pinned monitoring
+render/RAM regression passes. This correction is committed preparation, not live
+activation of #46's future types and not permission to delete APIs.
+
+A CREATE-only, fail-closed ValidatingAdmissionPolicy/binding is generated solely
+for the exact 229 candidate plurals/groups/all served versions, leaving retained
+APIs and UPDATE/DELETE untouched. The real production API accepted **server dry
+run** of both objects; independent NotFound checks prove neither persisted.
+Dry run validates schema/CEL, not enforcement. Activation must demonstrate a
+fresh CREATE dry-run being denied by this exact policy before relying on it.
+
+Approved execution must follow these stages (all pending):
+
+1. Serialize with #46/Argo/package writers using a renewable maintenance lease;
+   verify versions/UIDs/Git baseline and deploy the six-kind future policy through
+   its existing GitOps owner. Keep provider trust-root/custody untouched.
+2. Capture before-state/rollback and fresh warm leader/workload baseline. Verify
+   existing DB/OIDC functionality and protected resource UIDs, PVCs/PVs and rules.
+3. Install only the owned CREATE guard; verify its enforcement and inventory all
+   candidates again. **Abort** on any new instance/reference/UID/package drift.
+4. Delete only the exact empty MRDs with Orphan propagation and UID/resourceVersion
+   preconditions; request the existing ProviderRevision's reconciliation. Wait for
+   every replacement to be Inactive. Do not delete the Provider/Revision/package.
+5. Recheck emptiness and guarded CRD ownership; delete only the listed empty CRDs
+   with UID/resourceVersion preconditions. Journal per-type completion; never
+   retry an unverified action after timeout or use wildcard deletion.
+6. Execute **one** targeted provider Deployment rollout through the existing
+   maintenance/GitOps owner, not K3s restarts. Verify rollout plus fresh functional
+   DB/OIDC events, preserved UIDs and the reduced controller/watch set.
+7. On failure, reactivate only journaled withdrawn types via a scoped temporary
+   activation policy, restore their CRDs/controllers, remove only owned guard
+   objects and release the lease after acceptance. Empty registration UIDs may
+   change; all retained custom-resource/configuration UIDs must not.
+8. Compare sustained warm leader-equivalent heap/RSS/goroutines/watches; do not
+   promise a GiB figure or confuse a provider rollout with a K3s leak fix.
+
+No guard, six-kind policy, deletion or production restart has been activated.
+The final exact-set production action still requires explicit scope approval;
+this prepared inventory will be refreshed rather than trusted after it ages.
+
 ## Live acceptance and rollback
 
 - Use the same single-owner Argo path; pin each selected operation to the tested
