@@ -27,7 +27,7 @@ check(authored_source['repoURL'] == 'https://github.com/dmuiX/k3s-on-omv-infra.g
       authored_source['targetRevision'] == 'main' &&
       authored_source['path'] == '02-controllers/longhorn' &&
       authored_source.dig('directory', 'include') ==
-        '{storageclass-configmap.yaml,node-default-tags.yaml,monitoring-storage.yaml,monitoring-network-policy.yaml,bootstrap-storage-canaries.yaml}',
+        '{storageclass-configmap.yaml,node-default-tags.yaml,monitoring-storage.yaml,monitoring-network-policy.yaml}',
       'Longhorn node annotations and StorageClasses must be the final branch-tracked Argo source')
 check(cm['apiVersion'] == 'v1' && cm['kind'] == 'ConfigMap' &&
       cm.dig('metadata', 'name') == 'longhorn-storageclass' && cm.dig('metadata', 'namespace') == 'longhorn',

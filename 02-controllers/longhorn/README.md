@@ -24,9 +24,10 @@ once the wildcard certificate is ready.
 - `monitoring-network-policy.yaml`: additive cross-namespace Prometheus access to
   manager metrics on TCP 9500. Longhorn 1.12 enables internal ingress policies by
   default; ServiceMonitor discovery alone does not authorize this traffic.
-- `bootstrap-storage-canaries.yaml`: retained 1 GiB standard and monitoring PVCs
-  mounted by one minimal Deployment. They prove attached three-node and OMV/Wyse
-  replica placement before OpenBao initialization, independently of later waves.
+Storage canaries are temporary acceptance resources, not steady-state GitOps
+workloads. Create them only for a guarded storage or upgrade test, verify both
+StorageClasses and payload checksums, then remove their workload, claims, retained
+PVs, and Longhorn backends after proving complete detach.
 - The public route template selects `longhorn-frontend:80` through the K3s
   Gateway; only the real hostname value comes from private Git.
 
