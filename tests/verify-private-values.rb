@@ -68,7 +68,7 @@ expected_apps = %w[argocd-config argocd-route grafana-route kube-prometheus-stac
                    cert-manager cert-manager-config k8up longhorn longhorn-route openbao openbao-config
                    cloudnative-pg openbao-pki openbao-route provider-vault radar
                    provider-vault-config vault-secrets-operator vault-secrets-webhook]
-check(apps.keys.sort == expected_apps.sort && apps.values.map { |app| wave(app) }.uniq.sort == [1, 2, 3, 4, 5, 6, 8],
+check(apps.keys.sort == expected_apps.sort && apps.values.map { |app| wave(app) }.uniq.sort == [1, 2, 3, 4, 5, 6, 7, 8],
       'Public root must own the complete automatically reconciled platform inventory')
 check(File.file?(VALUES), 'Private values file missing')
 private_values = YAML.load_file(VALUES)

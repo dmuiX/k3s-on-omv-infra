@@ -1,0 +1,5 @@
+routes:
+  radar:
+    hostname: radar.example.invalid
+  openbao:
+    hostname: openbao.example.invalid

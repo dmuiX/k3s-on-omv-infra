@@ -153,15 +153,15 @@ check(git_sources.all? { |candidate| [INFRA_REPOSITORY, LIVE_REPOSITORY].include
       'Every first-party Git source must use an exact reviewed HTTPS repository identity')
 check(!infra_sources.empty? && infra_sources.all? { |candidate| candidate['targetRevision'] == INFRA_REVISION },
       'Every Infra child source must track the main branch')
-check(live_sources.length == 9 && live_sources.all? { |candidate| candidate['targetRevision'] == LIVE_REVISION },
-      'All nine first-party private Git child sources must track protected Live main')
+check(live_sources.length == 10 && live_sources.all? { |candidate| candidate['targetRevision'] == LIVE_REVISION },
+      'All ten first-party private Git child sources must track protected Live main')
 
 health_path = '01-bootstrap/argocd-bootstrap/application-health-config.yml'
 health = docs(health_path).first
 check(File.fnmatch(source.fetch('directory').fetch('include'), health_path, File::FNM_EXTGLOB),
       'Root must discover the bootstrap health configuration')
 check(wave(health) == 1, 'Bootstrap health configuration must be in wave 1')
-expected_waves = [1, 2, 3, 4, 5, 6, 8]
+expected_waves = [1, 2, 3, 4, 5, 6, 7, 8]
 check(([wave(health)] + applications.map { |app| wave(app) }).uniq.sort == expected_waves,
       'Infra Applications must preserve the complete automated rollout wave sequence')
 check(wave(health) <= applications.map { |app| wave(app) }.min,
@@ -208,7 +208,8 @@ expected_by_wave = {
   4 => %w[vault-secrets-operator vault-secrets-webhook],
   5 => %w[argocd-route cert-manager-config longhorn-route openbao-pki openbao-route provider-vault-config],
   6 => %w[cloudnative-pg openbao-config],
-  8 => %w[grafana-route kube-prometheus-stack radar]
+  7 => %w[radar],
+  8 => %w[grafana-route kube-prometheus-stack]
 }
 actual_by_wave = applications.group_by { |app| wave(app) }.transform_values do |items|
   items.map { |app| app.dig('metadata', 'name') }.sort

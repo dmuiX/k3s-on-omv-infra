@@ -1,11 +1,20 @@
 #!/usr/bin/env ruby
 # Offline OpenBao/PostgreSQL contract checks; no cluster or network access.
+require 'open3'
 require 'yaml'
 
 ROOT = File.expand_path('..', __dir__)
+LIVE_VALUES = File.expand_path('../k3s-on-omv-live/clusters/omv/values.yml', ROOT)
 def docs(path)
   YAML.load_stream(File.read(File.join(ROOT, path))).compact
 end
+def helm_docs(path, values)
+  output, error, status = Open3.capture3('helm', 'template', 'radar-platform',
+                                         File.join(ROOT, path), '--values', values)
+  raise error unless status.success?
+  YAML.load_stream(output).compact
+end
+
 def assert(value, message)
   raise message unless value
 end
@@ -117,13 +126,27 @@ assert gitops_vso.all? { |item| item.dig('metadata', 'namespace') == 'cloudnativ
        bootstrap_static_secrets.all? { |item| item.dig('spec', 'destination', 'transformation', 'excludeRaw') == true },
        'CloudNativePG must own its namespace-local VSO prerequisites without the raw payload key'
 monitoring_app = docs('08-monitoring/kube-prometheus-stack/app.yml').first
-radar_app = docs('08-applications/radar/app.yml').first
+radar_app = docs('07-applications/radar/app.yml').first
 assert monitoring_app.dig('spec', 'sources').any? { |source|
          source['path'] == '08-monitoring/kube-prometheus-stack/workload'
-       } && radar_app.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '8',
+       } && radar_app.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '7' &&
+       radar_app.dig('spec', 'sources').any? { |source| source['path'] == '07-applications/radar' },
        'Applications must own their namespace-local PostgreSQL credentials'
 grafana_credentials = docs('08-monitoring/kube-prometheus-stack/workload/postgresql-vso.yaml')
-radar_credentials = docs('08-applications/radar/workload/postgresql-vso.yaml')
+radar_resources = helm_docs('07-applications/radar', LIVE_VALUES)
+radar_credentials = radar_resources
+radar_oidc = radar_resources
+oidc_key = resource(radar_oidc, 'OidcKey', 'radar')
+oidc_client = resource(radar_oidc, 'OidcClient', 'radar')
+oidc_provider = resource(radar_oidc, 'OidcProvider', 'radar')
+private_routes = YAML.load_file(LIVE_VALUES).fetch('routes')
+radar_callback = "https://#{private_routes.fetch('radar').fetch('hostname')}/auth/callback"
+assert oidc_key.dig('spec', 'forProvider', 'algorithm') == 'RS256' &&
+       oidc_client.dig('spec', 'forProvider', 'redirectUris') == [radar_callback] &&
+       oidc_client.dig('spec', 'writeConnectionSecretToRef') == {'name' => 'radar-oidc-client', 'namespace' => 'radar'} &&
+       oidc_provider.dig('spec', 'forProvider', 'issuerHost') == private_routes.fetch('openbao').fetch('hostname') &&
+       oidc_provider.dig('spec', 'forProvider', 'allowedClientIdsRefs') == [{'name' => 'radar'}],
+       'Radar must own its bounded OpenBao OIDC provider and generated client secret'
 grafana_vds = resource(grafana_credentials, 'VaultDynamicSecret', 'grafana-postgresql')
 assert grafana_vds.dig('spec', 'allowStaticCreds') == true &&
        grafana_vds.dig('spec', 'path') == 'static-creds/grafana' &&

@@ -41,8 +41,8 @@ External-DNS. It uses Argo CD (already installed) for these applications:
 ├── openbao-backups/        OpenBao backup schedule
 ├── cloudnative-pg/         CNPG controllers and PostgreSQL data in `cloudnative-pg`
 └── redis/                  dormant Redis operator preparation (`application.yml`)
-08-applications/
-└── radar/                  Radar-owned PostgreSQL credential synchronization
+07-applications/
+└── radar/                  Radar-owned PostgreSQL credentials and OIDC identity
 08-monitoring/
 ├── grafana-route/          Grafana route after database credential delivery
 └── kube-prometheus-stack/  monitoring and its PostgreSQL credential synchronization
