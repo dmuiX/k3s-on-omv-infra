@@ -103,12 +103,12 @@ gitops_vso = docs('04-secrets/vault-secrets-operator/workload/resources.yaml')
 assert(gitops_vso.select { |item| item['kind'] == 'VaultConnection' }.all? do |item|
   item.dig('spec', 'address') == 'http://openbao-active.openbao.svc.cluster.local:8200'
 end, 'VSO must use the OpenBao in-cluster listener')
+bootstrap_static_secrets = gitops_vso.select { |item| item['kind'] == 'VaultStaticSecret' }
 assert gitops_vso.any? { |item| item['kind'] == 'Namespace' && item.dig('metadata', 'name') == 'postgresql' } &&
-       gitops_vso.any? { |item| item['kind'] == 'VaultStaticSecret' &&
-         item.dig('spec', 'path') == 'postgresql/openbao-manager' } &&
-       gitops_vso.any? { |item| item['kind'] == 'VaultStaticSecret' &&
-         item.dig('spec', 'path') == 'postgresql/r2-credentials' },
-       'Wave-4 VSO prerequisites must establish PostgreSQL namespace and protected inputs'
+       bootstrap_static_secrets.any? { |item| item.dig('spec', 'path') == 'postgresql/openbao-manager' } &&
+       bootstrap_static_secrets.any? { |item| item.dig('spec', 'path') == 'postgresql/r2-credentials' } &&
+       bootstrap_static_secrets.all? { |item| item.dig('spec', 'destination', 'transformation', 'excludeRaw') == true },
+       'Wave-4 VSO prerequisites must establish PostgreSQL inputs without the raw payload key'
 credential_app = docs('07-secrets/postgresql-vso/app.yml').first
 assert credential_app.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '7',
        'Per-application credentials must reconcile after PostgreSQL roles'
@@ -130,6 +130,9 @@ assert radar_vds.dig('spec', 'allowStaticCreds') == true &&
        radar_vds.dig('spec', 'destination', 'name') == 'radar-db-credentials' &&
        radar_auth.dig('spec', 'kubernetes', 'role') == radar_identity['name'],
        'VSO must materialize Radar credentials using its bootstrapped OpenBao role'
+assert [grafana_vds, radar_vds].all? { |item|
+  item.dig('spec', 'destination', 'transformation', 'excludeRaw') == true
+}, 'Application credential Secrets must omit the VSO raw payload key'
 monitoring_crds = docs('01-bootstrap/monitoring-crds/app.yml').first
 assert monitoring_crds.dig('spec', 'syncPolicy', 'syncOptions').include?('CreateNamespace=true'),
        'The Grafana VSO ServiceAccount namespace must exist before Wave 7'
