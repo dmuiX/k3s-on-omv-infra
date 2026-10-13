@@ -126,6 +126,44 @@ resource is force-replaced. Rendered Secret contents are never printed.
   host verification remains mandatory; a failed Job alone does not prove an
   unexecuted restart.
 
+## Warm follow-up: existing kubelet profiling, no restart
+
+The earlier assumption that profiling always needs a K3s restart was incomplete.
+The existing authenticated node-proxy kubelet endpoint
+`/api/v1/nodes/omv/proxy/debug/pprof/{heap,goroutine}` profiles the same embedded
+Go process without enabling the separate supervisor profiling router. Both
+routes were exercised successfully; labels were stripped before storage.
+Future diagnosis must check this existing authorized interface first. The
+supervisor endpoints remain disabled and all temporary overlays remain absent.
+
+The retained job-labelled metrics cover only about four hours, not the entire
+four-day request window. After taking scheduler/controller-manager/cloud-controller
+leadership, NAS process RSS reached ~3.02 GiB and ~26,100 goroutines without a
+further restart. Current holder/acquisition timestamps correlate with the rise;
+this is not by itself a proof of either a leak or exclusive causation.
+
+The actual warm goroutine profile reports 26,157 goroutines, including 1,062
+reflector resync loops, 891 listener run loops, 891 listener pop loops, 667 watch
+HTTP handlers and many gRPC callbacks. The warm heap's largest sampled stacks
+include cached OpenAPI v2 JSON/protobuf encoding, OpenAPI v3, watch decoding and
+gRPC buffers. Forced-GC HeapAlloc was 1,262,607,000 bytes versus HeapSys
+2,989,031,424 bytes; sampled stack weights must not be confused with exact RSS.
+
+Live telemetry reports 1,846 active API WATCH requests cluster-wide, including
+533 for Vault API groups. Metadata/name output counts 389 CRDs, including 259
+Vault-named CRDs, and 248 Vault MRDs. Argo exclusions do not suppress controller-
+manager/garbage-collector or provider watches; the narrowed MRAP does not
+retroactively deactivate existing Active MRDs. The structural next candidate
+is reducing unused *registered* provider API types, not just hiding them in Argo.
+
+Before any such migration: verify actual instance counts via fresh metadata-only
+responses, inspect all current Git/composition references and package ownership,
+keep required resource types/configurations, prove controller re-registration
+behavior on a test deployment, and obtain approval for the exact deletion/migration
+set. No CRD/MRD was deleted in this investigation. Acceptance must compare warm
+profiles under equivalent leader roles and workload, plus sustained memory/watch
+counts—not cold memory immediately after a restart.
+
 ## Live acceptance and rollback
 
 - Use the same single-owner Argo path; pin each selected operation to the tested
