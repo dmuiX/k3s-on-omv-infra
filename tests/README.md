@@ -13,6 +13,7 @@ ruby tests/verify-longhorn-encryption.rb # Helm override and complete key refere
 ruby tests/verify-pi-placement.rb # explicit restricted-Pi tolerations; monitoring exclusion
 ruby tests/verify-charts.rb      # pinned Helm renders + safe local templates (network)
 ruby tests/verify-ram-budget.rb  # safe metric filtering, selective activation, authored-resource visibility
+PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s tests -p 'test_vault_registration_plan.py' # offline fail-closed exact-set planning
 ```
 
 The ordinary Ruby checks need this repository; the OpenBao PKI check also calls

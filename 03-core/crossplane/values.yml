@@ -6,3 +6,7 @@ provider:
   defaultActivations:
     - secretbackendconnections.database.vault.upbound.io
     - secretbackendstaticroles.database.vault.upbound.io
+    - oidcclients.identity.vault.upbound.io
+    - oidckeys.identity.vault.upbound.io
+    - oidcproviders.identity.vault.upbound.io
+    - oidcscopes.identity.vault.upbound.io
