@@ -114,19 +114,23 @@ assert gitops_vso.all? { |item| item.dig('metadata', 'namespace') == 'cloudnativ
        bootstrap_static_secrets.any? { |item| item.dig('spec', 'path') == 'postgresql/r2-credentials' } &&
        bootstrap_static_secrets.all? { |item| item.dig('spec', 'destination', 'transformation', 'excludeRaw') == true },
        'CloudNativePG must own its namespace-local VSO prerequisites without the raw payload key'
-credential_app = docs('07-secrets/postgresql-vso/app.yml').first
-assert credential_app.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '7',
-       'Per-application credentials must reconcile after PostgreSQL roles'
-credentials = docs('07-secrets/postgresql-vso/workload/resources.yaml')
-grafana_vds = resource(credentials, 'VaultDynamicSecret', 'grafana-postgresql')
+monitoring_app = docs('08-monitoring/kube-prometheus-stack/app.yml').first
+radar_app = docs('08-applications/radar/app.yml').first
+assert monitoring_app.dig('spec', 'sources').any? { |source|
+         source['path'] == '08-monitoring/kube-prometheus-stack/workload'
+       } && radar_app.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '8',
+       'Applications must own their namespace-local PostgreSQL credentials'
+grafana_credentials = docs('08-monitoring/kube-prometheus-stack/workload/postgresql-vso.yaml')
+radar_credentials = docs('08-applications/radar/workload/postgresql-vso.yaml')
+grafana_vds = resource(grafana_credentials, 'VaultDynamicSecret', 'grafana-postgresql')
 assert grafana_vds.dig('spec', 'allowStaticCreds') == true &&
        grafana_vds.dig('spec', 'path') == 'static-creds/grafana' &&
        grafana_vds.dig('spec', 'destination', 'name') == 'grafana-db-credentials' &&
        grafana_vds.dig('spec', 'rolloutRestartTargets', 0, 'name') == 'kube-prometheus-stack-grafana',
        'VSO must materialize Grafana static credentials and restart Grafana on rotation'
-radar_vds = resource(credentials, 'VaultDynamicSecret', 'radar-postgresql')
-grafana_auth = resource(credentials, 'VaultAuth', 'openbao-grafana')
-radar_auth = resource(credentials, 'VaultAuth', 'openbao-radar')
+radar_vds = resource(radar_credentials, 'VaultDynamicSecret', 'radar-postgresql')
+grafana_auth = resource(grafana_credentials, 'VaultAuth', 'openbao-grafana')
+radar_auth = resource(radar_credentials, 'VaultAuth', 'openbao-radar')
 assert grafana_vds.dig('spec', 'allowStaticCreds') == true &&
        grafana_vds.dig('spec', 'destination', 'name') == 'grafana-db-credentials' &&
        grafana_auth.dig('spec', 'kubernetes', 'role') == grafana_identity['name'],
@@ -140,12 +144,11 @@ assert [grafana_vds, radar_vds].all? { |item|
 }, 'Application credential Secrets must omit the VSO raw payload key'
 monitoring_crds = docs('01-bootstrap/monitoring-crds/app.yml').first
 assert monitoring_crds.dig('spec', 'syncPolicy', 'syncOptions').include?('CreateNamespace=true'),
-       'The Grafana VSO ServiceAccount namespace must exist before Wave 7'
+       'The Grafana VSO ServiceAccount namespace must exist before monitoring reconciliation'
 
 crossplane_app = docs('03-core/crossplane/app.yml').first
 vso_app = docs('04-secrets/vault-secrets-operator/app.yml').first
 postgresql_app = docs('06-data/cloudnative-pg/app.yml').first
-monitoring_app = docs('08-monitoring/kube-prometheus-stack/app.yml').first
 assert crossplane_app.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '3' &&
        vso_app.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '4' &&
        postgresql_app.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '6' &&

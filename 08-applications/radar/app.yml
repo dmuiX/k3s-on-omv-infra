@@ -1,26 +1,25 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: postgresql-vso-credentials
+  name: radar
   namespace: argocd
   annotations:
-    argocd.argoproj.io/sync-wave: "7"
+    argocd.argoproj.io/sync-wave: "8"
 spec:
   destination:
     name: in-cluster
-    namespace: cloudnative-pg
+    namespace: radar
   project: default
   source:
     repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
     targetRevision: main
-    path: 07-secrets/postgresql-vso/workload
+    path: 08-applications/radar/workload
   syncPolicy:
     automated:
-      # Pause consumer credential reconciliation during the initial CNPG rebuild.
       enabled: false
-      prune: true
+      prune: false
       selfHeal: true
+      allowEmpty: false
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
-      - SkipDryRunOnMissingResource=true

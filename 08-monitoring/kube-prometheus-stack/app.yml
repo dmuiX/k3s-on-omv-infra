@@ -21,6 +21,9 @@ spec:
     - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
       targetRevision: main
       ref: values
+    - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
+      targetRevision: main
+      path: 08-monitoring/kube-prometheus-stack/workload
   syncPolicy:
     automated:
       # Pause database endpoint changes during the initial CNPG rebuild.

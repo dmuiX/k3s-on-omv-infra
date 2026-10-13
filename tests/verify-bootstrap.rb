@@ -161,7 +161,7 @@ health = docs(health_path).first
 check(File.fnmatch(source.fetch('directory').fetch('include'), health_path, File::FNM_EXTGLOB),
       'Root must discover the bootstrap health configuration')
 check(wave(health) == 1, 'Bootstrap health configuration must be in wave 1')
-expected_waves = [1, 2, 3, 4, 5, 6, 7, 8]
+expected_waves = [1, 2, 3, 4, 5, 6, 8]
 check(([wave(health)] + applications.map { |app| wave(app) }).uniq.sort == expected_waves,
       'Infra Applications must preserve the complete automated rollout wave sequence')
 check(wave(health) <= applications.map { |app| wave(app) }.min,
@@ -197,7 +197,7 @@ check(wave(apps.fetch('openbao')) < wave(apps.fetch('vault-secrets-webhook')), '
 check(wave(apps.fetch('argocd-config')) == 1, 'Existing Argo CD server configuration must be wave 1')
 expected_apps = %w[argocd-config argocd-route grafana-route kube-prometheus-stack monitoring-crds cert-manager
                    cert-manager-config k8up longhorn longhorn-route openbao openbao-config openbao-pki
-                   cloudnative-pg openbao-route postgresql-vso-credentials provider-vault provider-vault-config
+                   cloudnative-pg openbao-route provider-vault provider-vault-config radar
                    vault-secrets-operator vault-secrets-webhook]
 check(apps.keys.sort == expected_apps.sort,
       'Public root must own the complete steady-state application inventory')
@@ -208,8 +208,7 @@ expected_by_wave = {
   4 => %w[vault-secrets-operator vault-secrets-webhook],
   5 => %w[argocd-route cert-manager-config longhorn-route openbao-pki openbao-route provider-vault-config],
   6 => %w[cloudnative-pg openbao-config],
-  7 => %w[postgresql-vso-credentials],
-  8 => %w[grafana-route kube-prometheus-stack]
+  8 => %w[grafana-route kube-prometheus-stack radar]
 }
 actual_by_wave = applications.group_by { |app| wave(app) }.transform_values do |items|
   items.map { |app| app.dig('metadata', 'name') }.sort
