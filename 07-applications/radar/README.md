@@ -7,6 +7,8 @@ role, OpenBao OIDC resources, and namespace-local secret delivery.
 ## Authentication
 
 External access is available only through the `websecure` Gateway listener.
+The private route values supply its externally published port so the OpenBao
+issuer metadata and Radar callback use the same browser-reachable authority.
 OpenBao is the OIDC issuer. Crossplane writes the generated confidential-client
 secret to `Secret/radar-oidc-client`; the generated client ID and private route
 identifiers are kept in the Live values repository. The `radar-groups` scope

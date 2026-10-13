@@ -1,3 +1,9 @@
+{{- $radarHostname := required "Radar hostname is required" .Values.routes.radar.hostname -}}
+{{- $radarPort := int (default 443 .Values.routes.radar.externalPort) -}}
+{{- $radarAuthority := ternary $radarHostname (printf "%s:%d" $radarHostname $radarPort) (eq $radarPort 443) -}}
+{{- $openbaoHostname := required "OpenBao hostname is required" .Values.routes.openbao.hostname -}}
+{{- $openbaoPort := int (default 443 .Values.routes.openbao.externalPort) -}}
+{{- $openbaoAuthority := ternary $openbaoHostname (printf "%s:%d" $openbaoHostname $openbaoPort) (eq $openbaoPort 443) -}}
 apiVersion: identity.vault.upbound.io/v1alpha1
 kind: OidcKey
 metadata:
@@ -60,7 +66,7 @@ spec:
     idTokenTtl: 900
     accessTokenTtl: 900
     redirectUris:
-      - {{ printf "https://%s/auth/callback" (required "Radar hostname is required" .Values.routes.radar.hostname) | quote }}
+      - {{ printf "https://%s/auth/callback" $radarAuthority | quote }}
   providerConfigRef:
     name: openbao
   writeConnectionSecretToRef:
@@ -82,7 +88,7 @@ spec:
   forProvider:
     name: radar
     httpsEnabled: true
-    issuerHost: {{ required "OpenBao hostname is required" .Values.routes.openbao.hostname | quote }}
+    issuerHost: {{ $openbaoAuthority | quote }}
     allowedClientIdsRefs:
       - name: radar
     scopesSupportedRefs:

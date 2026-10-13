@@ -140,11 +140,15 @@ oidc_key = resource(radar_oidc, 'OidcKey', 'radar')
 oidc_client = resource(radar_oidc, 'OidcClient', 'radar')
 oidc_provider = resource(radar_oidc, 'OidcProvider', 'radar')
 private_routes = YAML.load_file(LIVE_VALUES).fetch('routes')
-radar_callback = "https://#{private_routes.fetch('radar').fetch('hostname')}/auth/callback"
+radar_route = private_routes.fetch('radar')
+openbao_route = private_routes.fetch('openbao')
+radar_authority = [radar_route.fetch('hostname'), radar_route.fetch('externalPort')].join(':')
+openbao_authority = [openbao_route.fetch('hostname'), openbao_route.fetch('externalPort')].join(':')
+radar_callback = "https://#{radar_authority}/auth/callback"
 assert oidc_key.dig('spec', 'forProvider', 'algorithm') == 'RS256' &&
        oidc_client.dig('spec', 'forProvider', 'redirectUris') == [radar_callback] &&
        oidc_client.dig('spec', 'writeConnectionSecretToRef') == {'name' => 'radar-oidc-client', 'namespace' => 'radar'} &&
-       oidc_provider.dig('spec', 'forProvider', 'issuerHost') == private_routes.fetch('openbao').fetch('hostname') &&
+       oidc_provider.dig('spec', 'forProvider', 'issuerHost') == openbao_authority &&
        oidc_provider.dig('spec', 'forProvider', 'allowedClientIdsRefs') == [{'name' => 'radar'}],
        'Radar must own its bounded OpenBao OIDC provider and generated client secret'
 radar_role = resource(radar_resources, 'ClusterRole', 'radar')

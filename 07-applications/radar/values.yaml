@@ -7,5 +7,7 @@ clusterNetwork:
 routes:
   radar:
     hostname: radar.example.invalid
+    externalPort: 443
   openbao:
     hostname: openbao.example.invalid
+    externalPort: 443
