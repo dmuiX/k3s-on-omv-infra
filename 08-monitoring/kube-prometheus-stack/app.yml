@@ -55,6 +55,14 @@ spec:
       jsonPointers:
         - /spec/replicas
     - group: apps
+      kind: Deployment
+      name: kube-prometheus-stack-grafana
+      jsonPointers:
+        # The Grafana subchart renders a new random admin Secret on every Helm
+        # evaluation. Secret data is preserved below; ignore only its unstable
+        # pod-template checksum so it cannot create perpetual drift or rollouts.
+        - /spec/template/metadata/annotations/checksum~1secret
+    - group: apps
       kind: StatefulSet
       jsonPointers:
         - /spec/replicas
@@ -71,5 +79,6 @@ spec:
       kind: Secret
       name: kube-prometheus-stack-grafana
       jsonPointers:
-        - /data/admin-user
-        - /data/admin-password
+        # Preserve all chart-generated administrator material. Helm renders a
+        # new random password on every evaluation; GitOps must never apply it.
+        - /data
