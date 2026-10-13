@@ -123,10 +123,14 @@ check(backup.dig('spec', 'schedule') == '0 30 3 * * *' && backup.dig('spec', 'im
 check(kustomized.none? { |item| %w[Ingress HTTPRoute Gateway].include?(item['kind']) },
       'PostgreSQL must not have a public route')
 policies = kustomized.select { |item| item['kind'] == 'NetworkPolicy' }
-check(policies.all? { |item| item.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '0' },
+all_policies = policies + controller_policies
+check(all_policies.all? { |item| item.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '0' },
       'Network isolation must apply before the first external backup gate')
-check(policies.any? { |item| item.dig('metadata', 'name') == 'default-deny' &&
-      item.dig('spec', 'policyTypes').sort == %w[Egress Ingress] }, 'PostgreSQL default deny is missing')
+check(all_policies.one? { |item| item.dig('metadata', 'name') == 'default-deny' &&
+      item.dig('spec', 'policyTypes').sort == %w[Egress Ingress] },
+      'The unified CloudNativePG namespace needs exactly one default deny policy')
+check(all_policies.one? { |item| item.dig('metadata', 'name') == 'allow-dns' },
+      'The unified CloudNativePG namespace needs exactly one DNS policy')
 check(policies.any? { |item| item.to_s.include?('kube-prometheus-stack') } &&
       policies.any? { |item| item.to_s.include?('radar') && item.to_s.include?('grafana') },
       'Monitoring or registered-consumer network paths are missing')
