@@ -57,8 +57,7 @@ spec:
     # Keep pruning disabled through CNPG backup, restore, PITR, failover and
     # application-connectivity acceptance. Cleanup is a separate release.
     automated:
-      # Keep the legacy controller Application inert during the namespace/name cutover.
-      enabled: false
+      enabled: true
       prune: false
       selfHeal: true
       allowEmpty: false
