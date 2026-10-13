@@ -18,8 +18,9 @@ spec:
     size: 2048
     rotationPolicy: Always
   usages:
-    - client auth
-  commonName: openbao-postgresql-ca-carrier
+    - server auth
+  dnsNames:
+    - openbao-postgresql-ca-carrier.svc
   issuerRef:
     group: cert-manager.io
     kind: ClusterIssuer
