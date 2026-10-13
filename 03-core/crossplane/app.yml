@@ -16,9 +16,12 @@ spec:
       targetRevision: 2.4.2
       helm:
         releaseName: crossplane
+        valueFiles:
+          - $values/03-core/crossplane/values.yml
     - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
       targetRevision: main
       path: 03-core/crossplane/workload
+      ref: values
   syncPolicy:
     automated:
       prune: true
