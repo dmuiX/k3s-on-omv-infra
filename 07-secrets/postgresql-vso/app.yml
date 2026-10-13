@@ -16,6 +16,8 @@ spec:
     path: 07-secrets/postgresql-vso/workload
   syncPolicy:
     automated:
+      # Pause consumer credential reconciliation during the initial CNPG rebuild.
+      enabled: false
       prune: true
       selfHeal: true
     syncOptions:

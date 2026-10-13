@@ -23,6 +23,8 @@ spec:
       ref: values
   syncPolicy:
     automated:
+      # Pause database endpoint changes during the initial CNPG rebuild.
+      enabled: false
       prune: false # CRDs move to monitoring-crds; do not prune them during handoff.
       selfHeal: true
       allowEmpty: false

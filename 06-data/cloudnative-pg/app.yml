@@ -56,8 +56,10 @@ spec:
         pod-security.kubernetes.io/warn: restricted
     # Keep pruning disabled through CNPG backup, restore, PITR, failover and
     # application-connectivity acceptance. Cleanup is a separate release.
+    # Pause automatic reconciliation for the destructive initial-cluster rename.
+    # The operator must manually sync with pruning after reviewing the fresh resources.
     automated:
-      enabled: true
+      enabled: false
       prune: false
       selfHeal: true
       allowEmpty: false
