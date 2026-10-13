@@ -326,7 +326,7 @@ end
 check(!longhorn.fetch('spec').key?('labels'), 'Misplaced Application labels')
 longhorn_files = Dir.glob(File.join(ROOT, '02-controllers/longhorn', '*.{yml,yaml}'))
 check(longhorn_files.map { |f| File.basename(f) }.sort ==
-      %w[app.yml bootstrap-storage-canaries.yaml monitoring-network-policy.yaml monitoring-storage.yaml node-default-tags.yaml storageclass-configmap.yaml values.yml],
+      %w[app.yml monitoring-network-policy.yaml monitoring-storage.yaml node-default-tags.yaml storageclass-configmap.yaml values.yml],
       'Longhorn folder must contain only its Application, values and reviewed storage resources')
 longhorn_authored = longhorn_files.flat_map { |file| YAML.load_stream(File.read(file)).compact }
 check(longhorn_authored.none? { |resource| %w[HelmRelease HelmRepository].include?(resource['kind']) },
@@ -370,66 +370,6 @@ check(monitoring_class.dig('metadata', 'name') == 'longhorn-monitoring' &&
       monitoring_class.dig('parameters', 'encrypted') == 'true' &&
       monitoring_class['reclaimPolicy'] == 'Retain',
       'Prometheus StorageClass must use two encrypted replicas on the selected nodes')
-canaries = docs('02-controllers/longhorn/bootstrap-storage-canaries.yaml')
-standard_canary = canaries.find do |item|
-  item['kind'] == 'PersistentVolumeClaim' && item.dig('metadata', 'name') == 'longhorn-bootstrap-standard'
-end
-monitoring_canary = canaries.find do |item|
-  item['kind'] == 'PersistentVolumeClaim' && item.dig('metadata', 'name') == 'longhorn-bootstrap-monitoring'
-end
-canary_deployment = canaries.find do |item|
-  item['kind'] == 'Deployment' && item.dig('metadata', 'name') == 'longhorn-bootstrap-storage-canaries'
-end
-check(standard_canary && monitoring_canary && canary_deployment,
-      'Bootstrap storage canary resources are incomplete')
-[standard_canary, monitoring_canary].each do |claim|
-  check(claim.dig('metadata', 'namespace') == 'longhorn' &&
-        claim.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '4' &&
-        claim.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-options').split(',').sort ==
-          %w[Delete=false Prune=false] &&
-        claim.dig('spec', 'accessModes') == ['ReadWriteOnce'] &&
-        claim.dig('spec', 'resources', 'requests', 'storage') == '1Gi',
-        'Bootstrap canary claims must be retained, right-sized RWO volumes')
-end
-check(standard_canary.dig('spec', 'storageClassName') == 'longhorn' &&
-      monitoring_canary.dig('spec', 'storageClassName') == 'longhorn-monitoring',
-      'Bootstrap canaries must exercise both reviewed Longhorn classes')
-canary_container = canary_deployment.dig('spec', 'template', 'spec', 'containers', 0)
-canary_mounts = canary_container.fetch('volumeMounts').to_h { |mount| [mount['name'], mount] }
-canary_volumes = canary_deployment.dig('spec', 'template', 'spec', 'volumes').to_h do |volume|
-  [volume['name'], volume]
-end
-check(canary_deployment.dig('metadata', 'namespace') == 'longhorn' &&
-      canary_deployment.dig('metadata', 'annotations', 'argocd.argoproj.io/sync-wave') == '5' &&
-      canary_deployment.dig('spec', 'replicas') == 1 &&
-      canary_deployment.dig('spec', 'strategy', 'type') == 'Recreate' &&
-      canary_deployment.dig('spec', 'template', 'spec', 'automountServiceAccountToken') == false &&
-      canary_container['image'] ==
-        'docker.io/library/busybox:1.37.0@sha256:bdf57e528e45e4433820e045b29b4597825a1c9e38353532d90a01445013f82e' &&
-      canary_container.dig('securityContext', 'allowPrivilegeEscalation') == false &&
-      canary_container.dig('securityContext', 'readOnlyRootFilesystem') == true &&
-      canary_container.dig('securityContext', 'runAsNonRoot') == true &&
-      canary_container.dig('securityContext', 'capabilities', 'drop') == ['ALL'] &&
-      canary_container['command'] == [
-        '/bin/sh', '-ec',
-        'printf \'%s\\n\' "$POD_UID" > /standard/ready && printf \'%s\\n\' "$POD_UID" > /monitoring/ready && exec sleep 2147483647'
-      ] &&
-      canary_container['env'] == [
-        {'name' => 'POD_UID', 'valueFrom' => {'fieldRef' => {'fieldPath' => 'metadata.uid'}}}
-      ] &&
-      canary_mounts == {
-        'standard' => {'name' => 'standard', 'mountPath' => '/standard'},
-        'monitoring' => {'name' => 'monitoring', 'mountPath' => '/monitoring'}
-      } &&
-      canary_volumes == {
-        'standard' => {'name' => 'standard', 'persistentVolumeClaim' => {
-          'claimName' => 'longhorn-bootstrap-standard'
-        }},
-        'monitoring' => {'name' => 'monitoring', 'persistentVolumeClaim' => {
-          'claimName' => 'longhorn-bootstrap-monitoring'
-        }}
-      },
-      'Bootstrap canary Deployment must mount both claims with the reviewed hardened image contract')
 openbao_values = docs('03-core/openbao/values.yml').first
 check(openbao_values.dig('server', 'ha', 'enabled') && openbao_values.dig('server', 'ha', 'replicas') == 3,
       'OpenBao Raft must use three server pods')
@@ -447,7 +387,7 @@ check(longhorn_sources.any? { |entry| entry['chart'] == 'longhorn' } &&
       longhorn_sources.any? { |entry| entry['path'] == '02-controllers/longhorn' &&
         entry['targetRevision'] == INFRA_REVISION &&
         entry.dig('directory', 'include') ==
-          '{storageclass-configmap.yaml,node-default-tags.yaml,monitoring-storage.yaml,monitoring-network-policy.yaml,bootstrap-storage-canaries.yaml}' },
+          '{storageclass-configmap.yaml,node-default-tags.yaml,monitoring-storage.yaml,monitoring-network-policy.yaml}' },
       'Longhorn must combine its pinned chart, Git values, node annotations and storage resources')
 puts 'PASS: one public root, multi-source Helm, CRD/storage wave order, selected monitoring storage and three-node OpenBao'
 puts applications.sort_by { |app| [wave(app), app.dig('metadata', 'name')] }.map { |app| "  #{wave(app)}: #{app.dig('metadata', 'name')}" }
