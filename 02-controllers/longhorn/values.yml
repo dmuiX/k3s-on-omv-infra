@@ -16,7 +16,12 @@ defaultSettings:
   defaultReplicaCount:
     v1: "3"
     v2: "3"
-  guaranteedInstanceManagerCPU: 12
+  # Longhorn 1.12 consolidates V1/V2 reservations into a JSON-backed setting.
+  # Supplying the former scalar makes concurrently starting managers race the
+  # migration and exit fatally on a Setting resourceVersion conflict.
+  guaranteedInstanceManagerCPU:
+    v1: "12"
+    v2: "12"
 persistence:
   # The last Argo source overrides the chart's longhorn-storageclass ConfigMap
   # with storageclass-configmap.yaml to add encryption. Keep both in sync.
