@@ -64,8 +64,14 @@ prometheus:
   enabled: true
   podmonitor:
     enabled: true
-extraArgs:
-  - --enable-gateway-api
-  # Keep DNS-01 self-checks on CoreDNS; the controller NetworkPolicy intentionally
-  # does not permit direct DNS queries to arbitrary authoritative servers.
-  - --dns01-recursive-nameservers-only
+config:
+  gatewayAPI:
+    enabled: true
+# Keep DNS-01 self-checks on CoreDNS; the controller NetworkPolicy intentionally
+# does not permit direct DNS queries to arbitrary authoritative servers.
+dns01RecursiveNameserversOnly: true
+# The private values source replaces this empty list with destination-scoped
+# DNS, OpenBao, HTTPS, and K3s API rules. Missing private values therefore fail closed.
+networkPolicy:
+  enabled: true
+  egress: []

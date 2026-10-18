@@ -1,72 +1,24 @@
-# Local checks
+# Offline SPEC v6.1 contract tests
 
-Run from the infra repository:
+Run from the Infra repository root:
 
 ```sh
-ruby tests/verify-bootstrap.rb   # multi-source Helm, waves, values, storage constraints
-ruby tests/verify-cert-manager-network-policy.rb # wave-2 ownership and exact private API egress
-ruby tests/verify-application-health.rb # minimal child Application health passthrough (Lua or pinned npx fallback)
-ruby tests/verify-openbao-pki.rb # native PKI identities/RBAC/issuers/certificate render
-ruby tests/verify-postgresql.rb # CNPG HA/storage/backup/policy and pinned chart renders
-ruby tests/verify-ingress.rb     # no live-specific resources selected by the public root
-ruby tests/verify-longhorn-encryption.rb # Helm override and complete key references
-ruby tests/verify-pi-placement.rb # explicit restricted-Pi tolerations; monitoring exclusion
-ruby tests/verify-charts.rb      # pinned Helm renders + safe local templates (network)
-ruby tests/verify-ram-budget.rb  # safe metric filtering, selective activation, authored-resource visibility
+python3 -m unittest discover -s tests -p 'test_*.py'
 ```
 
-The ordinary Ruby checks need this repository; the OpenBao PKI check also calls
-`kubectl kustomize` locally. The Application-health test uses a
-local Lua interpreter when available and otherwise executes the pinned
-`fengari-node-cli@0.1.0` fallback through `npx`; the first fallback run may need
-registry access. `LUA=/path/to/lua` overrides automatic selection. They need no
-kubeconfig or cluster.
-The chart test additionally needs Helm and network access. It renders each pinned
-upstream chart with the Git values in an isolated temporary Helm cache, applies
-the same Longhorn ConfigMap override, node annotations, and monitoring
-StorageClass as Argo, and validates the desired state.
-Chart diagnostics and Secret values are never printed. The RAM regression check
-optionally accepts an unpacked pinned monitoring chart and a baseline values file:
-`ruby tests/verify-ram-budget.rb /path/to/kube-prometheus-stack /path/to/baseline.yml`.
-It verifies that only the API server ServiceMonitor changes, excluding the existing
-ignored Grafana credential randomness and its checksum. Live rules and dashboards
-must be checked independently before activating the metric filter.
-Restore tests verify decimal ordinal-to-resource/PVC/path mapping from CLI, JSON
-and YAML values (including the upper bound) and reject malformed, fractional,
-negative, boolean, null, quoted-string and out-of-range ordinals instead of silently
-restoring to ordinal zero. Rendering does not prove installation, ingress TLS,
-storage health or backup recovery.
+The suite uses only Python's standard library. It does not import PyYAML, contact chart repositories, connect to Kubernetes, or claim runtime acceptance.
 
-The first-phase render checks wave-1 monitoring CRDs without workloads, the
-post-Longhorn monitoring claim/templates, metadata-only OMV/Wyse node
-annotations (without polling resources or Longhorn Node CRs), OpenBao at three
-Raft server pods with two PVC templates each, and three replicas for new Longhorn
-volumes. They do not change existing volume replica counts or prove placement
-and recovery.
+Tests are split by the numbered areas in SPEC §11.1:
 
-The public root owns the steady-state child Application inventory, including
-OpenBao PKI. The root and every child source owned by this repository track its
-`main` branch; first-party private Live sources track their protected `main`,
-while upstream charts and container images remain independently pinned.
-PostgreSQL remains separately activated through
-one fixed root exclusion rather than mutable Ansible rollout state. Tests assert that no custom
-in-cluster OpenBao polling reconciler remains and that the PKI
-Application renders only cert-manager identities/RBAC, ClusterIssuers, and the
-internal Certificate. OpenBao API configuration and ceremony belong to Ansible.
-Controller charts and public values remain here; route, certificate, backup,
-and private Kubernetes API endpoint values remain in the private values
-repository.
-With sibling Live and Bootstrap checkouts, run
-`ruby tests/verify-private-values.rb`. It uses the current Bootstrap Traefik
-HelmChartConfig template by default; an alternate rendered config or template
-may be passed as the second argument. It renders the local chart with the real
-values without printing private identifiers or Secret data.
+1. `test_01_repository_ownership.py` — exact 21-Application inventory, canonical paths/waves, root scope, and excluded Apps/webhook/Redis ownership.
+2. `test_02_reference_integrity.py` — local paths, `$values` targets, Kustomize references, and root selector boundaries.
+3. `test_03_secrets_pins_blockers.py` — basic secret/pin checks and complete machine-readable blocker annotations.
+4. `test_04_render_schema_contracts.py` — checked-in schemas, Ambient namespace declarations, and fail-closed markers for validation that cannot yet be performed honestly offline.
+5. `test_05_argo_contracts.py` — self-heal/no-prune, multi-source ordering, Application health, and provider-vault's exact 19-type `-20/-10/0` sequence.
+6. `test_06_ansible_scope.py` — confirms that Ansible and host inventory are not owned by Infra; their substantive tests belong to Bootstrap.
+7. `test_07_platform_contracts.py` — static storage, PostgreSQL, monitoring, and backup-boundary checks.
+8. `test_08_adapter_contracts.py` — confirms unresolved adapter work blocks deployment and that Infra authors no direct production S3 deletion.
 
-Before any live sync, separately review: initial Argo CD read-only Git access
-(the private repo cannot bootstrap its own credential through OpenBao), Argo CD
-child-Application health customization, host storage prerequisites, disposable
-Longhorn PVC provisioning/write/read/reattach, the monitoring CRD ownership
-handoff and new PVCs (see `03-core/kube-prometheus-stack/README.md`), OpenBao unseal and recovery,
-Certificate Ready, Gateway/route status, independent backup/restore and the
-Argo automated prune/self-heal settings. Cluster-mutating tests need separate
-approval and a cleanup plan.
+`deployment_gate.py` intentionally exits with status 2 while open blockers exist. While blocked, `infra.yml` also references the deliberately nonexistent `infra-deployment-blocked` AppProject, so applying the root cannot start child reconciliation. Resolving the final blocker requires changing `deploymentAllowed` to `true` and the root project to `default` in the same reviewed change. The unit suite validates both blocked and resolved gate fixtures; it does not treat a blocked deployment as a successful compatibility test.
+
+Full Helm rendering and Kubernetes/CRD schema validation require reviewed pinned chart artifacts and synthetic Live fixtures. Missing artifacts or schemas remain blockers in `deployment-blockers.json`; they must not be skipped or reported as passing. Runtime gates, failover, backup, restore, and cluster health belong to milestone 3.

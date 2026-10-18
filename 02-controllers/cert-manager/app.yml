@@ -11,26 +11,23 @@ spec:
     namespace: cert-manager
   project: default
   sources:
-    - repoURL: https://charts.jetstack.io
+    - repoURL: "https://charts.jetstack.io"
       targetRevision: v1.21.2
       chart: cert-manager
       helm:
         valueFiles:
           - $values/02-controllers/cert-manager/values.yml
+          - $private/clusters/omv/cert-manager-values.yml
     - repoURL: "https://github.com/dmuiX/k3s-on-omv-infra.git"
       targetRevision: main
       ref: values
-    - repoURL: "https://github.com/dmuiX/k3s-on-omv-infra.git"
-      targetRevision: main
-      path: 02-controllers/cert-manager/network-policy
-      helm:
-        releaseName: cert-manager-network-policy
-        valueFiles:
-          - $private/clusters/omv/values.yml
-    - repoURL: https://github.com/dmuiX/k3s-on-omv-live.git
+    - repoURL: "https://github.com/dmuiX/k3s-on-omv-live.git"
       targetRevision: main
       ref: private
   syncPolicy:
+    managedNamespaceMetadata:
+      labels:
+        istio.io/dataplane-mode: ambient
     automated:
       enabled: true
       prune: false

@@ -1,0 +1,42 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: prometheus-operator-crds
+  namespace: argocd
+  annotations:
+    # Controller charts emit monitoring.coreos.com resources from wave 2 onward.
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  destination:
+    name: in-cluster
+    namespace: kube-prometheus-stack
+  project: default
+  source:
+    repoURL: "https://prometheus-community.github.io/helm-charts"
+    targetRevision: 32.0.0
+    chart: prometheus-operator-crds
+    helm:
+      releaseName: prometheus-operator-crds
+  syncPolicy:
+    automated:
+      enabled: true
+      # Removing a CRD would also remove every custom resource using it.
+      prune: false
+      selfHeal: true
+      allowEmpty: false
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 5m
+    syncOptions:
+      - PruneLast=true
+      - CreateNamespace=true
+      - ServerSideApply=true
+  ignoreDifferences:
+    - group: apiextensions.k8s.io
+      kind: CustomResourceDefinition
+      jsonPointers:
+        - /status
+        - /spec/preserveUnknownFields

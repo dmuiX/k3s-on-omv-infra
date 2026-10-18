@@ -1,0 +1,33 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: openbao-backups
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "6"
+    infra.k3s-on-omv.dev/deployment-blocker: OPENBAO_BACKUP_ADAPTER_PENDING
+spec:
+  destination:
+    name: in-cluster
+    namespace: openbao
+  project: default
+  source:
+    repoURL: "https://github.com/dmuiX/k3s-on-omv-live.git"
+    targetRevision: main
+    path: clusters/omv/openbao-backups
+    directory:
+      include: "{repository-password.yaml,object-store-credentials.yaml,pod-settings.yaml,backup-schedule.yaml}"
+  syncPolicy:
+    automated:
+      enabled: true
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - PruneLast=true
+      - ServerSideApply=true
+      - RespectIgnoreDifferences=true
+  ignoreDifferences:
+    - kind: Secret
+      namespace: openbao
+      jsonPointers:
+        - /data

@@ -18,14 +18,24 @@ defaultSettings:
     v2: "3"
 persistence:
   # The last Argo source overrides the chart's longhorn-storageclass ConfigMap
-  # with storageclass-configmap.yaml to add encryption. Keep both in sync.
+  # with encrypted-storageclass-template.yaml to add encryption. Keep both in sync.
   # Keep K3s local-path as the only default; PVCs opt into Longhorn explicitly.
   defaultClass: false
   defaultClassReplicaCount: 3
   reclaimPolicy: Retain
 service:
   ui:
-    type: ClusterIP # Exposed only through the shared Traefik Gateway.
+    type: ClusterIP
+# Longhorn 1.13 renders the UI route natively. Its private values provide only
+# the hostname.
+httproute:
+  enabled: true
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: traefik-gateway
+      namespace: kube-system
+      sectionName: websecure
 metrics:
   serviceMonitor:
     enabled: true

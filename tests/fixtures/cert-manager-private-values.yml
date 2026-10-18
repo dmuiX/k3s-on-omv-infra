@@ -1,0 +1,35 @@
+networkPolicy:
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: openbao
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/instance: openbao
+              app.kubernetes.io/name: openbao
+              component: server
+              openbao-active: "true"
+      ports:
+        - {protocol: TCP, port: 8200}
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+      ports:
+        - {protocol: TCP, port: 443}
+    - to:
+        - ipBlock: {cidr: 192.0.2.10/32}
+        - ipBlock: {cidr: 192.0.2.11/32}
+        - ipBlock: {cidr: 192.0.2.12/32}
+      ports:
+        - {protocol: TCP, port: 6443}

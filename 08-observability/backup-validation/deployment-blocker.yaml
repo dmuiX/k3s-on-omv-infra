@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backup-validation-deployment-blocker
+  namespace: backup-validation
+data:
+  blocker: BACKUP_VALIDATION_SCHEMAS_AND_IMAGES_UNRESOLVED
+  resolution: Pin verified multi-arch validation images and validate CNPG, K8up, VSO, RBAC, and Lease schemas before adding schedules.

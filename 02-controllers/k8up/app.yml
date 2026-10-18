@@ -11,7 +11,7 @@ spec:
     namespace: k8up
   project: default
   sources:
-    - repoURL: https://k8up-io.github.io/k8up
+    - repoURL: "https://k8up-io.github.io/k8up"
       targetRevision: 4.10.0
       chart: k8up
       helm:
@@ -24,8 +24,11 @@ spec:
       targetRevision: main
       path: 02-controllers/k8up
       directory:
-        include: pdb.yaml
+        include: controller-availability.yaml
   syncPolicy:
+    managedNamespaceMetadata:
+      labels:
+        istio.io/dataplane-mode: ambient
     automated:
       enabled: true
       prune: false

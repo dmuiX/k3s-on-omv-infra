@@ -1,0 +1,15 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: openbao-config
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "6"
+    infra.k3s-on-omv.dev/deployment-blocker: OPENBAO_CONFIG_PROVIDER_SCHEMA_UNVERIFIED
+spec:
+  project: default
+  destination: {name: in-cluster, namespace: crossplane-system}
+  source: {repoURL: "https://github.com/dmuiX/k3s-on-omv-infra.git", targetRevision: main, path: 06-platform/openbao-config, directory: {include: deployment-blocker.yaml}}
+  syncPolicy:
+    automated: {enabled: true, prune: false, selfHeal: true}
+    syncOptions: [ServerSideApply=true, SkipDryRunOnMissingResource=true]

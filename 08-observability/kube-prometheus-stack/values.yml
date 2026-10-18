@@ -1,0 +1,144 @@
+# yaml-language-server: $schema=../../values-schemas/kube-prometheus-stack/values.schema.json
+fullnameOverride: kube-prometheus-stack
+namespaceOverride: kube-prometheus-stack
+# Wave 1 owns the CRDs separately. Never let two Applications manage them.
+crds:
+  enabled: false
+prometheusOperator:
+  admissionWebhooks:
+    certManager:
+      enabled: false # Avoid a cert-manager dependency for monitoring's admission webhook.
+grafana:
+  replicas: 2
+  resources:
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {cpu: 500m, memory: 512Mi}
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: compute-class
+                operator: In
+                values: [standard]
+  envValueFrom:
+    GF_DATABASE_USER:
+      secretKeyRef:
+        name: grafana-db-credentials
+        key: username
+    GF_DATABASE_PASSWORD:
+      secretKeyRef:
+        name: grafana-db-credentials
+        key: password
+  grafana.ini:
+    database:
+      type: postgres
+      host: k3s-postgres-rw.cloudnative-pg.svc:5432
+      name: grafana
+      user: $__env{GF_DATABASE_USER}
+      password: $__env{GF_DATABASE_PASSWORD}
+      # PostgreSQL requires TLS, but this cross-namespace client currently
+      # cannot consume the server Secret's CA certificate.
+      ssl_mode: require
+  # Grafana state and sessions live in PostgreSQL. No shared RWO PVC is used by
+  # the two replicas.
+  persistence:
+    enabled: false
+  service:
+    type: ClusterIP
+  # Grafana 13.2.5 renders this Gateway API route natively. The private values
+  # source supplies only the cluster hostname.
+  route:
+    main:
+      enabled: true
+      apiVersion: gateway.networking.k8s.io/v1
+      kind: HTTPRoute
+      parentRefs:
+        - group: gateway.networking.k8s.io
+          kind: Gateway
+          name: traefik-gateway
+          namespace: kube-system
+          sectionName: websecure
+  sidecar:
+    dashboards:
+      searchNamespace: ALL
+prometheus-node-exporter:
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+          - matchExpressions:
+              - key: kubernetes.io/hostname
+                operator: NotIn
+                values: [raspi4]
+# These six high-cardinality families are not used by the pinned rules/dashboards.
+# Preserve API availability/SLO histograms, counters, and all storage alerts.
+kubeApiServer:
+  serviceMonitor:
+    metricRelabelings:
+      # Preserve the pinned chart's existing bucket thinning when overriding this list.
+      - action: drop
+        sourceLabels: [__name__, le]
+        regex: '(etcd_request|apiserver_request_slo|apiserver_request_sli|apiserver_request)_duration_seconds_bucket;(0\.15|0\.2|0\.3|0\.35|0\.4|0\.45|0\.6|0\.7|0\.8|0\.9|1\.25|1\.5|1\.75|2|3|3\.5|4|4\.5|6|7|8|9|15|20|40|45|50)(\.0)?'
+      - action: drop
+        sourceLabels: [__name__]
+        regex: '(apiserver_(watch_events_dispatch_duration_seconds|storage_list_duration_seconds|watch_list_duration_seconds|watch_cache_read_wait_seconds|watch_cache_initialization_duration_seconds)|etcd_request_duration_seconds)(_bucket|_sum|_count)?'
+prometheus:
+  service:
+    type: ClusterIP
+  prometheusSpec:
+    replicas: 2
+    retention: 15d
+    retentionSize: 18GB # Below the 20Gi claim; leave room for WAL and compaction.
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          # Keep metrics replicas on OMV and Wyse; the Pi is not a monitoring
+          # compute or storage target.
+          storageClassName: longhorn-monitoring
+          accessModes: [ReadWriteOnce]
+          resources:
+            requests:
+              storage: 20Gi
+    # Include monitors emitted by other infra charts, not just this Helm release.
+    serviceMonitorSelectorNilUsesHelmValues: false
+    serviceMonitorSelector: {}
+    serviceMonitorNamespaceSelector: {}
+    podMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelector: {}
+    podMonitorNamespaceSelector: {}
+    ruleSelectorNilUsesHelmValues: false
+    ruleSelector: {}
+    ruleNamespaceSelector: {}
+alertmanager:
+  alertmanagerSpec:
+    replicas: 2
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: longhorn-monitoring
+          accessModes: [ReadWriteOnce]
+          resources:
+            requests:
+              storage: 1Gi
+additionalPrometheusRulesMap:
+  persistent-volume-capacity:
+    groups:
+      - name: persistent-volume-capacity
+        rules:
+          - alert: PlatformPVCUsageWarning
+            expr: kubelet_volume_stats_used_bytes{namespace=~"kube-prometheus-stack|openbao"} / kubelet_volume_stats_capacity_bytes{namespace=~"kube-prometheus-stack|openbao"} > 0.70
+            for: 15m
+            labels:
+              severity: warning
+            annotations:
+              summary: A platform PVC is more than 70 percent full
+              runbook_url: 08-observability/kube-prometheus-stack/README.md
+          - alert: PlatformPVCUsageCritical
+            expr: kubelet_volume_stats_used_bytes{namespace=~"kube-prometheus-stack|openbao"} / kubelet_volume_stats_capacity_bytes{namespace=~"kube-prometheus-stack|openbao"} > 0.85
+            for: 5m
+            labels:
+              severity: critical
+            annotations:
+              summary: A platform PVC is more than 85 percent full
+              runbook_url: 08-observability/kube-prometheus-stack/README.md

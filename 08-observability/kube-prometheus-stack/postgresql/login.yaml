@@ -1,0 +1,27 @@
+apiVersion: database.vault.upbound.io/v1alpha1
+kind: SecretBackendStaticRole
+metadata:
+  name: grafana
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  deletionPolicy: Orphan
+  forProvider:
+    backend: database
+    name: grafana
+    dbName: k3s-postgres
+    username: grafana
+    rotationPeriod: 2592000
+    rotationStatements:
+      - >-
+        DO $role$ BEGIN
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'grafana') THEN
+        ALTER ROLE grafana WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION
+        INHERIT CONNECTION LIMIT 25 PASSWORD '{{password}}';
+        ELSE
+        CREATE ROLE grafana WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION
+        INHERIT CONNECTION LIMIT 25 PASSWORD '{{password}}';
+        END IF;
+        END $role$;
+  providerConfigRef:
+    name: openbao

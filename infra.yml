@@ -1,5 +1,5 @@
-# Single steady-state infra root: all Applications/templates are public; selected
-# Helm values come from the private repo. Seed read-only Git access before syncing.
+# Canonical SPEC v6.1 Infra root. Bootstrap must refuse to apply this root while
+# deployment-blockers.json contains any open deployment-blocking record.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -11,18 +11,21 @@ spec:
   destination:
     name: in-cluster
     namespace: argocd
-  project: default
+  # This deliberately nonexistent AppProject makes the root unsyncable while
+  # deployment-blockers.json reports open blockers. Resolve the registry and
+  # change this to default in the same reviewed change.
+  project: infra-deployment-blocked
   source:
-    path: .
-    repoURL: "https://github.com/dmuiX/k3s-on-omv-infra.git"
+    repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
     targetRevision: main
+    path: .
     directory:
       recurse: true
-      include: "{01-bootstrap/argocd-bootstrap/application-health-config.yml,*/*/app.yml,*/*/config-app.yml,*/*/application.yml}"
+      include: "0[1-8]-*/*/app.yml"
   syncPolicy:
     automated:
+      enabled: true
       prune: false
       selfHeal: true
     syncOptions:
-      - PruneLast=true
       - ServerSideApply=true

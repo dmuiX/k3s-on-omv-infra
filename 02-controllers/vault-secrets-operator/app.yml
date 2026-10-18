@@ -1,0 +1,19 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: vault-secrets-operator
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+    infra.k3s-on-omv.dev/deployment-blocker: VSO_VALUES_SCHEMA_UNVERIFIED
+spec:
+  project: default
+  destination: {name: in-cluster, namespace: vault-secrets-operator}
+  sources:
+    - {repoURL: "https://helm.releases.hashicorp.com", chart: vault-secrets-operator, targetRevision: 1.6.0, helm: {releaseName: vault-secrets-operator, valueFiles: [$values/02-controllers/vault-secrets-operator/values.yml]}}
+    - {repoURL: "https://github.com/dmuiX/k3s-on-omv-infra.git", targetRevision: main, ref: values}
+  syncPolicy:
+    managedNamespaceMetadata:
+      labels: {istio.io/dataplane-mode: ambient}
+    automated: {enabled: true, prune: false, selfHeal: true}
+    syncOptions: [CreateNamespace=true, ServerSideApply=true]

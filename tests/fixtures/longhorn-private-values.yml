@@ -1,0 +1,3 @@
+httproute:
+  hostnames:
+    - longhorn.example.invalid

@@ -1,0 +1,26 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: provider-vault-connection
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "5"
+spec:
+  destination:
+    name: in-cluster
+    namespace: crossplane-system
+  project: default
+  source:
+    repoURL: "https://github.com/dmuiX/k3s-on-omv-infra.git"
+    targetRevision: main
+    path: 05-platform/provider-vault-connection
+    directory:
+      include: openbao.yaml
+  syncPolicy:
+    automated:
+      enabled: true
+      prune: false
+      selfHeal: true
+    syncOptions:
+      - ServerSideApply=true
+      - SkipDryRunOnMissingResource=true

@@ -1,5 +1,0 @@
-apiVersion: v2
-name: radar-platform
-version: 0.1.0
-type: application
-description: Radar-owned OpenBao OIDC and secret-delivery resources

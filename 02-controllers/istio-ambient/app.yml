@@ -1,0 +1,19 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: istio-ambient
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+    infra.k3s-on-omv.dev/deployment-blocker: ISTIO_AMBIENT_COMPATIBILITY_UNVERIFIED
+spec:
+  project: default
+  destination: {name: in-cluster, namespace: istio-system}
+  sources:
+    - {repoURL: "https://istio-release.storage.googleapis.com/charts", chart: base, targetRevision: UNRESOLVED_ISTIO_VERSION, helm: {releaseName: istio-base}}
+    - {repoURL: "https://istio-release.storage.googleapis.com/charts", chart: istiod, targetRevision: UNRESOLVED_ISTIO_VERSION, helm: {releaseName: istiod, valueFiles: [$values/02-controllers/istio-ambient/istiod-values.yml]}}
+    - {repoURL: "https://istio-release.storage.googleapis.com/charts", chart: ztunnel, targetRevision: UNRESOLVED_ISTIO_VERSION, helm: {releaseName: ztunnel, valueFiles: [$values/02-controllers/istio-ambient/ztunnel-values.yml]}}
+    - {repoURL: "https://github.com/dmuiX/k3s-on-omv-infra.git", targetRevision: main, ref: values}
+  syncPolicy:
+    automated: {enabled: true, prune: false, selfHeal: true}
+    syncOptions: [CreateNamespace=true, ServerSideApply=true]

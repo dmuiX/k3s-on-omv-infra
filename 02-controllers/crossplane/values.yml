@@ -1,0 +1,17 @@
+# Crossplane core only. Provider packages are owned by separate Applications.
+provider:
+  packages: []
+resourcesCrossplane:
+  requests:
+    cpu: 50m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+resourcesRBACManager:
+  requests:
+    cpu: 25m
+    memory: 64Mi
+  limits:
+    cpu: 250m
+    memory: 256Mi

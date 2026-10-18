@@ -1,0 +1,24 @@
+apiVersion: database.vault.upbound.io/v1alpha1
+kind: SecretBackendConnection
+metadata:
+  name: postgresql
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+spec:
+  deletionPolicy: Orphan
+  forProvider:
+    backend: database
+    name: k3s-postgres
+    # Consumer roles are added only with their owning Application. The
+    # monitoring consumer currently requires the sole platform allow-list entry.
+    allowedRoles:
+      - grafana
+    postgresql:
+      - connectionUrl: "postgresql://{{username}}:{{password}}@k3s-postgres-rw.cloudnative-pg.svc:5432/postgres?sslmode=verify-full&sslrootcert=/openbao/postgresql-tls/ca.crt"
+        username: openbao_manager
+        passwordSecretRef:
+          name: openbao-manager-credentials
+          namespace: cloudnative-pg
+          key: password
+  providerConfigRef:
+    name: openbao

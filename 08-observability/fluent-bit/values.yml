@@ -1,0 +1,15 @@
+kind: DaemonSet
+resources:
+  requests:
+    cpu: 25m
+    memory: 64Mi
+  limits:
+    cpu: 250m
+    memory: 256Mi
+tolerations:
+  - key: CriticalAddonsOnly
+    operator: Equal
+    value: "true"
+    effect: NoSchedule
+# The required OMV rsyslog destination is cluster-private. Deployment remains
+# blocked until a verified Live values overlay configures the syslog output.

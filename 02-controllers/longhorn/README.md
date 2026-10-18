@@ -3,32 +3,31 @@
 ## Structure and ordering
 
 Folder prefix `02-` denotes Longhorn's controller deployment wave. Its UI
-route is a separate wave-5 Application rendering `charts/cluster-config/` with
-private Git values, in the same platform phase as certificate configuration.
-The namespace and release name remain `longhorn`. HTTPS only becomes usable
-once the wildcard certificate is ready.
+route is rendered natively by the pinned Longhorn chart, with only its hostname
+coming from protected Git values. The namespace and release name remain
+`longhorn`. HTTPS only becomes usable once the wildcard certificate is ready.
 
 - `app.yml`: version-pinned Longhorn Helm chart plus branch-tracking same-repository
   Git values and authored resources for node annotations and encrypted StorageClass configuration.
 - `values.yml`: three-replica storage defaults; no embedded Flux HelmRelease.
-- `storageclass-configmap.yaml`: reviewed final Argo source overriding the chart's
+- `encrypted-storageclass-template.yaml`: reviewed final Argo source overriding the chart's
   `longhorn-storageclass` ConfigMap; the normal `longhorn` class encrypts new
   volumes by default. No passphrase or Kubernetes Secret is committed here.
-- `node-default-tags.yaml`: metadata-only core Kubernetes Nodes for OMV and Wyse.
+- `prometheus-storage-placement.yaml`: metadata-only core Kubernetes Nodes for OMV and Wyse.
   In intra-Application wave `-1`, server-side apply adds Longhorn's
   official `node.longhorn.io/default-node-tags` annotation before chart resources.
   `Prune=false` and `Delete=false` prevent Argo from deleting cluster Nodes.
-- `monitoring-storage.yaml`: encrypted two-replica Prometheus StorageClass. Its
+- `prometheus-storageclass.yaml`: encrypted two-replica Prometheus StorageClass. Its
   node selector uses the `monitoring-storage` tags that Longhorn initializes from
   the Kubernetes Node annotations.
-- `monitoring-network-policy.yaml`: additive cross-namespace Prometheus access to
+- `prometheus-scrape-access.yaml`: additive cross-namespace Prometheus access to
   manager metrics on TCP 9500. Longhorn 1.12 enables internal ingress policies by
   default; ServiceMonitor discovery alone does not authorize this traffic.
 Storage canaries are temporary acceptance resources, not steady-state GitOps
 workloads. Create them only for a guarded storage or upgrade test, verify both
 StorageClasses and payload checksums, then remove their workload, claims, retained
 PVs, and Longhorn backends after proving complete detach.
-- The public route template selects `longhorn-frontend:80` through the K3s
+- Longhorn's native HTTPRoute selects `longhorn-frontend:80` through the K3s
   Gateway; only the real hostname value comes from private Git.
 
 The previous Flux HelmRelease/HelmRepository files and unused HelmRelease schema
@@ -36,18 +35,19 @@ are removed. Argo CD is the only deployment controller for Longhorn.
 
 | Wave | Dependency |
 | ---: | --- |
-| 1 | Child-Application health customization; monitoring CRDs only |
+| 1 | Child-Application health customization and dedicated Prometheus Operator CRD chart |
 | 2 | Longhorn controller/CSI, encrypted `longhorn` class template and ServiceMonitor |
-| 3 | Persistent monitoring and OpenBao; their PVCs select `longhorn` |
+| 3 | OpenBao; its PVCs select `longhorn` |
 | 4 | Vault Secrets Webhook |
-| 5 | Cloudflare credential, issuer, wildcard certificate and Longhorn UI route |
+| 5 | Cloudflare credential, issuer and wildcard certificate |
+| 8 | Persistent Prometheus, Alertmanager and Grafana monitoring |
 
-The CRD-only Application renders the same pinned monitoring chart as the full
-stack, with all workloads disabled. Longhorn can create its ServiceMonitor
-in wave 2; the Prometheus operator and storage-backed Prometheus start in wave 3.
+The CRD-only Application installs the dedicated pinned Prometheus Operator CRD
+chart. Longhorn can create its ServiceMonitor in wave 2; the Prometheus operator
+and storage-backed Prometheus start in wave 8.
 Prometheus selects ServiceMonitors and PodMonitors across namespaces/releases,
 including Longhorn's metrics Service. See
-[`03-core/kube-prometheus-stack/README.md`](../03-core/kube-prometheus-stack/README.md)
+[`08-observability/kube-prometheus-stack/README.md`](../../08-observability/kube-prometheus-stack/README.md)
 for the handoff from existing ephemeral monitoring.
 
 ## The normal `longhorn` class encrypts new volumes
@@ -59,7 +59,7 @@ without a class; manually created UI volumes are outside this StorageClass rule.
 Existing volumes are **not** converted, even though their class name is unchanged.
 
 Longhorn 1.13.0 does not expose encryption/CSI key references in its Helm values.
-The Application therefore uses `storageclass-configmap.yaml` as its final Argo
+The Application therefore uses `encrypted-storageclass-template.yaml` as its final Argo
 source, intentionally overriding the chart's ConfigMap. Argo may report a
 `RepeatedResourceWarning`; the last source is the desired owner. Do not deploy
 with a standalone `helm upgrade -f values.yml`, because that omits the encrypted

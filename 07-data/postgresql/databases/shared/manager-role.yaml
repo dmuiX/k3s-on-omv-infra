@@ -1,0 +1,21 @@
+# CNPG creates the shared manager role, but the create-once password remains under OpenBao custody.
+apiVersion: postgresql.cnpg.io/v1
+kind: DatabaseRole
+metadata:
+  name: openbao-manager
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  cluster:
+    name: k3s-postgres
+  name: openbao_manager
+  login: true
+  superuser: false
+  createdb: false
+  createrole: true
+  replication: false
+  inherit: true
+  connectionLimit: 5
+  databaseRoleReclaimPolicy: retain
+  passwordSecret:
+    name: openbao-manager-credentials
