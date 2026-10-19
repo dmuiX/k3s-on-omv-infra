@@ -1,0 +1,14 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata: {name: cloudnative-pg, namespace: argocd, annotations: {argocd.argoproj.io/sync-wave: "2"}}
+spec:
+  project: default
+  destination: {name: in-cluster, namespace: cloudnative-pg}
+  sources:
+    - repoURL: https://cloudnative-pg.github.io/charts
+      chart: cloudnative-pg
+      targetRevision: 0.29.1
+      helm: {valueFiles: [$infra/02-controllers/cloudnative-pg/values.yml]}
+    - {repoURL: 'https://github.com/dmuiX/k3s-on-omv-infra.git', targetRevision: main, ref: infra}
+    - {repoURL: 'https://github.com/dmuiX/k3s-on-omv-infra.git', targetRevision: main, path: 02-controllers/cloudnative-pg/resources}
+  syncPolicy: {automated: {enabled: true, prune: false, selfHeal: true, allowEmpty: false}, syncOptions: [CreateNamespace=true, ServerSideApply=true]}

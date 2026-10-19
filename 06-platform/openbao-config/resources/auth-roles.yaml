@@ -1,0 +1,76 @@
+apiVersion: kubernetes.vault.upbound.io/v1alpha1
+kind: AuthBackendRole
+metadata: {name: grafana-vso}
+spec:
+  forProvider: {backend: kubernetes, roleName: grafana-vso, boundServiceAccountNames: [grafana-vso], boundServiceAccountNamespaces: [kube-prometheus-stack], tokenPolicies: [grafana-vso-read], tokenTtl: 3600}
+  providerConfigRef: {name: openbao}
+---
+apiVersion: kubernetes.vault.upbound.io/v1alpha1
+kind: AuthBackendRole
+metadata: {name: alertmanager-vso}
+spec:
+  forProvider: {backend: kubernetes, roleName: alertmanager-vso, boundServiceAccountNames: [alertmanager-vso], boundServiceAccountNamespaces: [kube-prometheus-stack], tokenPolicies: [alertmanager-vso-read], tokenTtl: 3600}
+  providerConfigRef: {name: openbao}
+---
+apiVersion: kubernetes.vault.upbound.io/v1alpha1
+kind: AuthBackendRole
+metadata: {name: radar-vso}
+spec:
+  forProvider: {backend: kubernetes, roleName: radar-vso, boundServiceAccountNames: [radar-vso], boundServiceAccountNamespaces: [radar], tokenPolicies: [radar-vso-read], tokenTtl: 3600}
+  providerConfigRef: {name: openbao}
+---
+apiVersion: kubernetes.vault.upbound.io/v1alpha1
+kind: AuthBackendRole
+metadata: {name: longhorn-oidc-proxy}
+spec:
+  forProvider: {backend: kubernetes, roleName: longhorn-oidc-proxy, boundServiceAccountNames: [longhorn-oidc-proxy], boundServiceAccountNamespaces: [longhorn], tokenPolicies: [longhorn-oidc-proxy-read], tokenTtl: 3600}
+  providerConfigRef: {name: openbao}
+---
+apiVersion: kubernetes.vault.upbound.io/v1alpha1
+kind: AuthBackendRole
+metadata: {name: postgresql-vso}
+spec:
+  forProvider: {backend: kubernetes, roleName: postgresql-vso, boundServiceAccountNames: [postgresql-vso], boundServiceAccountNamespaces: [cloudnative-pg], tokenPolicies: [postgresql-vso-read, platform-r2-read], tokenTtl: 3600}
+  providerConfigRef: {name: openbao}
+---
+apiVersion: kubernetes.vault.upbound.io/v1alpha1
+kind: AuthBackendRole
+metadata: {name: openbao-snapshot}
+spec:
+  forProvider: {backend: kubernetes, roleName: openbao-snapshot, boundServiceAccountNames: [openbao-snapshot], boundServiceAccountNamespaces: [openbao], tokenPolicies: [openbao-snapshot, platform-r2-read], tokenTtl: 900}
+  providerConfigRef: {name: openbao}
+---
+apiVersion: kubernetes.vault.upbound.io/v1alpha1
+kind: AuthBackendRole
+metadata: {name: k8up-validation-vso}
+spec:
+  forProvider: {backend: kubernetes, roleName: k8up-validation-vso, boundServiceAccountNames: [k8up-validation-vso], boundServiceAccountNamespaces: [backup-validation], tokenPolicies: [k8up-validation-vso-read, platform-r2-read], tokenTtl: 900}
+  providerConfigRef: {name: openbao}
+---
+apiVersion: kubernetes.vault.upbound.io/v1alpha1
+kind: AuthBackendRole
+metadata: {name: platform-r2-vso, annotations: {argocd.argoproj.io/sync-wave: "0"}}
+spec:
+  forProvider: {backend: kubernetes, roleName: platform-r2-vso, boundServiceAccountNames: [platform-r2-vso], boundServiceAccountNamespaces: [kube-system], tokenPolicies: [platform-r2-read], tokenTtl: 3600}
+  providerConfigRef: {name: openbao}
+---
+apiVersion: kubernetes.vault.upbound.io/v1alpha1
+kind: AuthBackendRole
+metadata: {name: smb-vso, annotations: {argocd.argoproj.io/sync-wave: "0"}}
+spec:
+  forProvider: {backend: kubernetes, roleName: smb-vso, boundServiceAccountNames: [smb-vso], boundServiceAccountNamespaces: [kube-system], tokenPolicies: [smb-vso-read], tokenTtl: 3600}
+  providerConfigRef: {name: openbao}
+---
+apiVersion: kubernetes.vault.upbound.io/v1alpha1
+kind: AuthBackendRole
+metadata: {name: prometheus-k8up-vso}
+spec:
+  forProvider: {backend: kubernetes, roleName: prometheus-k8up-vso, boundServiceAccountNames: [prometheus-k8up-vso], boundServiceAccountNamespaces: [kube-prometheus-stack], tokenPolicies: [k8up-validation-vso-read], tokenTtl: 900}
+  providerConfigRef: {name: openbao}
+---
+apiVersion: kubernetes.vault.upbound.io/v1alpha1
+kind: AuthBackendRole
+metadata: {name: cert-manager-dns01}
+spec:
+  forProvider: {backend: kubernetes, roleName: cert-manager-dns01, boundServiceAccountNames: [cert-manager-dns01], boundServiceAccountNamespaces: [cert-manager], tokenPolicies: [cert-manager-dns01-read], tokenTtl: 3600, audience: "vault://cert-manager-dns01"}
+  providerConfigRef: {name: openbao}

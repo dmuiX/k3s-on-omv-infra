@@ -1,64 +1,18 @@
-# yaml-language-server: $schema=../../values-schemas/longhorn/values.schema.json
-global:
-  tolerations:
-    - key: CriticalAddonsOnly
-      operator: Equal
-      value: "true"
-      effect: NoSchedule
 defaultSettings:
-  defaultDataPath: /var/lib/longhorn
-  # Longhorn-created instance-manager pods are not rendered by Helm and need
-  # the same explicit permission as chart-managed system workloads.
-  taintToleration: CriticalAddonsOnly=true:NoSchedule
-  createDefaultDiskLabeledNodes: "false"
-  # New volumes use one replica per cluster node. Existing volumes must be
-  # expanded to three replicas separately and verified before relying on HA.
-  defaultReplicaCount:
-    v1: "3"
-    v2: "3"
+  defaultReplicaCount: 3
+  defaultDataLocality: disabled
+  storageOverProvisioningPercentage: 100
+  replicaAutoBalance: best-effort
 persistence:
-  # The last Argo source overrides the chart's longhorn-storageclass ConfigMap
-  # with storageclass-configmap.yaml to add encryption. Keep both in sync.
-  # Keep K3s local-path as the only default; PVCs opt into Longhorn explicitly.
   defaultClass: false
-  defaultClassReplicaCount: 3
   reclaimPolicy: Retain
-service:
-  ui:
-    type: ClusterIP # Exposed only through the shared Traefik Gateway.
-metrics:
-  serviceMonitor:
-    enabled: true
+  defaultFsType: ext4
+longhornUI: {replicas: 2}
 longhornManager:
   resources:
-    requests:
-      cpu: 100m
-      memory: 256Mi
-    limits:
-      # Encrypted-volume discovery can transiently add a ~445 MiB cryptsetup
-      # process to the manager's own memory during startup.
-      memory: 1Gi
-longhornGlobalManager:
-  replicas: 3
-  affinity:
-    podAntiAffinity:
-      requiredDuringSchedulingIgnoredDuringExecution:
-        - labelSelector:
-            matchExpressions:
-              - key: app
-                operator: In
-                values:
-                  - longhorn-global-manager
-          topologyKey: kubernetes.io/hostname
-  resources:
-    requests:
-      cpu: 100m
-      memory: 128Mi
-    limits:
-      cpu: 500m
-      memory: 512Mi
-  podDisruptionBudget:
-    enabled: true
-    minAvailable: 2
-preUpgradeChecker:
-     jobEnabled: false # necessary as its kind of a egg chicken problem: longhorn-pre-upgrade is a PreSync hook, but its pod needs longhorn-service-account, which will be created while its deploying
+    requests: {cpu: 100m, memory: 256Mi}
+    limits: {memory: 1Gi}
+# The chart hook needs a ServiceAccount created by the same first sync. Disable it
+# and perform the supported compatibility check explicitly before chart upgrades.
+preUpgradeChecker: {jobEnabled: false}
+csi: {attacherReplicaCount: 3, provisionerReplicaCount: 3, resizerReplicaCount: 3, snapshotterReplicaCount: 3}

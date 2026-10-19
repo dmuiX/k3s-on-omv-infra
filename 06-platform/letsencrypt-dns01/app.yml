@@ -1,0 +1,10 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata: {name: letsencrypt-dns01, namespace: argocd, annotations: {argocd.argoproj.io/sync-wave: "6"}}
+spec:
+  project: default
+  destination: {name: in-cluster, namespace: cert-manager}
+  sources:
+    - {repoURL: 'https://github.com/dmuiX/k3s-on-omv-infra.git', targetRevision: main, path: 06-platform/letsencrypt-dns01/resources}
+    - {repoURL: 'https://github.com/dmuiX/k3s-on-omv-live.git', targetRevision: main, path: infra/letsencrypt-dns01}
+  syncPolicy: {automated: {enabled: true, prune: false, selfHeal: true, allowEmpty: false}, syncOptions: [ServerSideApply=true, SkipDryRunOnMissingResource=true]}

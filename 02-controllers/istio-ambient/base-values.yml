@@ -1,0 +1,3 @@
+# Argo CD server-side apply: avoid failurePolicy ownership fights with istiod.
+base:
+  validationFailurePolicy: Fail

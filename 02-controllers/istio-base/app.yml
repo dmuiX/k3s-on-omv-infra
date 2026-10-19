@@ -1,0 +1,14 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata: {name: istio-base, namespace: argocd, annotations: {argocd.argoproj.io/sync-wave: "-2"}}
+spec:
+  project: default
+  destination: {name: in-cluster, namespace: istio-system}
+  sources:
+    - repoURL: https://blob.istio.io/istio-release/charts
+      chart: base
+      targetRevision: 1.31.2
+      helm: {releaseName: istio-base, valueFiles: [$infra/02-controllers/istio-ambient/base-values.yml]}
+    - {repoURL: 'https://github.com/dmuiX/k3s-on-omv-infra.git', targetRevision: main, ref: infra}
+    - {repoURL: 'https://github.com/dmuiX/k3s-on-omv-infra.git', targetRevision: main, path: 02-controllers/istio-ambient/base-resources}
+  syncPolicy: {automated: {enabled: true, prune: false, selfHeal: true, allowEmpty: false}, syncOptions: [CreateNamespace=true, ServerSideApply=true]}

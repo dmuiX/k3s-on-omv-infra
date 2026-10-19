@@ -1,0 +1,10 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata: {name: backup-validation, namespace: argocd, annotations: {argocd.argoproj.io/sync-wave: "8"}}
+spec:
+  project: default
+  destination: {name: in-cluster, namespace: backup-validation}
+  sources:
+    - {repoURL: 'https://github.com/dmuiX/k3s-on-omv-infra.git', targetRevision: main, path: 08-observability/backup-validation/resources}
+    - {repoURL: 'https://github.com/dmuiX/k3s-on-omv-live.git', targetRevision: main, path: infra/backup-validation}
+  syncPolicy: {automated: {enabled: true, prune: false, selfHeal: true, allowEmpty: false}, syncOptions: [CreateNamespace=true, ServerSideApply=true, SkipDryRunOnMissingResource=true]}

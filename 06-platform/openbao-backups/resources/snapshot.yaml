@@ -1,0 +1,94 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: openbao-snapshot, namespace: openbao}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata: {name: openbao-snapshot, namespace: openbao}
+spec:
+  schedule: "17 2 * * *"
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 1800
+      template:
+        metadata: {labels: {app.kubernetes.io/name: openbao-snapshot}}
+        spec:
+          serviceAccountName: openbao-snapshot
+          restartPolicy: Never
+          securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+          containers:
+            - name: snapshot
+              image: ghcr.io/cloudnative-pg/plugin-barman-cloud-sidecar:v0.15.1@sha256:2287a793a804db751edd0d07d44cd549e357677e98a800eb12e2cf7c0d53f9b0
+              imagePullPolicy: IfNotPresent
+              command: [/venv/bin/python3]
+              args: [/adapter/snapshot.py, run]
+              resources: {requests: {cpu: 50m, memory: 64Mi}, limits: {cpu: 300m, memory: 256Mi}}
+              securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+              envFrom:
+                - {secretRef: {name: openbao-snapshot-r2}}
+                - {configMapRef: {name: openbao-backup-target}}
+              env:
+                - {name: OPENBAO_ADDR, value: "http://openbao-active.openbao.svc.cluster.local:8200"}
+                - {name: PYTHONDONTWRITEBYTECODE, value: "1"}
+              volumeMounts:
+                - {name: work, mountPath: /work}
+                - {name: adapter, mountPath: /adapter, readOnly: true}
+          volumes:
+            - {name: work, emptyDir: {sizeLimit: 2Gi}}
+            - {name: adapter, configMap: {name: openbao-snapshot-adapter, defaultMode: 0444}}
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultConnection
+metadata: {name: openbao, namespace: openbao}
+spec: {address: "http://openbao-active.openbao.svc.cluster.local:8200"}
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultAuth
+metadata: {name: openbao-snapshot, namespace: openbao}
+spec: {vaultConnectionRef: openbao, method: kubernetes, mount: kubernetes, kubernetes: {role: openbao-snapshot, serviceAccount: openbao-snapshot}}
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata: {name: openbao-snapshot-r2, namespace: openbao}
+spec:
+  vaultAuthRef: openbao-snapshot
+  mount: kv
+  type: kv-v2
+  path: platform/r2
+  refreshAfter: 1h
+  destination:
+    create: true
+    name: openbao-snapshot-r2
+    type: Opaque
+    transformation:
+      excludeRaw: true
+      templates:
+        AWS_ACCESS_KEY_ID:
+          text: |-
+            {{- $value := get .Secrets "access-key-id" -}}
+            {{- if empty $value -}}
+            {{- fail "missing required OpenBao key: access-key-id" -}}
+            {{- end -}}
+            {{- $value -}}
+        AWS_SECRET_ACCESS_KEY:
+          text: |-
+            {{- $value := get .Secrets "secret-access-key" -}}
+            {{- if empty $value -}}
+            {{- fail "missing required OpenBao key: secret-access-key" -}}
+            {{- end -}}
+            {{- $value -}}
+        AWS_REGION:
+          text: |-
+            {{- $value := get .Secrets "region" -}}
+            {{- if empty $value -}}
+            {{- fail "missing required OpenBao key: region" -}}
+            {{- end -}}
+            {{- $value -}}
+        S3_ENDPOINT:
+          text: |-
+            {{- $value := get .Secrets "endpoint" -}}
+            {{- if empty $value -}}
+            {{- fail "missing required OpenBao key: endpoint" -}}
+            {{- end -}}
+            {{- $value -}}

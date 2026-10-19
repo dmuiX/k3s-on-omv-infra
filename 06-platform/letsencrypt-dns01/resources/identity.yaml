@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: cert-manager-dns01, namespace: cert-manager}
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultConnection
+metadata: {name: openbao, namespace: cert-manager}
+spec: {address: "http://openbao-active.openbao.svc.cluster.local:8200", skipTLSVerify: false}
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultAuth
+metadata: {name: cert-manager-dns01, namespace: cert-manager}
+spec: {vaultConnectionRef: openbao, method: kubernetes, mount: kubernetes, kubernetes: {role: cert-manager-dns01, serviceAccount: cert-manager-dns01, audiences: ["vault://cert-manager-dns01"]}}
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata: {name: cloudflare, namespace: cert-manager}
+spec: {vaultAuthRef: cert-manager-dns01, mount: kv, type: kv-v2, path: cert-manager/cloudflare, destination: {name: cloudflare-dns01, create: true}, refreshAfter: 1h}
