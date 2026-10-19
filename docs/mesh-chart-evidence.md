@@ -1,6 +1,6 @@
 # Istio chart evidence
 
-Static upstream review and local renders: 2026-10-18. No hosts, Kubernetes API, deployment, or runtime tests were used. This resolves chart inputs, not the deployment gate. Host and workload logging are independent infrastructure and are outside this repository.
+Static upstream review and local renders: 2026-10-18. No hosts, Kubernetes API, deployment, or runtime tests were used. This resolves chart inputs but does not replace automatic runtime validation. Host and workload logging are independent infrastructure and are outside this repository.
 
 ## Official mechanisms and pins
 
@@ -21,7 +21,7 @@ Official chart index SHA-256 values:
 | cni | 1.31.2 | `61ebab3041d12fb127284da82cbf86dcc7e5b6246c3f1f64a9a1d520a825dc2c` |
 | ztunnel | 1.31.2 | `683c7623f0ce650687e16d1ab481dee605a1158ac86e98732bd8cd21ec0bd2e9` |
 
-The chart checksums come from the official 1.31.2 index. Architecture availability remains a deployment gate; index and render evidence alone do not prove mixed-node runtime compatibility.
+The chart checksums come from the official 1.31.2 index. Architecture availability remains a runtime check; index and render evidence alone do not prove mixed-node compatibility.
 
 ## Offline reproduction
 

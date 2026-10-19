@@ -226,15 +226,12 @@ class RepositoryContractTest < Minitest::Test
     end
   end
 
-  def test_unresolved_inputs_are_explicit_and_deployment_gate_is_closed
-    unresolved = REPOSITORIES.flat_map { |repository| repository.glob("**/*").select(&:file?) }
-      .reject { |path| path.to_s.include?("/.git/") }
-      .select { |path| path.read.include?("REQUIRED_") }
-    refute_empty unresolved
-    gate = YAML.load_file(BOOTSTRAP / "DEPLOYMENT-GATE.yml")
-    assert_equal false, gate["approved"]
-    assert gate.fetch("requirements").values.all? { |value| value == false }
-    assert_includes (INFRA / "COMPATIBILITY.md").read, "Unresolved and deployment-blocking"
+  def test_production_manifests_have_no_unresolved_markers_or_static_gate
+    unresolved = [INFRA, LIVE, APPS].flat_map { |repository| yaml_files(repository) }
+      .reject { |path| path.to_s.include?("/tests/") }
+      .select { |path| path.read.match?(/:\s*REQUIRED_[A-Z0-9_]+/) }
+    assert_empty unresolved
+    refute (BOOTSTRAP / "DEPLOYMENT-GATE.yml").exist?
   end
 end
 

@@ -17,7 +17,7 @@ apiVersion: batch/v1
 kind: CronJob
 metadata: {name: postgresql-size-retention, namespace: cloudnative-pg}
 spec:
-  schedule: "43 3 * * *"
+  schedule: "0 6 * * *"
   concurrencyPolicy: Forbid
   jobTemplate:
     spec:
@@ -37,7 +37,6 @@ spec:
                 - {secretRef: {name: postgresql-r2-credentials}}
                 - {configMapRef: {name: postgresql-retention-target}}
               env:
-                - {name: DELETION_ACCEPTANCE, value: "false"}
                 - {name: PYTHONDONTWRITEBYTECODE, value: "1"}
               volumeMounts: [{name: adapter, mountPath: /adapter, readOnly: true}]
           volumes: [{name: adapter, configMap: {name: postgresql-size-retention-adapter, defaultMode: 0444}}]

@@ -64,8 +64,8 @@ apiVersion: batch/v1
 kind: CronJob
 metadata: {name: postgresql-restore-validation, namespace: backup-validation}
 spec:
-  suspend: true
-  schedule: '11 5 * * 0'
+  suspend: false
+  schedule: '0 4 * * *'
   concurrencyPolicy: Forbid
   jobTemplate:
     spec:

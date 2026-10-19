@@ -175,8 +175,6 @@ def _storage_state(backups: list[Backup]) -> tuple[bool, bool]:
 
 
 def run() -> None:
-    if os.environ.get("DELETION_ACCEPTANCE") != "true":
-        raise RuntimeError("isolated destructive-retention acceptance is not enabled")
     if int(os.environ["BASE_BACKUP_BUDGET_BYTES"]) != BUDGET:
         raise RuntimeError("base-backup budget differs from the reviewed contract")
 

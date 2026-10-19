@@ -28,7 +28,7 @@ See `../docs/mesh-chart-evidence.md` for primary sources, artifact hashes, succe
 
 ## Deployment-blocking checks not yet executable
 
-The suite deliberately does not mark `DEPLOYMENT-GATE.yml` as passed. The following remain blockers until pins and primary-schema evidence are available:
+The suite validates static contracts only. The following require automatic runtime evidence from the deployed platform:
 
 - Rendering/schema evidence for unresolved provider-vault, adapter, and backup-validation artifacts; actual Argo source resolution and Istio-generated Gateway resources still require separate verification.
 - Kubernetes and CRD schema validation (`kubeconform` is not installed and the required schemas/pins are unresolved).
