@@ -1,17 +1,14 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
-metadata:
-  name: barman-cloud
-  namespace: argocd
-  annotations:
-    argocd.argoproj.io/sync-wave: "2"
+metadata: {name: barman-cloud, namespace: argocd, annotations: {argocd.argoproj.io/sync-wave: "2"}}
 spec:
   project: default
   destination: {name: in-cluster, namespace: cloudnative-pg}
   sources:
-    - {repoURL: "https://cloudnative-pg.github.io/charts", chart: plugin-barman-cloud, targetRevision: 0.8.1, helm: {releaseName: plugin-barman-cloud, valueFiles: [$values/02-controllers/barman-cloud/values.yml]}}
-    - {repoURL: "https://github.com/dmuiX/k3s-on-omv-infra.git", targetRevision: main, ref: values}
-    - {repoURL: "https://github.com/dmuiX/k3s-on-omv-infra.git", targetRevision: main, path: 02-controllers/barman-cloud, directory: {include: controller-availability.yaml}}
-  syncPolicy:
-    automated: {enabled: true, prune: false, selfHeal: true}
-    syncOptions: [ServerSideApply=true]
+    - repoURL: https://cloudnative-pg.github.io/charts
+      chart: plugin-barman-cloud
+      targetRevision: 0.8.1
+      helm: {valueFiles: [$infra/02-controllers/barman-cloud/values.yml]}
+    - {repoURL: 'https://github.com/dmuiX/k3s-on-omv-infra.git', targetRevision: main, ref: infra}
+    - {repoURL: 'https://github.com/dmuiX/k3s-on-omv-infra.git', targetRevision: main, path: 02-controllers/barman-cloud/resources}
+  syncPolicy: {automated: {enabled: true, prune: false, selfHeal: true, allowEmpty: false}, syncOptions: [ServerSideApply=true]}

@@ -1,39 +1,10 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
-metadata:
-  name: letsencrypt-dns01
-  namespace: argocd
-  annotations:
-    argocd.argoproj.io/sync-wave: "6"
+metadata: {name: letsencrypt-dns01, namespace: argocd, annotations: {argocd.argoproj.io/sync-wave: "6"}}
 spec:
-  destination:
-    name: in-cluster
-    namespace: cert-manager
   project: default
-  source:
-    repoURL: "https://github.com/dmuiX/k3s-on-omv-live.git"
-    targetRevision: main
-    path: clusters/omv/letsencrypt-dns01
-    directory:
-      include: "{cloudflare-credential.yaml,cluster-issuer-prod.yaml,cluster-issuer-staging.yaml}"
-  syncPolicy:
-    automated:
-      enabled: true
-      prune: false
-      selfHeal: true
-    syncOptions:
-      - PruneLast=true
-      - ServerSideApply=true
-      - RespectIgnoreDifferences=true
-    retry:
-      limit: -1
-      backoff:
-        duration: 10s
-        factor: 2
-        maxDuration: 5m
-  ignoreDifferences:
-    - kind: Secret
-      name: cloudflare-token
-      namespace: cert-manager
-      jsonPointers:
-        - /data
+  destination: {name: in-cluster, namespace: cert-manager}
+  sources:
+    - {repoURL: 'https://github.com/dmuiX/k3s-on-omv-infra.git', targetRevision: main, path: 06-platform/letsencrypt-dns01/resources}
+    - {repoURL: 'https://github.com/dmuiX/k3s-on-omv-live.git', targetRevision: main, path: infra/letsencrypt-dns01}
+  syncPolicy: {automated: {enabled: true, prune: false, selfHeal: true, allowEmpty: false}, syncOptions: [ServerSideApply=true, SkipDryRunOnMissingResource=true]}

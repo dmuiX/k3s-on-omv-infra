@@ -1,0 +1,19 @@
+{
+    "folders": [
+		{
+			"path": "../k3s-on-omv-infra"
+		},
+		{
+			"path": "../k3s-on-omv-apps"
+		},
+		{
+			"path": "../k3s-on-omv-bootstrap"
+		},
+				{
+			"path": "../k3s-on-omv-live"
+		},
+		{
+			"path": "../fluxcd.k8sdev.cloud"
+		}
+	]
+}

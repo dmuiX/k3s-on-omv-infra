@@ -1,19 +1,14 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
-metadata:
-  name: crossplane
-  namespace: argocd
-  annotations:
-    argocd.argoproj.io/sync-wave: "2"
-    infra.k3s-on-omv.dev/deployment-blocker: CROSSPLANE_VALUES_SCHEMA_UNVERIFIED
+metadata: {name: crossplane, namespace: argocd, annotations: {argocd.argoproj.io/sync-wave: "2"}}
 spec:
   project: default
   destination: {name: in-cluster, namespace: crossplane-system}
   sources:
-    - {repoURL: "https://charts.crossplane.io/stable", chart: crossplane, targetRevision: 2.4.2, helm: {releaseName: crossplane, valueFiles: [$values/02-controllers/crossplane/values.yml]}}
-    - {repoURL: "https://github.com/dmuiX/k3s-on-omv-infra.git", targetRevision: main, ref: values}
-  syncPolicy:
-    managedNamespaceMetadata:
-      labels: {istio.io/dataplane-mode: ambient}
-    automated: {enabled: true, prune: false, selfHeal: true}
-    syncOptions: [CreateNamespace=true, ServerSideApply=true]
+    - repoURL: https://charts.crossplane.io/stable
+      chart: crossplane
+      targetRevision: 2.4.2
+      helm: {valueFiles: [$infra/02-controllers/crossplane/values.yml]}
+    - {repoURL: 'https://github.com/dmuiX/k3s-on-omv-infra.git', targetRevision: main, ref: infra}
+    - {repoURL: 'https://github.com/dmuiX/k3s-on-omv-infra.git', targetRevision: main, path: 02-controllers/crossplane/resources}
+  syncPolicy: {automated: {enabled: true, prune: false, selfHeal: true, allowEmpty: false}, syncOptions: [CreateNamespace=true, ServerSideApply=true]}

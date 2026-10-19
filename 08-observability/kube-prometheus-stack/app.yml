@@ -1,95 +1,16 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
-metadata:
-  name: kube-prometheus-stack
-  namespace: argocd
-  annotations:
-    # Grafana starts only after the PostgreSQL credential has been generated and synchronized.
-    argocd.argoproj.io/sync-wave: "8"
+metadata: {name: kube-prometheus-stack, namespace: argocd, annotations: {argocd.argoproj.io/sync-wave: "8"}}
 spec:
-  destination:
-    name: in-cluster
-    namespace: kube-prometheus-stack
   project: default
+  destination: {name: in-cluster, namespace: kube-prometheus-stack}
   sources:
-    - repoURL: "https://prometheus-community.github.io/helm-charts"
-      targetRevision: 91.4.1
+    - repoURL: https://prometheus-community.github.io/helm-charts
       chart: kube-prometheus-stack
-      helm:
-        valueFiles:
-          - $values/08-observability/kube-prometheus-stack/values.yml
-          - $private/clusters/omv/grafana-values.yml
-    - repoURL: "https://github.com/dmuiX/k3s-on-omv-infra.git"
-      targetRevision: main
-      ref: values
-    - repoURL: "https://github.com/dmuiX/k3s-on-omv-live.git"
-      targetRevision: main
-      ref: private
-    - repoURL: "https://github.com/dmuiX/k3s-on-omv-infra.git"
-      targetRevision: main
-      path: 08-observability/kube-prometheus-stack/grafana
-    - repoURL: "https://github.com/dmuiX/k3s-on-omv-infra.git"
-      targetRevision: main
-      path: 08-observability/kube-prometheus-stack/postgresql
-      kustomize: {}
-  syncPolicy:
-    managedNamespaceMetadata:
-      labels:
-        istio.io/dataplane-mode: ambient
-    automated:
-      # Reconcile automatically while the dedicated bootstrap release owns the CRDs.
-      enabled: true
-      prune: false
-      selfHeal: true
-      allowEmpty: false
-    retry:
-      limit: 5
-      backoff:
-        duration: 5s
-        factor: 2
-        maxDuration: 5m
-    syncOptions:
-      - PruneLast=true
-      - CreateNamespace=true
-      - ServerSideApply=true
-      - RespectIgnoreDifferences=true
-  ignoreDifferences:
-    # Migration and Retain recovery prebind an existing PV. The binder-owned
-    # volumeName is immutable and intentionally absent from the Helm template.
-    - group: ""
-      kind: PersistentVolumeClaim
-      name: kube-prometheus-stack-grafana
-      jsonPointers:
-        - /spec/volumeName
-    - group: apps
-      kind: Deployment
-      jsonPointers:
-        - /spec/replicas
-    - group: apps
-      kind: Deployment
-      name: kube-prometheus-stack-grafana
-      jsonPointers:
-        # The Grafana subchart renders a new random admin Secret on every Helm
-        # evaluation. Secret data is preserved below; ignore only its unstable
-        # pod-template checksum so it cannot create perpetual drift or rollouts.
-        - /spec/template/metadata/annotations/checksum~1secret
-    - group: apps
-      kind: StatefulSet
-      jsonPointers:
-        - /spec/replicas
-    - group: apiextensions.k8s.io
-      kind: CustomResourceDefinition
-      jsonPointers:
-        - /status
-        - /spec/preserveUnknownFields
-    - group: monitoring.coreos.com
-      kind: ServiceMonitor
-      jqPathExpressions:
-        - .metadata.annotations
-    - group: ""
-      kind: Secret
-      name: kube-prometheus-stack-grafana
-      jsonPointers:
-        # Preserve all chart-generated administrator material. Helm renders a
-        # new random password on every evaluation; GitOps must never apply it.
-        - /data
+      targetRevision: 92.10.1
+      helm: {valueFiles: [$infra/08-observability/kube-prometheus-stack/values.yml, $live/infra/kube-prometheus-stack-values.yml]}
+    - {repoURL: 'https://github.com/dmuiX/k3s-on-omv-infra.git', targetRevision: main, ref: infra}
+    - {repoURL: 'https://github.com/dmuiX/k3s-on-omv-live.git', targetRevision: main, ref: live}
+    - {repoURL: 'https://github.com/dmuiX/k3s-on-omv-infra.git', targetRevision: main, path: 08-observability/kube-prometheus-stack/resources}
+    - {repoURL: 'https://github.com/dmuiX/k3s-on-omv-live.git', targetRevision: main, path: infra/kube-prometheus-stack}
+  syncPolicy: {automated: {enabled: true, prune: false, selfHeal: true, allowEmpty: false}, syncOptions: [CreateNamespace=true, ServerSideApply=true, SkipDryRunOnMissingResource=true]}

@@ -1,62 +1,15 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
-metadata:
-  name: longhorn
-  namespace: argocd
-  annotations:
-    argocd.argoproj.io/sync-wave: "2"
+metadata: {name: longhorn, namespace: argocd, annotations: {argocd.argoproj.io/sync-wave: "2"}}
 spec:
-  destination:
-    name: in-cluster
-    namespace: longhorn
   project: default
+  destination: {name: in-cluster, namespace: longhorn}
   sources:
-    - repoURL: "https://charts.longhorn.io"
-      targetRevision: 1.13.0
+    - repoURL: https://charts.longhorn.io
       chart: longhorn
-      helm:
-        valueFiles:
-          - $values/02-controllers/longhorn/values.yml
-          - $private/clusters/omv/longhorn-values.yml
-    - repoURL: "https://github.com/dmuiX/k3s-on-omv-infra.git"
-      targetRevision: main
-      ref: values
-    - repoURL: "https://github.com/dmuiX/k3s-on-omv-live.git"
-      targetRevision: main
-      ref: private
-    # Longhorn has no Helm value for CSI encryption key references. This last
-    # source intentionally overrides the chart's longhorn-storageclass ConfigMap,
-    # annotates the two monitoring storage nodes before the chart resources, and
-    # owns the dedicated Prometheus StorageClass.
-    - repoURL: "https://github.com/dmuiX/k3s-on-omv-infra.git"
-      targetRevision: main
-      path: 02-controllers/longhorn
-      directory:
-        include: "{encrypted-storageclass-template.yaml,prometheus-storage-placement.yaml,prometheus-storageclass.yaml,prometheus-scrape-access.yaml}"
-  syncPolicy:
-    managedNamespaceMetadata:
-      labels:
-        pod-security.kubernetes.io/enforce: privileged
-        pod-security.kubernetes.io/audit: privileged
-        pod-security.kubernetes.io/warn: privileged
-    automated:
-      enabled: true
-      prune: false
-      selfHeal: true
-      allowEmpty: false
-    retry:
-      limit: 5
-      backoff:
-        duration: 5s
-        factor: 2
-        maxDuration: 3m
-    syncOptions:
-      - PruneLast=true
-      - CreateNamespace=true
-      - ServerSideApply=true
-      - RespectIgnoreDifferences=true
-  ignoreDifferences:
-    - group: apiextensions.k8s.io
-      kind: CustomResourceDefinition
-      jsonPointers:
-        - /status
+      targetRevision: 1.13.0
+      helm: {valueFiles: [$infra/02-controllers/longhorn/values.yml, $live/infra/longhorn-values.yml]}
+    - {repoURL: 'https://github.com/dmuiX/k3s-on-omv-infra.git', targetRevision: main, ref: infra}
+    - {repoURL: 'https://github.com/dmuiX/k3s-on-omv-live.git', targetRevision: main, ref: live}
+    - {repoURL: 'https://github.com/dmuiX/k3s-on-omv-infra.git', targetRevision: main, path: 02-controllers/longhorn/resources}
+  syncPolicy: {automated: {enabled: true, prune: false, selfHeal: true, allowEmpty: false}, syncOptions: [CreateNamespace=true, ServerSideApply=true, RespectIgnoreDifferences=true]}

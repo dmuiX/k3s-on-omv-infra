@@ -1,8 +1,0 @@
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: openbao-config-deployment-blocker
-  namespace: crossplane-system
-data:
-  blocker: OPENBAO_CONFIG_PROVIDER_SCHEMA_UNVERIFIED
-  resolution: Verify all 19 provider-vault CRD schemas against v4.0.4, then replace this ConfigMap with the reviewed managed resources.

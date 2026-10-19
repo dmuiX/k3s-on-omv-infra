@@ -1,17 +1,10 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
-metadata:
-  name: backup-validation
-  namespace: argocd
-  annotations:
-    argocd.argoproj.io/sync-wave: "8"
-    infra.k3s-on-omv.dev/deployment-blocker: BACKUP_VALIDATION_SCHEMAS_AND_IMAGES_UNRESOLVED
+metadata: {name: backup-validation, namespace: argocd, annotations: {argocd.argoproj.io/sync-wave: "8"}}
 spec:
   project: default
   destination: {name: in-cluster, namespace: backup-validation}
-  source: {repoURL: "https://github.com/dmuiX/k3s-on-omv-infra.git", targetRevision: main, path: 08-observability/backup-validation, directory: {include: deployment-blocker.yaml}}
-  syncPolicy:
-    managedNamespaceMetadata:
-      labels: {istio.io/dataplane-mode: ambient}
-    automated: {enabled: true, prune: false, selfHeal: true}
-    syncOptions: [CreateNamespace=true, ServerSideApply=true]
+  sources:
+    - {repoURL: 'https://github.com/dmuiX/k3s-on-omv-infra.git', targetRevision: main, path: 08-observability/backup-validation/resources}
+    - {repoURL: 'https://github.com/dmuiX/k3s-on-omv-live.git', targetRevision: main, path: infra/backup-validation}
+  syncPolicy: {automated: {enabled: true, prune: false, selfHeal: true, allowEmpty: false}, syncOptions: [CreateNamespace=true, ServerSideApply=true, SkipDryRunOnMissingResource=true]}

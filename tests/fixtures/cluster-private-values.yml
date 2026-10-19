@@ -1,5 +1,0 @@
-grafana:
-  route:
-    main:
-      hostnames:
-        - grafana.example.invalid

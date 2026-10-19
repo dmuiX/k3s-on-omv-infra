@@ -1,8 +1,0 @@
-gateway:
-  name: traefik-gateway
-  namespace: kube-system
-  listener: websecure
-
-routes:
-  argocd:
-    hostname: argocd.example.invalid

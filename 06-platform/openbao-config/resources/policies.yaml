@@ -1,0 +1,88 @@
+apiVersion: vault.vault.upbound.io/v1alpha1
+kind: Policy
+metadata: {name: openbao-snapshot}
+spec:
+  forProvider:
+    name: openbao-snapshot
+    policy: |
+      path "auth/token/renew-self" { capabilities = ["update"] }
+      path "sys/storage/raft/snapshot" { capabilities = ["read", "sudo"] }
+  providerConfigRef: {name: openbao}
+---
+apiVersion: vault.vault.upbound.io/v1alpha1
+kind: Policy
+metadata: {name: longhorn-oidc-proxy-read}
+spec:
+  forProvider: {name: longhorn-oidc-proxy-read, policy: "path \"auth/token/renew-self\" { capabilities = [\"update\"] }\npath \"kv/data/longhorn/oidc-proxy\" { capabilities = [\"read\"] }\npath \"kv/metadata/longhorn/oidc-proxy\" { capabilities = [\"read\"] }\n"}
+  providerConfigRef: {name: openbao}
+---
+apiVersion: vault.vault.upbound.io/v1alpha1
+kind: Policy
+metadata: {name: postgresql-vso-read}
+spec:
+  forProvider:
+    name: postgresql-vso-read
+    policy: |
+      path "auth/token/renew-self" { capabilities = ["update"] }
+      path "kv/data/postgresql/openbao-manager" { capabilities = ["read"] }
+      path "kv/metadata/postgresql/*" { capabilities = ["read"] }
+  providerConfigRef: {name: openbao}
+---
+apiVersion: vault.vault.upbound.io/v1alpha1
+kind: Policy
+metadata: {name: grafana-vso-read}
+spec:
+  forProvider: {name: grafana-vso-read, policy: "path \"auth/token/renew-self\" { capabilities = [\"update\"] }\npath \"database/static-creds/grafana\" { capabilities = [\"read\"] }\n"}
+  providerConfigRef: {name: openbao}
+---
+apiVersion: vault.vault.upbound.io/v1alpha1
+kind: Policy
+metadata: {name: alertmanager-vso-read}
+spec:
+  forProvider: {name: alertmanager-vso-read, policy: "path \"auth/token/renew-self\" { capabilities = [\"update\"] }\npath \"kv/data/monitoring/alertmanager-config\" { capabilities = [\"read\"] }\npath \"kv/metadata/monitoring/alertmanager-config\" { capabilities = [\"read\"] }\n"}
+  providerConfigRef: {name: openbao}
+---
+apiVersion: vault.vault.upbound.io/v1alpha1
+kind: Policy
+metadata: {name: radar-vso-read}
+spec:
+  forProvider: {name: radar-vso-read, policy: "path \"auth/token/renew-self\" { capabilities = [\"update\"] }\npath \"database/static-creds/radar\" { capabilities = [\"read\"] }\npath \"kv/data/radar/auth\" { capabilities = [\"read\"] }\npath \"kv/metadata/radar/auth\" { capabilities = [\"read\"] }\npath \"kv/data/radar/argocd\" { capabilities = [\"read\"] }\npath \"kv/metadata/radar/argocd\" { capabilities = [\"read\"] }\n"}
+  providerConfigRef: {name: openbao}
+---
+apiVersion: vault.vault.upbound.io/v1alpha1
+kind: Policy
+metadata: {name: cert-manager-dns01-read}
+spec:
+  forProvider: {name: cert-manager-dns01-read, policy: "path \"auth/token/renew-self\" { capabilities = [\"update\"] }\npath \"kv/data/cert-manager/cloudflare\" { capabilities = [\"read\"] }\npath \"kv/metadata/cert-manager/cloudflare\" { capabilities = [\"read\"] }\n"}
+  providerConfigRef: {name: openbao}
+---
+apiVersion: vault.vault.upbound.io/v1alpha1
+kind: Policy
+metadata: {name: k8up-validation-vso-read}
+spec:
+  forProvider:
+    name: k8up-validation-vso-read
+    policy: |
+      path "auth/token/renew-self" { capabilities = ["update"] }
+      path "kv/data/k8up/repository-password" { capabilities = ["read"] }
+      path "kv/metadata/k8up/repository-password" { capabilities = ["read"] }
+  providerConfigRef: {name: openbao}
+---
+apiVersion: vault.vault.upbound.io/v1alpha1
+kind: Policy
+metadata: {name: platform-r2-read}
+spec:
+  forProvider: {name: platform-r2-read, policy: "path \"auth/token/renew-self\" { capabilities = [\"update\"] }\npath \"kv/data/platform/r2\" { capabilities = [\"read\"] }\npath \"kv/metadata/platform/r2\" { capabilities = [\"read\"] }\n"}
+  providerConfigRef: {name: openbao}
+---
+apiVersion: vault.vault.upbound.io/v1alpha1
+kind: Policy
+metadata: {name: smb-vso-read}
+spec:
+  forProvider: {name: smb-vso-read, policy: "path \"auth/token/renew-self\" { capabilities = [\"update\"] }\npath \"kv/data/platform/smb\" { capabilities = [\"read\"] }\npath \"kv/metadata/platform/smb\" { capabilities = [\"read\"] }\n"}
+  providerConfigRef: {name: openbao}
+---
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata: {name: openbao-strict, namespace: openbao}
+spec: {mtls: {mode: STRICT}}

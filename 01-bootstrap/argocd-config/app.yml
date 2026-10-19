@@ -3,32 +3,15 @@ kind: Application
 metadata:
   name: argocd-config
   namespace: argocd
-  annotations:
-    argocd.argoproj.io/sync-wave: "1"
+  annotations: {argocd.argoproj.io/sync-wave: "1"}
 spec:
-  destination:
-    name: in-cluster
-    namespace: argocd
   project: default
+  destination: {name: in-cluster, namespace: argocd}
   sources:
-    - repoURL: "https://github.com/dmuiX/k3s-on-omv-infra.git"
+    - repoURL: 'https://github.com/dmuiX/k3s-on-omv-infra.git'
       targetRevision: main
-      path: 01-bootstrap/argocd-config
-      helm:
-        releaseName: argocd-config
-        valueFiles:
-          - $private/clusters/omv/values.yml
-    - repoURL: "https://github.com/dmuiX/k3s-on-omv-live.git"
-      targetRevision: main
-      ref: private
+      path: 01-bootstrap/argocd-config/resources
+    - {repoURL: 'https://github.com/dmuiX/k3s-on-omv-live.git', targetRevision: main, path: infra/argocd-config}
   syncPolicy:
-    managedNamespaceMetadata:
-      labels:
-        istio.io/dataplane-mode: ambient
-    automated:
-      enabled: true
-      prune: false
-      selfHeal: true
-    syncOptions:
-      - PruneLast=true
-      - ServerSideApply=true
+    automated: {enabled: true, prune: false, selfHeal: true, allowEmpty: false}
+    syncOptions: [ServerSideApply=true]

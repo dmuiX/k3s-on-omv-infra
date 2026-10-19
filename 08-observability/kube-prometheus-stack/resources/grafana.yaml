@@ -1,0 +1,73 @@
+apiVersion: v1
+kind: Namespace
+metadata: {name: kube-prometheus-stack, labels: {istio.io/dataplane-mode: ambient, pod-security.kubernetes.io/enforce: restricted}}
+---
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata: {name: grafana, namespace: cloudnative-pg, annotations: {argocd.argoproj.io/sync-wave: "-5"}}
+spec: {name: grafana, owner: grafana, cluster: {name: k3s-postgres}}
+---
+apiVersion: database.vault.upbound.io/v1alpha1
+kind: SecretBackendStaticRole
+metadata: {name: grafana, annotations: {argocd.argoproj.io/sync-wave: "-10"}}
+spec:
+  forProvider:
+    backend: database
+    name: grafana
+    dbName: k3s-postgres
+    username: grafana
+    rotationPeriod: 2592000
+    rotationStatements:
+      - >-
+        DO $role$ BEGIN
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'grafana') THEN
+        ALTER ROLE grafana WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION INHERIT CONNECTION LIMIT 25 PASSWORD '{{password}}';
+        ELSE
+        CREATE ROLE grafana WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION INHERIT CONNECTION LIMIT 25 PASSWORD '{{password}}';
+        END IF;
+        END $role$;
+  providerConfigRef: {name: openbao}
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata: {name: grafana-vso, namespace: kube-prometheus-stack}
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultConnection
+metadata: {name: openbao, namespace: kube-prometheus-stack}
+spec: {address: "http://openbao-active.openbao.svc.cluster.local:8200"}
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultAuth
+metadata: {name: grafana-vso, namespace: kube-prometheus-stack}
+spec: {method: kubernetes, mount: kubernetes, vaultConnectionRef: openbao, kubernetes: {role: grafana-vso, serviceAccount: grafana-vso}}
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultDynamicSecret
+metadata: {name: grafana-db, namespace: kube-prometheus-stack}
+spec:
+  vaultAuthRef: grafana-vso
+  mount: database
+  path: static-creds/grafana
+  allowStaticCreds: true
+  rolloutRestartTargets: [{kind: Deployment, name: kube-prometheus-stack-grafana}]
+  destination:
+    create: true
+    name: grafana-db
+    transformation:
+      excludeRaw: true
+      templates:
+        username:
+          text: |-
+            {{- $value := get .Secrets "username" -}}
+            {{- if empty $value -}}
+            {{- fail "missing required OpenBao key: username" -}}
+            {{- end -}}
+            {{- $value -}}
+        password:
+          text: |-
+            {{- $value := get .Secrets "password" -}}
+            {{- if empty $value -}}
+            {{- fail "missing required OpenBao key: password" -}}
+            {{- end -}}
+            {{- $value -}}

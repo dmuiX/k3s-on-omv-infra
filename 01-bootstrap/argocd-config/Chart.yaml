@@ -1,4 +1,0 @@
-apiVersion: v2
-name: argocd-config
-version: 0.1.0
-description: Argo CD server configuration, access policy, limits, and external route

@@ -1,0 +1,78 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-snapshot-contract
+  namespace: kube-prometheus-stack
+  annotations:
+    platform.k3s-on-omv.io/tool-image: python:3.13-slim-bookworm@sha256:a1165e272e578941b84abc79e4ab38a0305cd12803a5c4247979ac7655f4d641
+immutable: true
+data:
+  source: prometheus-kube-prometheus-stack-prometheus-0 only
+  mechanism: Native Prometheus admin API snapshot streamed by a one-shot K8up Backup; the live TSDB is never copied.
+  endpoint: POST http://prometheus-kube-prometheus-stack-prometheus-0.prometheus-operated.kube-prometheus-stack.svc:9090/api/v1/admin/tsdb/snapshot?skip_head=false
+  repository: A dynamic SMB PVC mounted as the K8up local repository; no R2 consumer or fallback.
+  retention: 7 daily and 4 weekly successful K8up snapshots
+  cleanup: Delete a native snapshot only after Backup Completed=True/Reason=Succeeded and a successful K8up Check.
+  snapshot.py: |
+    import json
+    from pathlib import Path
+    import re
+    import sys
+    import tarfile
+    import urllib.request
+
+    endpoint = "http://prometheus-kube-prometheus-stack-prometheus-0.prometheus-operated.kube-prometheus-stack.svc:9090/api/v1/admin/tsdb/snapshot?skip_head=false"
+    root = Path("/prometheus/snapshots")
+    pending = root / ".k8up-pending"
+    if pending.exists():
+        raise SystemExit("an unverified snapshot is already pending cleanup")
+    request = urllib.request.Request(endpoint, method="POST")
+    with urllib.request.urlopen(request, timeout=60) as response:
+        payload = json.load(response)
+    name = payload.get("data", {}).get("name", "")
+    if not re.fullmatch(r"[0-9]{8}T[0-9]{6}Z-[A-Za-z0-9]+", name):
+        raise SystemExit("Prometheus returned an invalid snapshot name")
+    snapshot = root / name
+    if not snapshot.is_dir():
+        raise SystemExit("Prometheus did not create the requested snapshot")
+    pending.write_text(name + "\n")
+    with tarfile.open(fileobj=sys.stdout.buffer, mode="w|") as archive:
+        archive.add(snapshot, arcname=name, recursive=True)
+---
+# K8up creates this pod only when an operator submits the uniquely named
+# one-shot Backup from docs/prometheus-tsdb-backup-runbook.md. Its command asks
+# Prometheus for a consistent snapshot, validates the returned name, and sends
+# only that immutable snapshot to Restic on stdout.
+apiVersion: k8up.io/v1
+kind: PreBackupPod
+metadata:
+  name: prometheus-tsdb-snapshot
+  namespace: kube-prometheus-stack
+  labels: {platform.k3s-on-omv.io/backup-set: prometheus-tsdb}
+spec:
+  fileExtension: tar
+  backupCommand: /usr/local/bin/python /tools/snapshot.py
+  pod:
+    spec:
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, runAsUser: 1000, runAsGroup: 2000, fsGroup: 2000, seccompProfile: {type: RuntimeDefault}}
+      affinity:
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector: {matchLabels: {statefulset.kubernetes.io/pod-name: prometheus-kube-prometheus-stack-prometheus-0}}
+              topologyKey: kubernetes.io/hostname
+      containers:
+        - name: snapshot
+          image: python:3.13-slim-bookworm@sha256:a1165e272e578941b84abc79e4ab38a0305cd12803a5c4247979ac7655f4d641
+          command: [/usr/local/bin/python, -c]
+          args: ["import time; time.sleep(31536000)"]
+          resources: {requests: {cpu: 25m, memory: 32Mi}, limits: {cpu: 250m, memory: 128Mi}}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          volumeMounts:
+            - {name: prometheus-data, mountPath: /prometheus}
+            - {name: snapshot-tool, mountPath: /tools, readOnly: true}
+      volumes:
+        - name: prometheus-data
+          persistentVolumeClaim: {claimName: prometheus-kube-prometheus-stack-prometheus-db-prometheus-kube-prometheus-stack-prometheus-0}
+        - name: snapshot-tool
+          configMap: {name: prometheus-snapshot-contract, defaultMode: 0444}

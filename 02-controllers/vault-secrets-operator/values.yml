@@ -1,9 +1,6 @@
-defaultVaultConnection:
-  enabled: false
-defaultAuthMethod:
-  enabled: false
 controller:
+  replicas: 1
   manager:
-    resources:
-      requests: {cpu: 25m, memory: 96Mi}
-      limits: {cpu: 500m, memory: 256Mi}
+    resources: {requests: {cpu: 50m, memory: 96Mi}, limits: {cpu: 300m, memory: 256Mi}}
+defaultVaultConnection: {enabled: false}
+defaultAuthMethod: {enabled: false}
