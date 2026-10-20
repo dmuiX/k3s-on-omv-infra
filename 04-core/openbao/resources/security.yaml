@@ -53,6 +53,17 @@ spec:
       ports:
         - protocol: TCP
           port: 8200
+    # Ambient cross-node traffic is relayed by the node-local ztunnel.
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: ztunnel
+      ports:
+        - protocol: TCP
+          port: 8200
     - from:
         - namespaceSelector:
             matchExpressions:
