@@ -1,20 +1,34 @@
 apiVersion: vault.vault.upbound.io/v1alpha1
 kind: Mount
-metadata: {name: kv}
+metadata:
+  name: kv
 spec:
-  forProvider: {path: kv, type: kv-v2, description: SPEC v6 secrets}
-  providerConfigRef: {name: openbao}
+  forProvider:
+    path: kv
+    type: kv-v2
+    description: SPEC v6 secrets
+  providerConfigRef:
+    name: openbao
 ---
 apiVersion: vault.vault.upbound.io/v1alpha1
 kind: Mount
-metadata: {name: database}
+metadata:
+  name: database
 spec:
-  forProvider: {path: database, type: database, description: PostgreSQL credentials}
-  providerConfigRef: {name: openbao}
+  forProvider:
+    path: database
+    type: database
+    description: PostgreSQL credentials
+  providerConfigRef:
+    name: openbao
 ---
 apiVersion: auth.vault.upbound.io/v1alpha1
 kind: Backend
-metadata: {name: userpass}
+metadata:
+  name: userpass
 spec:
-  forProvider: {path: userpass, type: userpass}
-  providerConfigRef: {name: openbao}
+  forProvider:
+    path: userpass
+    type: userpass
+  providerConfigRef:
+    name: openbao

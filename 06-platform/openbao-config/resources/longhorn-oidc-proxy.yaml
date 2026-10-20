@@ -1,28 +1,46 @@
 apiVersion: v1
 kind: ServiceAccount
-metadata: {name: longhorn-oidc-proxy, namespace: longhorn}
+metadata:
+  name: longhorn-oidc-proxy
+  namespace: longhorn
 automountServiceAccountToken: false
 ---
 apiVersion: secrets.hashicorp.com/v1beta1
 kind: VaultConnection
-metadata: {name: openbao-longhorn, namespace: longhorn}
-spec: {address: "http://openbao-active.openbao.svc.cluster.local:8200"}
+metadata:
+  name: openbao-longhorn
+  namespace: longhorn
+spec:
+  address: "http://openbao-active.openbao.svc.cluster.local:8200"
 ---
 apiVersion: secrets.hashicorp.com/v1beta1
 kind: VaultAuth
-metadata: {name: longhorn-oidc-proxy, namespace: longhorn}
-spec: {method: kubernetes, mount: kubernetes, kubernetes: {role: longhorn-oidc-proxy, serviceAccount: longhorn-oidc-proxy, tokenExpirationSeconds: 600}, vaultConnectionRef: openbao-longhorn}
+metadata:
+  name: longhorn-oidc-proxy
+  namespace: longhorn
+spec:
+  method: kubernetes
+  mount: kubernetes
+  kubernetes:
+    role: longhorn-oidc-proxy
+    serviceAccount: longhorn-oidc-proxy
+    tokenExpirationSeconds: 600
+  vaultConnectionRef: openbao-longhorn
 ---
 apiVersion: secrets.hashicorp.com/v1beta1
 kind: VaultStaticSecret
-metadata: {name: longhorn-oidc-proxy, namespace: longhorn}
+metadata:
+  name: longhorn-oidc-proxy
+  namespace: longhorn
 spec:
   vaultAuthRef: longhorn-oidc-proxy
   mount: kv
   type: kv-v2
   path: longhorn/oidc-proxy
   refreshAfter: 1h
-  rolloutRestartTargets: [{kind: Deployment, name: longhorn-oidc-proxy}]
+  rolloutRestartTargets:
+    - kind: Deployment
+      name: longhorn-oidc-proxy
   destination:
     create: true
     name: longhorn-oidc-proxy
@@ -59,9 +77,13 @@ metadata:
   namespace: longhorn
 spec:
   replicas: 1
-  selector: {matchLabels: {app.kubernetes.io/name: longhorn-oidc-proxy}}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: longhorn-oidc-proxy
   template:
-    metadata: {labels: {app.kubernetes.io/name: longhorn-oidc-proxy}}
+    metadata:
+      labels:
+        app.kubernetes.io/name: longhorn-oidc-proxy
     spec:
       serviceAccountName: longhorn-oidc-proxy
       containers:
@@ -78,13 +100,44 @@ spec:
             - {name: OAUTH2_PROXY_CLIENT_ID, valueFrom: {secretKeyRef: {name: longhorn-oidc-proxy, key: client-id}}}
             - {name: OAUTH2_PROXY_CLIENT_SECRET, valueFrom: {secretKeyRef: {name: longhorn-oidc-proxy, key: client-secret}}}
             - {name: OAUTH2_PROXY_COOKIE_SECRET, valueFrom: {secretKeyRef: {name: longhorn-oidc-proxy, key: cookie-secret}}}
-          ports: [{name: http, containerPort: 4180}]
-          readinessProbe: {httpGet: {path: /ping, port: http}, periodSeconds: 10}
-          livenessProbe: {httpGet: {path: /ping, port: http}, periodSeconds: 20}
-          resources: {requests: {cpu: 25m, memory: 32Mi}, limits: {cpu: 200m, memory: 128Mi}}
-          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, runAsNonRoot: true, capabilities: {drop: [ALL]}}
+          ports:
+            - name: http
+              containerPort: 4180
+          readinessProbe:
+            httpGet:
+              path: /ping
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /ping
+              port: http
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop:
+                - ALL
 ---
 apiVersion: v1
 kind: Service
-metadata: {name: longhorn-oidc-proxy, namespace: longhorn}
-spec: {type: ClusterIP, selector: {app.kubernetes.io/name: longhorn-oidc-proxy}, ports: [{name: http, port: 80, targetPort: http}]}
+metadata:
+  name: longhorn-oidc-proxy
+  namespace: longhorn
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: longhorn-oidc-proxy
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
