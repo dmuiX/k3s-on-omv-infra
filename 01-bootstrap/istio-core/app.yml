@@ -43,9 +43,6 @@ spec:
     - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
       targetRevision: main
       ref: infra
-    - repoURL: https://github.com/dmuiX/k3s-on-omv-live.git
-      targetRevision: main
-      ref: live
     - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
       targetRevision: main
       path: 01-bootstrap/istio-ambient/base-resources
