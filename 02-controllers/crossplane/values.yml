@@ -6,8 +6,6 @@ resourcesCrossplane:
   limits:
     cpu: 500m
     memory: 512Mi
-args:
-  - --enable-environment-configs
 podSecurityContextCrossplane:
   runAsNonRoot: true
   seccompProfile:
