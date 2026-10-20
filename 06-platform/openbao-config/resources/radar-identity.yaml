@@ -1,0 +1,26 @@
+apiVersion: identity.vault.upbound.io/v1alpha1
+kind: Group
+metadata:
+  name: radar-admin
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  deletionPolicy: Orphan
+  forProvider: {name: "radar:admin", type: internal, externalMemberEntityIds: true}
+  providerConfigRef: {name: openbao}
+---
+apiVersion: identity.vault.upbound.io/v1alpha1
+kind: OidcKey
+metadata:
+  name: radar
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec: {deletionPolicy: Orphan, forProvider: {name: radar, algorithm: RS256, rotationPeriod: 86400, verificationTtl: 172800}, providerConfigRef: {name: openbao}}
+---
+apiVersion: identity.vault.upbound.io/v1alpha1
+kind: OidcScope
+metadata:
+  name: radar
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec: {deletionPolicy: Orphan, forProvider: {name: radar, template: '{"username":{{identity.entity.name}},"groups":{{identity.entity.groups.names}}}'}, providerConfigRef: {name: openbao}}

@@ -21,6 +21,19 @@ class BootstrapOrderTest(unittest.TestCase):
                 with self.subTest(path=str(p.relative_to(ROOT))):
                     list(yaml.safe_load_all(p.read_text()))
 
+    def test_radar_identity_precedes_clients_and_attended_membership(self):
+        docs = list(yaml.safe_load_all((ROOT / '06-platform/openbao-config/resources/radar-identity.yaml').read_text()))
+        self.assertEqual({d['kind'] for d in docs}, {'Group', 'OidcKey', 'OidcScope'})
+        for doc in docs:
+            self.assertEqual(doc['metadata']['annotations']['argocd.argoproj.io/sync-wave'], '-1')
+            self.assertEqual(doc['spec']['deletionPolicy'], 'Orphan')
+        group = next(d for d in docs if d['kind'] == 'Group')
+        self.assertTrue(group['spec']['forProvider']['externalMemberEntityIds'])
+        self.assertFalse((ROOT.parent / 'k3s-on-omv-apps/radar/resources/oidc.yaml').exists())
+        consumers = list(yaml.safe_load_all((ROOT / '06-platform/openbao-config/resources/longhorn-oidc-proxy.yaml').read_text()))
+        deployment = next(d for d in consumers if d['kind'] == 'Deployment')
+        self.assertEqual(deployment['metadata']['annotations']['argocd.argoproj.io/sync-wave'], '20')
+
     def test_openbao_ambient_transport_preserves_peer_scope(self):
         docs = list(yaml.safe_load_all((ROOT / '04-core/openbao/resources/security.yaml').read_text()))
         policy = next(d['spec'] for d in docs if d['metadata']['name'] == 'allow-openbao-raft-and-clients')

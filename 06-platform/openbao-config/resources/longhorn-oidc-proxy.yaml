@@ -75,6 +75,8 @@ kind: Deployment
 metadata:
   name: longhorn-oidc-proxy
   namespace: longhorn
+  annotations:
+    argocd.argoproj.io/sync-wave: "20"
 spec:
   replicas: 1
   selector:
