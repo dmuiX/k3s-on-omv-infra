@@ -30,7 +30,12 @@ spec:
         value: "true"
         effect: NoSchedule
   topologySpreadConstraints:
-    - {maxSkew: 1, topologyKey: kubernetes.io/hostname, whenUnsatisfiable: DoNotSchedule, labelSelector: {matchLabels: {cnpg.io/cluster: k3s-postgres}}}
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: DoNotSchedule
+      labelSelector:
+        matchLabels:
+          cnpg.io/cluster: k3s-postgres
   postgresql:
     parameters:
       max_connections: "100"
