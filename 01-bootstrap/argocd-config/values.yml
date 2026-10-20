@@ -20,7 +20,7 @@ configs:
         end
         return hs
   params:
-    server.insecure: "true"
+    server.insecure: "false"
 
 controller:
   containerSecurityContext:
