@@ -51,8 +51,12 @@ data:
           containers:
             - name: istio-proxy
               resources:
-                requests: {cpu: 50m, memory: 64Mi}
-                limits: {cpu: 300m, memory: 256Mi}
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+                limits:
+                  cpu: 300m
+                  memory: 256Mi
   podDisruptionBudget: |
     spec:
       minAvailable: 2

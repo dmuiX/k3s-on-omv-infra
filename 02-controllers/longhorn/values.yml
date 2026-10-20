@@ -7,12 +7,21 @@ persistence:
   defaultClass: false
   reclaimPolicy: Retain
   defaultFsType: ext4
-longhornUI: {replicas: 2}
+longhornUI:
+  replicas: 2
 longhornManager:
   resources:
-    requests: {cpu: 100m, memory: 256Mi}
-    limits: {memory: 1Gi}
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      memory: 1Gi
 # The chart hook needs a ServiceAccount created by the same first sync. Disable it
 # and perform the supported compatibility check explicitly before chart upgrades.
-preUpgradeChecker: {jobEnabled: false}
-csi: {attacherReplicaCount: 3, provisionerReplicaCount: 3, resizerReplicaCount: 3, snapshotterReplicaCount: 3}
+preUpgradeChecker:
+  jobEnabled: false
+csi:
+  attacherReplicaCount: 3
+  provisionerReplicaCount: 3
+  resizerReplicaCount: 3
+  snapshotterReplicaCount: 3

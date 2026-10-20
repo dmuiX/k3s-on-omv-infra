@@ -3,14 +3,16 @@ kind: ServiceAccount
 metadata:
   name: provider-vault
   namespace: crossplane-system
-  annotations: {argocd.argoproj.io/sync-wave: "-20"}
+  annotations:
+    argocd.argoproj.io/sync-wave: "-20"
 automountServiceAccountToken: true
 ---
 apiVersion: apiextensions.crossplane.io/v1alpha1
 kind: ManagedResourceActivationPolicy
 metadata:
   name: provider-vault-exact-16
-  annotations: {argocd.argoproj.io/sync-wave: "-20"}
+  annotations:
+    argocd.argoproj.io/sync-wave: "-20"
 spec:
   activate:
     - secretbackendconnections.database.vault.upbound.io
@@ -34,7 +36,8 @@ apiVersion: pkg.crossplane.io/v1beta1
 kind: DeploymentRuntimeConfig
 metadata:
   name: provider-vault
-  annotations: {argocd.argoproj.io/sync-wave: "-10"}
+  annotations:
+    argocd.argoproj.io/sync-wave: "-10"
 spec:
   deploymentTemplate:
     spec:
@@ -44,14 +47,27 @@ spec:
           serviceAccountName: provider-vault
           containers:
             - name: package-runtime
-              resources: {requests: {cpu: 50m, memory: 128Mi}, limits: {cpu: 500m, memory: 512Mi}}
-              securityContext: {allowPrivilegeEscalation: false, runAsNonRoot: true, capabilities: {drop: [ALL]}}
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 128Mi
+                limits:
+                  cpu: 500m
+                  memory: 512Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                runAsNonRoot: true
+                capabilities:
+                  drop:
+                    - ALL
 ---
 apiVersion: pkg.crossplane.io/v1
 kind: Provider
 metadata:
   name: provider-vault
-  annotations: {argocd.argoproj.io/sync-wave: "0"}
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
 spec:
   package: xpkg.upbound.io/upbound/provider-vault@sha256:01f580a9a140175c907ba0d888297f01a247ed37128160cdcab283a53f561c92
-  runtimeConfigRef: {name: provider-vault}
+  runtimeConfigRef:
+    name: provider-vault
