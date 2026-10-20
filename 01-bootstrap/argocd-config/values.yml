@@ -2,6 +2,8 @@
 # Chart argo-cd 10.10.3, appVersion v3.5.5.
 configs:
   cm:
+    accounts.radar: apiKey
+    accounts.radar.enabled: "true"
     resource.customizations.health.argoproj.io_Application: |
         -- Keep health-gated waves, but permit drift after a full sync of the current inputs.
         -- Argo Application status fields: https://argo-cd.readthedocs.io/en/stable/operator-manual/health/
@@ -59,6 +61,11 @@ configs:
           hs.message = status.health.message or "Child rollout evaluated; resource drift remains visible on the child"
         end
         return hs
+  rbac:
+    policy.csv: |
+      p, role:radar, applications, get, */*, allow
+      p, role:radar, projects, get, *, allow
+      g, radar, role:radar
   params:
     server.insecure: "false"
 

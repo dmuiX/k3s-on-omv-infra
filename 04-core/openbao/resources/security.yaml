@@ -68,6 +68,7 @@ spec:
                   - cloudnative-pg
                   - kube-prometheus-stack
                   - radar
+                  - longhorn
                   - backup-validation
                   - kube-system
                   - istio-gateway
@@ -86,6 +87,7 @@ spec:
                   - cloudnative-pg
                   - kube-prometheus-stack
                   - radar
+                  - longhorn
                   - backup-validation
                   - kube-system
                   - istio-gateway
@@ -93,6 +95,18 @@ spec:
         - protocol: TCP
           port: 8200
   egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: cloudnative-pg
+          podSelector:
+            matchLabels:
+              cnpg.io/cluster: k3s-postgres
+      ports:
+        - protocol: TCP
+          port: 5432
+        - protocol: TCP
+          port: 15008
     - to:
         - podSelector:
             matchLabels:

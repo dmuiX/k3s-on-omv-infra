@@ -7,6 +7,23 @@ spec:
   mtls:
     mode: STRICT
 ---
+# The Kubernetes API server cannot originate HBONE. Its admission request
+# already uses CNPG's authenticated HTTPS webhook on workload port 9443.
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: cnpg-webhook
+  namespace: cloudnative-pg
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cloudnative-pg
+  mtls:
+    mode: STRICT
+  portLevelMtls:
+    9443:
+      mode: PERMISSIVE
+---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -40,6 +57,8 @@ spec:
           port: 5432
         - protocol: TCP
           port: 8000
+        - protocol: TCP
+          port: 15008
     - from:
         - namespaceSelector:
             matchExpressions:
@@ -55,6 +74,8 @@ spec:
           port: 5432
         - protocol: TCP
           port: 8000
+        - protocol: TCP
+          port: 15008
   egress:
     - to:
         - podSelector:
@@ -65,6 +86,18 @@ spec:
           port: 5432
         - protocol: TCP
           port: 8000
+        - protocol: TCP
+          port: 15008
+    # CNPG instance-manager calls the Barman plugin in this namespace.
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: plugin-barman-cloud
+      ports:
+        - protocol: TCP
+          port: 9090
+        - protocol: TCP
+          port: 15008
     - to:
         - namespaceSelector:
             matchLabels:

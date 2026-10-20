@@ -32,6 +32,8 @@ kind: VaultStaticSecret
 metadata:
   name: longhorn-oidc-proxy
   namespace: longhorn
+  annotations:
+    argocd.argoproj.io/sync-wave: "10"
 spec:
   vaultAuthRef: longhorn-oidc-proxy
   mount: kv
@@ -96,6 +98,12 @@ spec:
             - --upstream=http://longhorn-frontend.longhorn.svc:80
             - --http-address=0.0.0.0:4180
             - --email-domain=*
+            - --scope=openid longhorn
+            - --oidc-email-claim=username
+            # OpenBao supplies the authenticated entity name, not a verified mailbox.
+            - --insecure-oidc-allow-unverified-email=true
+            - --allowed-group=radar:admin
+            - --skip-provider-button=true
           env:
             - name: OAUTH2_PROXY_OIDC_ISSUER_URL
               valueFrom:

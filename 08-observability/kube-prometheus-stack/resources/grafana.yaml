@@ -34,13 +34,15 @@ spec:
     rotationPeriod: 2592000
     rotationStatements:
       - >-
-        DO $role$ BEGIN
+        ["DO $role$ BEGIN
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'grafana' AND (rolsuper OR rolreplication OR rolbypassrls)) THEN
+        RAISE EXCEPTION 'Refusing privileged Grafana role'; END IF;
         IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'grafana') THEN
-        ALTER ROLE grafana WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION INHERIT CONNECTION LIMIT 25 PASSWORD '{{password}}';
+        ALTER ROLE grafana WITH LOGIN NOCREATEDB NOCREATEROLE INHERIT CONNECTION LIMIT 25 PASSWORD '{{password}}';
         ELSE
         CREATE ROLE grafana WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION INHERIT CONNECTION LIMIT 25 PASSWORD '{{password}}';
         END IF;
-        END $role$;
+        END $role$;"]
   providerConfigRef:
     name: openbao
 ---
