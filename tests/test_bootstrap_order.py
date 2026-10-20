@@ -21,6 +21,21 @@ class BootstrapOrderTest(unittest.TestCase):
                 with self.subTest(path=str(p.relative_to(ROOT))):
                     list(yaml.safe_load_all(p.read_text()))
 
+    def test_openbao_ambient_transport_preserves_peer_scope(self):
+        docs = list(yaml.safe_load_all((ROOT / '04-core/openbao/resources/security.yaml').read_text()))
+        policy = next(d['spec'] for d in docs if d['metadata']['name'] == 'allow-openbao-raft-and-clients')
+        hbone = [r for r in policy['ingress'] if any(p['port'] == 15008 for p in r['ports'])]
+        self.assertEqual(len(hbone), 1)
+        clients = next(r['from'] for r in policy['ingress'] if any('namespaceSelector' in p for p in r['from'])
+                       and any(p['port'] == 8200 for p in r['ports']))
+        self.assertEqual(hbone[0]['from'], [{'podSelector': {}}, *clients])
+        peers = [{'podSelector': {'matchLabels': {'app.kubernetes.io/name': 'openbao'}}}]
+        egress = next(r for r in policy['egress'] if r.get('to') == peers)
+        self.assertEqual({p['port'] for p in egress['ports']}, {8200, 8201, 15008})
+        snapshot = next(d['spec'] for d in docs if d['metadata']['name'] == 'allow-openbao-snapshot-egress')
+        self.assertEqual({p['port'] for r in snapshot['egress'] if r.get('to') == peers for p in r['ports']},
+                         {8200, 15008})
+
     def test_early_dependencies_are_strictly_ordered(self):
         apps = applications()
         names = ['cert-manager', 'tls-certificates', 'istio-core', 'istio-ambient', 'argocd-config']

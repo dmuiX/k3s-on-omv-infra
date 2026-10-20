@@ -53,17 +53,27 @@ spec:
       ports:
         - protocol: TCP
           port: 8200
-    # Ambient cross-node traffic is relayed by the node-local ztunnel.
+    # Ambient preserves the source workload IP but tunnels over HBONE.
+    # https://istio.io/latest/docs/ambient/usage/networkpolicy/
     - from:
+        - podSelector: {}
         - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: istio-system
-          podSelector:
-            matchLabels:
-              app.kubernetes.io/name: ztunnel
+            matchExpressions:
+              - key: kubernetes.io/metadata.name
+                operator: In
+                values:
+                  - cert-manager
+                  - crossplane-system
+                  - vault-secrets-operator
+                  - cloudnative-pg
+                  - kube-prometheus-stack
+                  - radar
+                  - backup-validation
+                  - kube-system
+                  - istio-gateway
       ports:
         - protocol: TCP
-          port: 8200
+          port: 15008
     - from:
         - namespaceSelector:
             matchExpressions:
@@ -92,6 +102,8 @@ spec:
           port: 8200
         - protocol: TCP
           port: 8201
+        - protocol: TCP
+          port: 15008
     - to:
         - namespaceSelector:
             matchLabels:
@@ -135,6 +147,8 @@ spec:
       ports:
         - protocol: TCP
           port: 8200
+        - protocol: TCP
+          port: 15008
     - ports:
         - protocol: TCP
           port: 443
