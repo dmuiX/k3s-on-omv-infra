@@ -1,5 +1,8 @@
 crds:
   enabled: true
+config:
+  gatewayAPI:
+    enabled: true
 replicaCount: 2
 podDisruptionBudget:
   enabled: true
