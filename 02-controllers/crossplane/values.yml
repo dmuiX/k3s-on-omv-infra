@@ -1,3 +1,28 @@
 replicas: 1
-resourcesCrossplane: {requests: {cpu: 100m, memory: 256Mi}, limits: {cpu: 500m, memory: 512Mi}}
-args: [--enable-environment-configs]
+resourcesCrossplane:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+args:
+  - --enable-environment-configs
+podSecurityContextCrossplane:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+podSecurityContextRBACManager:
+  runAsNonRoot: true
+  seccompProfile:
+    type: RuntimeDefault
+securityContextCrossplane:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
+securityContextRBACManager:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+      - ALL
