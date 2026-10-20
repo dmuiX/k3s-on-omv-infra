@@ -7,7 +7,9 @@ metadata:
     argocd.argoproj.io/sync-wave: "0"
 spec:
   project: default
-  destination: {name: in-cluster, namespace: argocd}
+  destination: 
+    name: in-cluster
+    namespace: argocd
   source:
     repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
     targetRevision: main
@@ -15,6 +17,12 @@ spec:
     directory:
       recurse: true
       include: '{01-bootstrap/argocd-config/application-health.yaml,*/*/app.yml}'
-  syncPolicy:
-    automated: {enabled: true, prune: false, selfHeal: true, allowEmpty: false}
-    syncOptions: [ServerSideApply=true, PruneLast=true]
+  syncPolicy: 
+    automated: 
+      enabled: true
+      prune: false
+      selfHeal: true
+      allowEmpty: false
+    syncOptions: 
+      - ServerSideApply=true
+        PruneLast=true
