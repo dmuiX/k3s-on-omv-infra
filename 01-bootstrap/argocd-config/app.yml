@@ -18,12 +18,14 @@ spec:
         releaseName: argocd
         valueFiles:
           - $infra/01-bootstrap/argocd-config/values.yml
+          - $live/infra/argocd-config-values.yml
     - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
       targetRevision: main
       ref: infra
     - repoURL: https://github.com/dmuiX/k3s-on-omv-live.git
       targetRevision: main
       path: infra/argocd-config
+      ref: live
   syncPolicy:
     automated:
       enabled: true
