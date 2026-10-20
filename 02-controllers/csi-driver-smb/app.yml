@@ -11,6 +11,9 @@ spec:
       helm: {valueFiles: [$infra/02-controllers/csi-driver-smb/values.yml]}
     - {repoURL: 'https://github.com/dmuiX/k3s-on-omv-infra.git', targetRevision: main, ref: infra}
     - {repoURL: 'https://github.com/dmuiX/k3s-on-omv-live.git', targetRevision: main, path: infra/csi-driver-smb}
+    - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
+      targetRevision: main
+      path: 02-controllers/csi-driver-smb/resources
   syncPolicy:
     automated: {enabled: true, prune: false, selfHeal: true, allowEmpty: false}
     syncOptions: [ServerSideApply=true, PruneLast=true, SkipDryRunOnMissingResource=true]
