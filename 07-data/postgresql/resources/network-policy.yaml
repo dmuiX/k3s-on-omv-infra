@@ -43,7 +43,13 @@ spec:
     - from:
         - namespaceSelector:
             matchExpressions:
-              - {key: kubernetes.io/metadata.name, operator: In, values: [openbao, kube-prometheus-stack, radar, backup-validation]}
+              - key: kubernetes.io/metadata.name
+                operator: In
+                values:
+                  - openbao
+                  - kube-prometheus-stack
+                  - radar
+                  - backup-validation
       ports:
         - protocol: TCP
           port: 5432
