@@ -27,7 +27,6 @@ spec:
         releaseName: istio-istiod
         valueFiles:
           - $infra/01-bootstrap/istio-ambient/istiod-values.yml
-          - $live/infra/istio-ambient-values.yml
     - repoURL: https://blob.istio.io/istio-release/charts
       chart: cni
       targetRevision: 1.31.2
