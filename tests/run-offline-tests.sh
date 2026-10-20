@@ -16,6 +16,7 @@ fi
 
 "$python" -m unittest discover -s "$bootstrap/ansible/tests" -p 'test_*.py' -v
 "$python" -m unittest discover -s "$infra/tests" -p 'test_*.py' -v
+ruby -EUTF-8 "$infra/tests/test_application_health.rb"
 ruby -EUTF-8 "$infra/tests/verify-contracts.rb"
 ruby -EUTF-8 "$infra/tests/verify-mesh-renders.rb"
 

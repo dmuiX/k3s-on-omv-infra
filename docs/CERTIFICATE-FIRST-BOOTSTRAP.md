@@ -31,6 +31,27 @@ existing root sync pinned to the previous commit, a one-time termination of that
 stale operation followed by syncing the new revision may be necessary. Do not
 reset the cluster. Fresh deployments require only the ordinary deploy.py run.
 
+## Parent Application rollout gate
+
+Root waves remain health-gated, including Longhorn before monitoring. The custom
+Application health check blocks requested/running/terminating operations, failed
+or errored syncs, comparison/spec/sync errors, and unreconciled source or destination
+changes. Actual child health is propagated; unhealthy workloads are never marked
+Healthy to bypass a wave.
+
+An `OutOfSync` child may release its wave only after a successful full, non-dry-run
+sync of exactly the currently compared revisions and source configurations. A
+selective sync or an old successful revision is not sufficient. Drift remains
+visible on the child Application. A `Synced` child does not need a redundant sync
+for a repository commit that changes no rendered resources, but still requires a
+previous successful operation and a comparison of its current spec.
+
+This is not a classifier for harmless drift: any drift at already-deployed inputs
+can pass when the child remains Healthy. Newly discovered revisions still wait for
+a successful deployment. Automated self-heal remains enabled. Evidence is checked
+with the actual Argo CD offline Lua evaluator in `tests/test_application_health.rb`.
+The supported customization mechanism is documented in [Argo CD resource health](https://argo-cd.readthedocs.io/en/stable/operator-manual/health/).
+
 The live Cloudflare token, Internet/DNS access and successful ACME issuance are
 still required. CI validates layout, Application structure and dependency order,
 not a real ACME issuance or cluster rollout.
