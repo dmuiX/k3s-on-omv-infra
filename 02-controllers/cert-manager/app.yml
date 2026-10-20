@@ -4,7 +4,7 @@ metadata:
   name: cert-manager
   namespace: argocd
   annotations:
-    argocd.argoproj.io/sync-wave: "2"
+    argocd.argoproj.io/sync-wave: "-5"
 spec:
   project: default
   destination:
@@ -17,13 +17,13 @@ spec:
       helm:
         valueFiles:
           - $infra/02-controllers/cert-manager/values.yml
-    - repoURL: 'https://github.com/dmuiX/k3s-on-omv-infra.git'
+    - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
       targetRevision: main
       ref: infra
-    - repoURL: 'https://github.com/dmuiX/k3s-on-omv-infra.git'
+    - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
       targetRevision: main
       path: 02-controllers/cert-manager/resources
-  syncPolicy: &sync
+  syncPolicy:
     automated:
       enabled: true
       prune: false

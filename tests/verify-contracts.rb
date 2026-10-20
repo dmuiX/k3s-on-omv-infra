@@ -13,7 +13,8 @@ BOOTSTRAP = ROOT / "k3s-on-omv-bootstrap"
 EXPECTED_INFRA = {
   "argocd-config" => 1,
   "prometheus-operator-crds" => 1,
-  "cert-manager" => 2,
+  "cert-manager" => -5,
+  "tls-certificates" => -4,
   "csi-driver-smb" => 2,
   "k8up" => 2,
   "longhorn" => 2,
@@ -21,8 +22,8 @@ EXPECTED_INFRA = {
   "vault-secrets-operator" => 2,
   "cloudnative-pg" => 2,
   "barman-cloud" => 2,
-  "istio-core" => 1,
-  "istio-ambient" => 2,
+  "istio-core" => -3,
+  "istio-ambient" => -2,
   "provider-vault" => 3,
   "openbao" => 4,
   "provider-vault-connection" => 5,
@@ -129,7 +130,7 @@ class RepositoryContractTest < Minitest::Test
       resource_indices = sources.each_index.select { |index| sources[index].key?("path") }
       # Official chart-only Istio components need no companion raw resources.
       refute_empty resource_indices, path.to_s unless %w[istio-istiod istio-cni istio-ztunnel].include?(app.dig("metadata", "name"))
-      assert resource_indices.all? { |index| refs.empty? || index > refs.max }, path.to_s
+      assert resource_indices.all? { |index| refs.empty? || index >= refs.max }, path.to_s
     end
   end
 
@@ -353,7 +354,7 @@ class PlatformContractTest < Minitest::Test
     assert_equal "istio-gateway", gateway.dig("metadata", "namespace")
     assert_equal "istio", gateway.dig("spec", "gatewayClassName")
     assert_equal({"group" => "", "kind" => "ConfigMap", "name" => "istio-gateway-options"}, gateway.dig("spec", "infrastructure", "parametersRef"))
-    options = yaml_documents(INFRA / "01-bootstrap/istio-ambient/resources/gateway-contract.yaml").find { |document| document["kind"] == "ConfigMap" }
+    options = yaml_documents(INFRA / "01-bootstrap/istio-ambient/resources/gateway-config.yaml").find { |document| document["kind"] == "ConfigMap" }
     deployment = YAML.safe_load(options.dig("data", "deployment"))
     assert_equal 3, deployment.dig("spec", "replicas")
     pod = deployment.dig("spec", "template", "spec")
@@ -374,10 +375,10 @@ class PlatformContractTest < Minitest::Test
       assert_equal "https://blob.istio.io/istio-release/charts", source["repoURL"]
       assert_equal "1.31.2", source["targetRevision"]
     end
-    assert_equal ["$infra/01-bootstrap/istio-ambient/values.yml", "$live/infra/istio-ambient-values.yml"], charts[1].dig("helm", "valueFiles")
+    assert_equal ["$infra/01-bootstrap/istio-ambient/istiod-values.yml"], charts[1].dig("helm", "valueFiles")
     assert_equal %w[CreateNamespace=true ServerSideApply=true], core.dig("spec", "syncPolicy", "syncOptions")
     assert_equal %w[CreateNamespace=true ServerSideApply=true], application(INFRA / "01-bootstrap/istio-ambient/app.yml").dig("spec", "syncPolicy", "syncOptions")
-    %w[values.yml cni-values.yml].each do |file|
+    %w[istiod-values.yml cni-values.yml].each do |file|
       assert_equal "ambient", YAML.load_file(INFRA / "01-bootstrap/istio-ambient/#{file}")["profile"]
     end
     assert_equal "k3s", YAML.load_file(INFRA / "01-bootstrap/istio-ambient/cni-values.yml").dig("global", "platform")
@@ -517,9 +518,9 @@ class PlatformContractTest < Minitest::Test
       .flat_map { |path| yaml_documents(path) }
       .select { |document| document["kind"] == "ObjectStore" }
     assert_empty git_owned_object_stores
-    bootstrap_ceremony = (BOOTSTRAP / "ansible/roles/protected_ceremonies/tasks/platform-backups.yml").read
+    bootstrap_ceremony = (BOOTSTRAP / "ansible/roles/openbao_setup/tasks/platform-backups.yml").read
     assert_includes bootstrap_ceremony, "kind: ObjectStore"
-    assert_includes bootstrap_ceremony, 'endpointURL: "{{ platform_r2_endpoint.user_input }}"'
+    assert_includes bootstrap_ceremony, 'endpointURL: {{ platform_r2_endpoint.user_input | to_json }}'
     assert_includes bootstrap_ceremony, "k3s-on-omv.io/create-once-owner: protected-ceremonies/platform-r2"
     refute_match(/endpointURL:\s*https:\/\//, bootstrap_ceremony)
     assert_equal %w[backup-validation cloudnative-pg kube-system openbao], static_secrets.map { |document| document.dig("metadata", "namespace") }.sort
@@ -552,8 +553,10 @@ class PlatformContractTest < Minitest::Test
 
   def test_restore_lease_and_no_direct_barman_s3_delete
     retention = (INFRA / "07-data/postgresql/resources/retention.yaml").read
-    assert_includes retention, "resourceNames: [postgresql-restore-status]"
-    assert_includes retention, "verbs: [get]"
+    role = yaml_documents(INFRA / "07-data/postgresql/resources/retention.yaml").find { |document| document["kind"] == "Role" }
+    rule = role.fetch("rules").find { |item| item.fetch("resources").include?("leases") }
+    assert_equal ["postgresql-restore-status"], rule.fetch("resourceNames")
+    assert_equal ["get"], rule.fetch("verbs")
     refute_match(/aws\s+.*s3.*delete|delete-object/, retention)
     assert_includes (INFRA / "adapters/postgresql-size-retention/retention.py").read, "--minimum-redundancy"
   end

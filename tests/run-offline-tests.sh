@@ -16,12 +16,13 @@ fi
 
 "$python" -m unittest discover -s "$bootstrap/ansible/tests" -p 'test_*.py' -v
 "$python" -m unittest discover -s "$infra/tests" -p 'test_*.py' -v
-ruby "$infra/tests/verify-contracts.rb"
-ruby "$infra/tests/verify-mesh-renders.rb"
+ruby -EUTF-8 "$infra/tests/verify-contracts.rb"
+ruby -EUTF-8 "$infra/tests/verify-mesh-renders.rb"
 
-for playbook in host-k3s.yml gitops-openbao.yml openbao-restore.yml; do
+for playbook in "$bootstrap"/ansible/*.yml "$bootstrap"/ansible/recovery/*.yml "$bootstrap"/ansible/maintenance/*.yml; do
+  case "$playbook" in */requirements.yml) continue ;; esac
   ANSIBLE_CONFIG="$bootstrap/ansible/ansible.cfg" \
     ansible-playbook --syntax-check \
       -i "$bootstrap/ansible/inventory/hosts.yml" \
-      "$bootstrap/ansible/$playbook"
+      "$playbook"
 done

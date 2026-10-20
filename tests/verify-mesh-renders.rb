@@ -28,7 +28,7 @@ class MeshRenderTest < Minitest::Test
   def test_base_and_istiod
     base = render("base", "istio-base", "istio-system", INFRA / "01-bootstrap/istio-ambient/base-values.yml")
     assert base.any? { |document| document["kind"] == "CustomResourceDefinition" }
-    istiod = render("istiod", "istiod", "istio-system", INFRA / "01-bootstrap/istio-ambient/values.yml", LIVE / "infra/istio-ambient-values.yml")
+    istiod = render("istiod", "istio-istiod", "istio-system", INFRA / "01-bootstrap/istio-ambient/istiod-values.yml")
     deployment = istiod.find { |document| document["kind"] == "Deployment" }
     assert_equal "registry.istio.io/release/pilot:1.31.2-distroless", deployment.dig("spec", "template", "spec", "containers", 0, "image")
     [base, istiod].each do |documents|

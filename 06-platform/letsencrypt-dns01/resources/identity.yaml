@@ -40,5 +40,6 @@ spec:
   path: cert-manager/cloudflare
   destination:
     name: cloudflare-dns01
-    create: true
+    # Bootstrap creates this before cert-manager; VSO updates it after OpenBao.
+    create: false
   refreshAfter: 1h
