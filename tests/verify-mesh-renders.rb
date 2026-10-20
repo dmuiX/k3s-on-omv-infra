@@ -26,9 +26,9 @@ class MeshRenderTest < Minitest::Test
   end
 
   def test_base_and_istiod
-    base = render("base", "istio-base", "istio-system", INFRA / "02-controllers/istio-ambient/base-values.yml")
+    base = render("base", "istio-base", "istio-system", INFRA / "01-bootstrap/istio-ambient/base-values.yml")
     assert base.any? { |document| document["kind"] == "CustomResourceDefinition" }
-    istiod = render("istiod", "istiod", "istio-system", INFRA / "02-controllers/istio-ambient/values.yml", LIVE / "infra/istio-ambient-values.yml")
+    istiod = render("istiod", "istiod", "istio-system", INFRA / "01-bootstrap/istio-ambient/values.yml", LIVE / "infra/istio-ambient-values.yml")
     deployment = istiod.find { |document| document["kind"] == "Deployment" }
     assert_equal "registry.istio.io/release/pilot:1.31.2-distroless", deployment.dig("spec", "template", "spec", "containers", 0, "image")
     [base, istiod].each do |documents|
@@ -38,8 +38,8 @@ class MeshRenderTest < Minitest::Test
   end
 
   def test_cni_and_ztunnel
-    cni = render("cni", "istio-cni", "istio-system", INFRA / "02-controllers/istio-ambient/cni-values.yml")
-    ztunnel = render("ztunnel", "ztunnel", "istio-system", INFRA / "02-controllers/istio-ambient/ztunnel-values.yml")
+    cni = render("cni", "istio-cni", "istio-system", INFRA / "01-bootstrap/istio-ambient/cni-values.yml")
+    ztunnel = render("ztunnel", "ztunnel", "istio-system", INFRA / "01-bootstrap/istio-ambient/ztunnel-values.yml")
     cni_pod = cni.find { |document| document["kind"] == "DaemonSet" }.dig("spec", "template", "spec")
     paths = cni_pod.fetch("volumes").map { |volume| volume.dig("hostPath", "path") }.compact
     assert_includes paths, "/var/lib/rancher/k3s/data/cni"

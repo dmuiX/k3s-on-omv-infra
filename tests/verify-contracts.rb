@@ -21,10 +21,7 @@ EXPECTED_INFRA = {
   "vault-secrets-operator" => 2,
   "cloudnative-pg" => 2,
   "barman-cloud" => 2,
-  "istio-base" => -2,
-  "istio-istiod" => -1,
-  "istio-cni" => 0,
-  "istio-ztunnel" => 1,
+  "istio-core" => 1,
   "istio-ambient" => 2,
   "provider-vault" => 3,
   "openbao" => 4,
@@ -356,12 +353,13 @@ class PlatformContractTest < Minitest::Test
     assert_equal "istio-ingress", gateway.dig("metadata", "namespace")
     assert_equal "istio", gateway.dig("spec", "gatewayClassName")
     assert_equal({"group" => "", "kind" => "ConfigMap", "name" => "ingress-gateway-options"}, gateway.dig("spec", "infrastructure", "parametersRef"))
-    options = yaml_documents(INFRA / "02-controllers/istio-ambient/resources/gateway-contract.yaml").find { |document| document["kind"] == "ConfigMap" }
+    options = yaml_documents(INFRA / "01-bootstrap/istio-ambient/resources/gateway-contract.yaml").find { |document| document["kind"] == "ConfigMap" }
     deployment = YAML.safe_load(options.dig("data", "deployment"))
     assert_equal 3, deployment.dig("spec", "replicas")
     pod = deployment.dig("spec", "template", "spec")
-    assert_equal "kubernetes.io/hostname", pod.dig("affinity", "podAntiAffinity", "requiredDuringSchedulingIgnoredDuringExecution", 0, "topologyKey")
-    assert_equal "DoNotSchedule", pod.dig("topologySpreadConstraints", 0, "whenUnsatisfiable")
+    assert_equal "kubernetes.io/hostname", pod.dig("affinity", "podAntiAffinity", "preferredDuringSchedulingIgnoredDuringExecution", 0, "podAffinityTerm", "topologyKey")
+    assert_equal "RuntimeDefault", pod.dig("securityContext", "seccompProfile", "type")
+    assert_equal "ScheduleAnyway", pod.dig("topologySpreadConstraints", 0, "whenUnsatisfiable")
     assert_equal "CriticalAddonsOnly", pod.dig("tolerations", 0, "key")
     pdb = YAML.safe_load(options.dig("data", "podDisruptionBudget"))
     assert_equal 2, pdb.dig("spec", "minAvailable")
@@ -369,17 +367,20 @@ class PlatformContractTest < Minitest::Test
   end
 
   def test_official_mesh_chart_pins
-    %w[base istiod cni ztunnel].each do |chart|
-      name = chart == "istiod" ? "istio-istiod" : "istio-#{chart}"
-      source = application(INFRA / "02-controllers/#{name}/app.yml").dig("spec", "sources", 0)
+    core = application(INFRA / "01-bootstrap/istio-core/app.yml")
+    charts = core.dig("spec", "sources").select { |source| source["chart"] }
+    assert_equal %w[base istiod cni ztunnel], charts.map { |source| source["chart"] }
+    charts.each do |source|
       assert_equal "https://blob.istio.io/istio-release/charts", source["repoURL"]
-      assert_equal chart, source["chart"]
       assert_equal "1.31.2", source["targetRevision"]
     end
+    assert_equal ["$infra/01-bootstrap/istio-ambient/values.yml", "$live/infra/istio-ambient-values.yml"], charts[1].dig("helm", "valueFiles")
+    assert_equal %w[CreateNamespace=true ServerSideApply=true], core.dig("spec", "syncPolicy", "syncOptions")
+    assert_equal %w[CreateNamespace=true ServerSideApply=true], application(INFRA / "01-bootstrap/istio-ambient/app.yml").dig("spec", "syncPolicy", "syncOptions")
     %w[values.yml cni-values.yml].each do |file|
-      assert_equal "ambient", YAML.load_file(INFRA / "02-controllers/istio-ambient/#{file}")["profile"]
+      assert_equal "ambient", YAML.load_file(INFRA / "01-bootstrap/istio-ambient/#{file}")["profile"]
     end
-    assert_equal "k3s", YAML.load_file(INFRA / "02-controllers/istio-ambient/cni-values.yml").dig("global", "platform")
+    assert_equal "k3s", YAML.load_file(INFRA / "01-bootstrap/istio-ambient/cni-values.yml").dig("global", "platform")
   end
 
   def test_prometheus_snapshot_first_k8up_support_uses_reviewed_standard_library_tooling

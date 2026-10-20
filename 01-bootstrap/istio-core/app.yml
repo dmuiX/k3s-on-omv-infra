@@ -1,0 +1,62 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: istio-core
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  project: default
+  destination:
+    name: in-cluster
+    namespace: istio-system
+  # These four chart sources deliberately remain separate Helm releases,
+  # preserving their original resource names during the Argo CD migration.
+  sources:
+    - repoURL: https://blob.istio.io/istio-release/charts
+      chart: base
+      targetRevision: 1.31.2
+      helm:
+        releaseName: istio-base
+        valueFiles:
+          - $infra/01-bootstrap/istio-ambient/base-values.yml
+    - repoURL: https://blob.istio.io/istio-release/charts
+      chart: istiod
+      targetRevision: 1.31.2
+      helm:
+        releaseName: istio-istiod
+        valueFiles:
+          - $infra/01-bootstrap/istio-ambient/values.yml
+          - $live/infra/istio-ambient-values.yml
+    - repoURL: https://blob.istio.io/istio-release/charts
+      chart: cni
+      targetRevision: 1.31.2
+      helm:
+        releaseName: istio-cni
+        valueFiles:
+          - $infra/01-bootstrap/istio-ambient/cni-values.yml
+    - repoURL: https://blob.istio.io/istio-release/charts
+      chart: ztunnel
+      targetRevision: 1.31.2
+      helm:
+        releaseName: ztunnel
+        valueFiles:
+          - $infra/01-bootstrap/istio-ambient/ztunnel-values.yml
+    - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
+      targetRevision: main
+      ref: infra
+    - repoURL: https://github.com/dmuiX/k3s-on-omv-live.git
+      targetRevision: main
+      ref: live
+    - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
+      targetRevision: main
+      path: 01-bootstrap/istio-ambient/base-resources
+  syncPolicy:
+    automated:
+      enabled: true
+      prune: false
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

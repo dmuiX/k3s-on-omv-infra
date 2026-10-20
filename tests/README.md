@@ -13,7 +13,7 @@ The runner does not contact hosts, Kubernetes, Git remotes, chart repositories, 
 - Canonical Argo children and waves, root selection, source order, local reference integrity, ownership, secret absence, immutable pins, and closed unresolved-input gates. Live `source.path` directories and `$live` value files resolve against the actual sibling Live tree under `infra/` and `apps/`, including verification of the `live` source ref.
 - provider-vault's exact 16-type post-PKI activation contract and resource waves.
 - `longhorn-local` encryption/locality, PostgreSQL ClusterIP/Ambient-STRICT transport without duplicate client certificates, targeted default-deny, HA settings, static container hardening, Pi toleration scope, OpenBao policy boundaries, shared R2 source isolation, and restore-Lease access.
-- Official csi-driver-smb pin/API, dynamic SMB K8up repositories, official Istio component pins, native Gateway customization, fail-closed Prometheus native-snapshot/one-shot-K8up support, Alertmanager VSO configuration, the Longhorn OIDC-proxy skeleton, and exactly the two existing Python adapters.
+- Official csi-driver-smb pin/API, dynamic SMB K8up repositories, the two-Application Istio layout, official component pins, native Gateway customization and restricted namespace seccomp, fail-closed Prometheus native-snapshot/one-shot-K8up support, Alertmanager VSO configuration, the Longhorn OIDC-proxy skeleton, and exactly the two existing Python adapters.
 - Offline `ansible-playbook --syntax-check` for all three playbooks.
 
 ## Offline Istio renders

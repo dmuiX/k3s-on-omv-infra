@@ -4,7 +4,7 @@ metadata:
   name: istio-ambient
   namespace: argocd
   annotations: 
-    argocd.argoproj.io/sync-wave: "1"
+    argocd.argoproj.io/sync-wave: "2"
 spec:
   project: default
   destination: 
@@ -25,4 +25,4 @@ spec:
       allowEmpty: false
     syncOptions: 
       - CreateNamespace=true
-        ServerSideApply=true
+      - ServerSideApply=true
