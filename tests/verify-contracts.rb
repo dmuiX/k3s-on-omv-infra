@@ -286,6 +286,13 @@ class PlatformContractTest < Minitest::Test
       "Use Longhorn 1.13's persisted form to avoid repeated scalar-to-JSON setting updates"
   end
 
+  def test_openbao_server_drops_all_capabilities
+    values = YAML.load_file(INFRA / "04-core/openbao/values.yml")
+    security = values.dig("server", "statefulSet", "securityContext", "container") || {}
+    assert_equal false, security["allowPrivilegeEscalation"]
+    assert_equal ["ALL"], security.dig("capabilities", "drop")
+  end
+
   def test_ha_replica_and_storage_contracts_are_present
     openbao = YAML.load_file(INFRA / "04-core/openbao/values.yml")
     assert_equal 3, openbao.dig("server", "ha", "replicas")

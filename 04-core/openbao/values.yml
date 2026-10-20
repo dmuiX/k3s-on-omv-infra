@@ -2,6 +2,13 @@ server:
   # OrderedReady deadlocks before initialization because the first sealed pod is
   # not Ready. Schedule all Raft voters, then initialize and verify quorum.
   podManagementPolicy: Parallel
+  statefulSet:
+    securityContext:
+      container:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop:
+            - ALL
   gateway:
     httpRoute:
       enabled: true
