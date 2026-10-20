@@ -1,7 +1,7 @@
 apiVersion: v1
 kind: Namespace
 metadata:
-  name: istio-ingress
+  name: istio-gateway
   labels:
     pod-security.kubernetes.io/enforce: restricted
 ---
@@ -9,8 +9,8 @@ metadata:
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: ingress-gateway-options
-  namespace: istio-ingress
+  name: istio-gateway-options
+  namespace: istio-gateway
 data:
   deployment: |
     spec:
@@ -21,7 +21,7 @@ data:
           maxUnavailable: 1
       template:
         spec:
-          # Required for admission to the restricted istio-ingress namespace.
+          # Required for admission to the restricted istio-gateway namespace.
           securityContext:
             seccompProfile:
               type: RuntimeDefault
@@ -39,7 +39,7 @@ data:
                   podAffinityTerm:
                     labelSelector:
                       matchLabels:
-                        gateway.networking.k8s.io/gateway-name: ingress-gateway
+                        gateway.networking.k8s.io/gateway-name: istio-gateway
                     topologyKey: kubernetes.io/hostname
           topologySpreadConstraints:
             - maxSkew: 1
@@ -47,7 +47,7 @@ data:
               whenUnsatisfiable: ScheduleAnyway
               labelSelector:
                 matchLabels:
-                  gateway.networking.k8s.io/gateway-name: ingress-gateway
+                  gateway.networking.k8s.io/gateway-name: istio-gateway
           containers:
             - name: istio-proxy
               resources:
@@ -58,4 +58,4 @@ data:
       minAvailable: 2
       selector:
         matchLabels:
-          gateway.networking.k8s.io/gateway-name: ingress-gateway
+          gateway.networking.k8s.io/gateway-name: istio-gateway
