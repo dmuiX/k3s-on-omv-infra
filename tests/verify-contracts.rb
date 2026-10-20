@@ -608,7 +608,7 @@ class PlatformContractTest < Minitest::Test
 
   def test_restore_lease_and_no_direct_barman_s3_delete
     retention = (INFRA / "07-data/k3s-postgres/resources/retention.yaml").read
-    role = yaml_documents(INFRA / "07-data/k3s-postgres/resources/retention.yaml").find { |document| document["kind"] == "Role" }
+    role = yaml_documents(INFRA / "08-observability/backup-validation/resources/postgresql-retention-access.yaml").find { |document| document["kind"] == "Role" }
     rule = role.fetch("rules").find { |item| item.fetch("resources").include?("leases") }
     assert_equal ["postgresql-restore-status"], rule.fetch("resourceNames")
     assert_equal ["get"], rule.fetch("verbs")

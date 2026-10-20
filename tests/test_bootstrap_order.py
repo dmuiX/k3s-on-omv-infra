@@ -59,6 +59,25 @@ class BootstrapOrderTest(unittest.TestCase):
             if source['repoURL'] == LIVE:
                 self.assertEqual(source['path'], 'infra/k3s-postgres')
 
+    def test_early_apps_do_not_require_the_later_backup_validation_namespace(self):
+        for name, app in applications().items():
+            if int(app['metadata']['annotations']['argocd.argoproj.io/sync-wave']) >= 8:
+                continue
+            for source in app['spec'].get('sources', []):
+                if source.get('repoURL') != INFRA or not source.get('path'):
+                    continue
+                for path in (ROOT / source['path']).glob('*.yaml'):
+                    for resource in yaml.safe_load_all(path.read_text()):
+                        if isinstance(resource, dict):
+                            self.assertNotEqual(resource.get('metadata', {}).get('namespace'),
+                                                'backup-validation', f'{name}: {path}')
+
+    def test_validation_kustomization_includes_its_openbao_access(self):
+        directory = ROOT / '08-observability/backup-validation/resources'
+        config = yaml.safe_load((directory / 'kustomization.yaml').read_text())
+        self.assertIn('openbao-access.yaml', config['resources'])
+        self.assertIn('postgresql-retention-access.yaml', config['resources'])
+
     def test_openbao_ambient_transport_preserves_peer_scope(self):
         docs = list(yaml.safe_load_all((ROOT / '04-core/openbao/resources/security.yaml').read_text()))
         policy = next(d['spec'] for d in docs if d['metadata']['name'] == 'allow-openbao-raft-and-clients')
