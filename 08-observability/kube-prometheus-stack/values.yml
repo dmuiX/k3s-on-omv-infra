@@ -6,34 +6,70 @@ prometheus:
     enableAdminAPI: true
     retention: 15d
     retentionSize: 18GB
-    nodeSelector: {monitoring: "true"}
+    nodeSelector:
+      monitoring: "true"
     podAntiAffinity: hard
     serviceMonitorSelectorNilUsesHelmValues: false
     ruleSelectorNilUsesHelmValues: false
-    storageSpec: {volumeClaimTemplate: {spec: {storageClassName: longhorn-monitoring, accessModes: [ReadWriteOnce], resources: {requests: {storage: 20Gi}}}}}
-    resources: {requests: {cpu: 250m, memory: 1Gi}, limits: {cpu: "1", memory: 2Gi}}
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: longhorn-monitoring
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 20Gi
+    resources:
+      requests:
+        cpu: 250m
+        memory: 1Gi
+      limits:
+        cpu: "1"
+        memory: 2Gi
 alertmanager:
   alertmanagerSpec:
     replicas: 2
-    nodeSelector: {monitoring: "true"}
+    nodeSelector:
+      monitoring: "true"
     podAntiAffinity: hard
     configSecret: alertmanager-platform-config
-    storage: {volumeClaimTemplate: {spec: {storageClassName: longhorn-monitoring, accessModes: [ReadWriteOnce], resources: {requests: {storage: 1Gi}}}}}
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: longhorn-monitoring
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 1Gi
 grafana:
   replicas: 2
-  nodeSelector: {monitoring: "true"}
-  persistence: {enabled: false}
-  podDisruptionBudget: {minAvailable: 1}
+  nodeSelector:
+    monitoring: "true"
+  persistence:
+    enabled: false
+  podDisruptionBudget:
+    minAvailable: 1
   affinity:
     podAntiAffinity:
       requiredDuringSchedulingIgnoredDuringExecution:
-        - labelSelector: {matchLabels: {app.kubernetes.io/name: grafana}}
+        - labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: grafana
           topologyKey: kubernetes.io/hostname
-  resources: {requests: {cpu: 100m, memory: 256Mi}, limits: {cpu: 500m, memory: 512Mi}}
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
 kubeApiServer:
   serviceMonitor:
     metricRelabelings:
-      - sourceLabels: [__name__]
+      - sourceLabels:
+          - __name__
         regex: "(apiserver_watch_events_dispatch_duration_seconds|apiserver_storage_list_duration_seconds|apiserver_watch_list_duration_seconds|apiserver_watch_cache_read_wait_seconds|apiserver_watch_cache_initialization_duration_seconds|etcd_request_duration_seconds)_(bucket|sum|count)"
         action: drop
 kube-state-metrics:
@@ -42,7 +78,23 @@ kube-state-metrics:
     config:
       spec:
         resources:
-          - groupVersionKind: {group: coordination.k8s.io, version: v1, kind: Lease}
-            labelsFromPath: {result: [metadata, annotations, platform.example.io/result]}
+          - groupVersionKind:
+              group: coordination.k8s.io
+              version: v1
+              kind: Lease
+            labelsFromPath:
+              result:
+                - metadata
+                - annotations
+                - platform.example.io/result
             metricNamePrefix: restore
-            metrics: [{name: status, help: Restore status lease, each: {type: Info, info: {labelsFromPath: {lease: [metadata, name]}}}}]
+            metrics:
+              - name: status
+                help: Restore status lease
+                each:
+                  type: Info
+                  info:
+                    labelsFromPath:
+                      lease:
+                        - metadata
+                        - name

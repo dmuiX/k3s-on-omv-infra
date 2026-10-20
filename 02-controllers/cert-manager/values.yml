@@ -1,6 +1,23 @@
-crds: {enabled: true}
+crds:
+  enabled: true
 replicaCount: 2
-podDisruptionBudget: {enabled: true, minAvailable: 1}
-webhook: {replicaCount: 2, podDisruptionBudget: {enabled: true, minAvailable: 1}}
-cainjector: {replicaCount: 2, podDisruptionBudget: {enabled: true, minAvailable: 1}}
-resources: {requests: {cpu: 50m, memory: 64Mi}, limits: {cpu: 300m, memory: 256Mi}}
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+webhook:
+  replicaCount: 2
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+cainjector:
+  replicaCount: 2
+  podDisruptionBudget:
+    enabled: true
+    minAvailable: 1
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 300m
+    memory: 256Mi

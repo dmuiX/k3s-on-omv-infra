@@ -1,68 +1,157 @@
 apiVersion: v1
 kind: Namespace
-metadata: {name: backup-validation, labels: {istio.io/dataplane-mode: ambient, pod-security.kubernetes.io/enforce: restricted}}
+metadata:
+  name: backup-validation
+  labels:
+    istio.io/dataplane-mode: ambient
+    pod-security.kubernetes.io/enforce: restricted
 ---
 apiVersion: v1
 kind: ServiceAccount
-metadata: {name: backup-validation, namespace: backup-validation}
+metadata:
+  name: backup-validation
+  namespace: backup-validation
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
-metadata: {name: restore-validation, namespace: backup-validation}
+metadata:
+  name: restore-validation
+  namespace: backup-validation
 rules:
-  - {apiGroups: [coordination.k8s.io], resources: [leases], verbs: [create]}
-  - {apiGroups: [coordination.k8s.io], resources: [leases], resourceNames: [postgresql-restore-status], verbs: [get, update]}
-  - {apiGroups: [postgresql.cnpg.io], resources: [clusters], verbs: [get, create, delete]}
-  - {apiGroups: [barmancloud.cnpg.io], resources: [objectstores], verbs: [get, create, delete]}
-  - {apiGroups: [''], resources: [secrets], resourceNames: [postgresql-pitr-validation-app], verbs: [get]}
+  - apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
+    verbs:
+      - create
+  - apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
+    resourceNames:
+      - postgresql-restore-status
+    verbs:
+      - get
+      - update
+  - apiGroups:
+      - postgresql.cnpg.io
+    resources:
+      - clusters
+    verbs:
+      - get
+      - create
+      - delete
+  - apiGroups:
+      - barmancloud.cnpg.io
+    resources:
+      - objectstores
+    verbs:
+      - get
+      - create
+      - delete
+  - apiGroups:
+      - ''
+    resources:
+      - secrets
+    resourceNames:
+      - postgresql-pitr-validation-app
+    verbs:
+      - get
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
-metadata: {name: restore-validation, namespace: backup-validation}
-subjects: [{kind: ServiceAccount, name: backup-validation, namespace: backup-validation}]
-roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: restore-validation}
+metadata:
+  name: restore-validation
+  namespace: backup-validation
+subjects:
+  - kind: ServiceAccount
+    name: backup-validation
+    namespace: backup-validation
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: restore-validation
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
-metadata: {name: restore-validation-source-reader, namespace: cloudnative-pg}
+metadata:
+  name: restore-validation-source-reader
+  namespace: cloudnative-pg
 rules:
-  - {apiGroups: [''], resources: [secrets], resourceNames: [k3s-postgres-app], verbs: [get]}
-  - {apiGroups: [barmancloud.cnpg.io], resources: [objectstores], resourceNames: [k3s-postgres-backups], verbs: [get]}
+  - apiGroups:
+      - ''
+    resources:
+      - secrets
+    resourceNames:
+      - k3s-postgres-app
+    verbs:
+      - get
+  - apiGroups:
+      - barmancloud.cnpg.io
+    resources:
+      - objectstores
+    resourceNames:
+      - k3s-postgres-backups
+    verbs:
+      - get
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
-metadata: {name: restore-validation-source-reader, namespace: cloudnative-pg}
-subjects: [{kind: ServiceAccount, name: backup-validation, namespace: backup-validation}]
-roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: restore-validation-source-reader}
+metadata:
+  name: restore-validation-source-reader
+  namespace: cloudnative-pg
+subjects:
+  - kind: ServiceAccount
+    name: backup-validation
+    namespace: backup-validation
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: restore-validation-source-reader
 ---
 apiVersion: v1
 kind: PersistentVolume
-metadata: {name: postgresql-backup-mirror-validation}
+metadata:
+  name: postgresql-backup-mirror-validation
 spec:
-  capacity: {storage: 1Ti}
-  accessModes: [ReadOnlyMany]
+  capacity:
+    storage: 1Ti
+  accessModes:
+    - ReadOnlyMany
   persistentVolumeReclaimPolicy: Retain
   storageClassName: ''
-  mountOptions: [ro, noserverino]
+  mountOptions:
+    - ro
+    - noserverino
   csi:
     driver: smb.csi.k8s.io
     volumeHandle: postgresql-backup-mirror-validation
     readOnly: true
-    volumeAttributes: {source: '//192.168.1.5/k3s-cluster/cloudnativepg-backups'}
-    nodeStageSecretRef: {name: smb-credentials, namespace: kube-system}
+    volumeAttributes:
+      source: '//192.168.1.5/k3s-cluster/cloudnativepg-backups'
+    nodeStageSecretRef:
+      name: smb-credentials
+      namespace: kube-system
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
-metadata: {name: postgresql-backup-mirror-validation, namespace: backup-validation}
+metadata:
+  name: postgresql-backup-mirror-validation
+  namespace: backup-validation
 spec:
-  accessModes: [ReadOnlyMany]
+  accessModes:
+    - ReadOnlyMany
   storageClassName: ''
   volumeName: postgresql-backup-mirror-validation
-  resources: {requests: {storage: 1Ti}}
+  resources:
+    requests:
+      storage: 1Ti
 ---
 apiVersion: batch/v1
 kind: CronJob
-metadata: {name: postgresql-restore-validation, namespace: backup-validation}
+metadata:
+  name: postgresql-restore-validation
+  namespace: backup-validation
 spec:
   suspend: false
   schedule: '0 4 * * *'
@@ -78,29 +167,62 @@ spec:
           containers:
             - name: validate
               image: ghcr.io/cloudnative-pg/plugin-barman-cloud-sidecar:v0.15.1@sha256:2287a793a804db751edd0d07d44cd549e357677e98a800eb12e2cf7c0d53f9b0
-              command: [/venv/bin/python3]
-              args: [/validator/postgresql_pitr.py]
-              envFrom: [{secretRef: {name: postgresql-validation-r2}}]
+              command:
+                - /venv/bin/python3
+              args:
+                - /validator/postgresql_pitr.py
+              envFrom:
+                - secretRef:
+                    name: postgresql-validation-r2
               env:
-                - {name: S3_BUCKET, value: cloudnativepg-backups}
-                - {name: BARMAN_SERVER_NAME, value: k3s-postgres}
-                - {name: PYTHONDONTWRITEBYTECODE, value: '1'}
-              resources: {requests: {cpu: 100m, memory: 128Mi}, limits: {cpu: 500m, memory: 512Mi}}
-              securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, runAsNonRoot: true, capabilities: {drop: [ALL]}}
+                - name: S3_BUCKET
+                  value: cloudnativepg-backups
+                - name: BARMAN_SERVER_NAME
+                  value: k3s-postgres
+                - name: PYTHONDONTWRITEBYTECODE
+                  value: '1'
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+                limits:
+                  cpu: 500m
+                  memory: 512Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+                capabilities:
+                  drop:
+                    - ALL
               volumeMounts:
-                - {name: validator, mountPath: /validator, readOnly: true}
-                - {name: omv, mountPath: /omv, readOnly: true}
+                - name: validator
+                  mountPath: /validator
+                  readOnly: true
+                - name: omv
+                  mountPath: /omv
+                  readOnly: true
           volumes:
-            - {name: validator, configMap: {name: postgresql-pitr-validator, defaultMode: 0444}}
-            - {name: omv, persistentVolumeClaim: {claimName: postgresql-backup-mirror-validation, readOnly: true}}
+            - name: validator
+              configMap:
+                name: postgresql-pitr-validator
+                defaultMode: 0444
+            - name: omv
+              persistentVolumeClaim:
+                claimName: postgresql-backup-mirror-validation
+                readOnly: true
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
   name: k8up-validation-canary
   namespace: backup-validation
-  annotations: {k8up.io/backup: 'true'}
+  annotations:
+    k8up.io/backup: 'true'
 spec:
-  accessModes: [ReadWriteOnce]
+  accessModes:
+    - ReadWriteOnce
   storageClassName: longhorn
-  resources: {requests: {storage: 128Mi}}
+  resources:
+    requests:
+      storage: 128Mi

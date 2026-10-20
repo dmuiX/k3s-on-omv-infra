@@ -1,33 +1,72 @@
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
-metadata: {name: default-deny, namespace: backup-validation}
-spec: {podSelector: {}, policyTypes: [Ingress, Egress]}
+metadata:
+  name: default-deny
+  namespace: backup-validation
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
-metadata: {name: allow-backup-validation-egress, namespace: backup-validation}
+metadata:
+  name: allow-backup-validation-egress
+  namespace: backup-validation
 spec:
   podSelector: {}
-  policyTypes: [Egress]
+  policyTypes:
+    - Egress
   egress:
-    - to: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}}]
-      ports: [{protocol: UDP, port: 53}, {protocol: TCP, port: 53}, {protocol: TCP, port: 443}]
-    - to: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: openbao}}}]
-      ports: [{protocol: TCP, port: 8200}]
-    - to: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: cloudnative-pg}}}]
-      ports: [{protocol: TCP, port: 5432}]
-    - ports: [{protocol: TCP, port: 6443}]
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+        - protocol: TCP
+          port: 443
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: openbao
+      ports:
+        - protocol: TCP
+          port: 8200
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: cloudnative-pg
+      ports:
+        - protocol: TCP
+          port: 5432
+    - ports:
+        - protocol: TCP
+          port: 6443
     # Cloudflare R2 endpoint; the hostname remains protected input and cannot be
     # represented as a portable Kubernetes NetworkPolicy peer.
-    - ports: [{protocol: TCP, port: 443}]
+    - ports:
+        - protocol: TCP
+          port: 443
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
-metadata: {name: allow-backup-validation-metrics, namespace: backup-validation}
+metadata:
+  name: allow-backup-validation-metrics
+  namespace: backup-validation
 spec:
   podSelector: {}
-  policyTypes: [Ingress]
+  policyTypes:
+    - Ingress
   ingress:
     - from:
-        - namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-prometheus-stack}}
-      ports: [{protocol: TCP, port: 8080}]
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-prometheus-stack
+      ports:
+        - protocol: TCP
+          port: 8080

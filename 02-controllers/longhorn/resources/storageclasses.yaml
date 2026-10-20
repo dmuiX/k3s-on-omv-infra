@@ -18,7 +18,8 @@ parameters:
 ---
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
-metadata: {name: longhorn-local}
+metadata:
+  name: longhorn-local
 provisioner: driver.longhorn.io
 reclaimPolicy: Retain
 volumeBindingMode: WaitForFirstConsumer
@@ -34,7 +35,8 @@ parameters:
 ---
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
-metadata: {name: longhorn-monitoring}
+metadata:
+  name: longhorn-monitoring
 provisioner: driver.longhorn.io
 reclaimPolicy: Retain
 volumeBindingMode: WaitForFirstConsumer

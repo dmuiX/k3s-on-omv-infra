@@ -48,31 +48,60 @@ kind: PreBackupPod
 metadata:
   name: prometheus-tsdb-snapshot
   namespace: kube-prometheus-stack
-  labels: {platform.k3s-on-omv.io/backup-set: prometheus-tsdb}
+  labels:
+    platform.k3s-on-omv.io/backup-set: prometheus-tsdb
 spec:
   fileExtension: tar
   backupCommand: /usr/local/bin/python /tools/snapshot.py
   pod:
     spec:
       automountServiceAccountToken: false
-      securityContext: {runAsNonRoot: true, runAsUser: 1000, runAsGroup: 2000, fsGroup: 2000, seccompProfile: {type: RuntimeDefault}}
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 2000
+        fsGroup: 2000
+        seccompProfile:
+          type: RuntimeDefault
       affinity:
         podAffinity:
           requiredDuringSchedulingIgnoredDuringExecution:
-            - labelSelector: {matchLabels: {statefulset.kubernetes.io/pod-name: prometheus-kube-prometheus-stack-prometheus-0}}
+            - labelSelector:
+                matchLabels:
+                  statefulset.kubernetes.io/pod-name: prometheus-kube-prometheus-stack-prometheus-0
               topologyKey: kubernetes.io/hostname
       containers:
         - name: snapshot
           image: python:3.13-slim-bookworm@sha256:a1165e272e578941b84abc79e4ab38a0305cd12803a5c4247979ac7655f4d641
-          command: [/usr/local/bin/python, -c]
-          args: ["import time; time.sleep(31536000)"]
-          resources: {requests: {cpu: 25m, memory: 32Mi}, limits: {cpu: 250m, memory: 128Mi}}
-          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          command:
+            - /usr/local/bin/python
+            - -c
+          args:
+            - "import time; time.sleep(31536000)"
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              cpu: 250m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
           volumeMounts:
-            - {name: prometheus-data, mountPath: /prometheus}
-            - {name: snapshot-tool, mountPath: /tools, readOnly: true}
+            - name: prometheus-data
+              mountPath: /prometheus
+            - name: snapshot-tool
+              mountPath: /tools
+              readOnly: true
       volumes:
         - name: prometheus-data
-          persistentVolumeClaim: {claimName: prometheus-kube-prometheus-stack-prometheus-db-prometheus-kube-prometheus-stack-prometheus-0}
+          persistentVolumeClaim:
+            claimName: prometheus-kube-prometheus-stack-prometheus-db-prometheus-kube-prometheus-stack-prometheus-0
         - name: snapshot-tool
-          configMap: {name: prometheus-snapshot-contract, defaultMode: 0444}
+          configMap:
+            name: prometheus-snapshot-contract
+            defaultMode: 0444

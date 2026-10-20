@@ -1,14 +1,34 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
-metadata: {name: k8up, namespace: argocd, annotations: {argocd.argoproj.io/sync-wave: "2"}}
+metadata:
+  name: k8up
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
 spec:
   project: default
-  destination: {name: in-cluster, namespace: k8up}
+  destination:
+    name: in-cluster
+    namespace: k8up
   sources:
     - repoURL: https://k8up-io.github.io/k8up
       chart: k8up
       targetRevision: 4.10.0
-      helm: {valueFiles: [$infra/02-controllers/k8up/values.yml]}
-    - {repoURL: 'https://github.com/dmuiX/k3s-on-omv-infra.git', targetRevision: main, ref: infra}
-    - {repoURL: 'https://github.com/dmuiX/k3s-on-omv-infra.git', targetRevision: main, path: 02-controllers/k8up/resources}
-  syncPolicy: {automated: {enabled: true, prune: false, selfHeal: true, allowEmpty: false}, syncOptions: [CreateNamespace=true, ServerSideApply=true]}
+      helm:
+        valueFiles:
+          - $infra/02-controllers/k8up/values.yml
+    - repoURL: 'https://github.com/dmuiX/k3s-on-omv-infra.git'
+      targetRevision: main
+      ref: infra
+    - repoURL: 'https://github.com/dmuiX/k3s-on-omv-infra.git'
+      targetRevision: main
+      path: 02-controllers/k8up/resources
+  syncPolicy:
+    automated:
+      enabled: true
+      prune: false
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

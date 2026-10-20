@@ -1,49 +1,127 @@
 apiVersion: v1
 kind: Namespace
-metadata: {name: openbao, labels: {istio.io/dataplane-mode: ambient, pod-security.kubernetes.io/enforce: restricted}}
+metadata:
+  name: openbao
+  labels:
+    istio.io/dataplane-mode: ambient
+    pod-security.kubernetes.io/enforce: restricted
 ---
 apiVersion: policy/v1
 kind: PodDisruptionBudget
-metadata: {name: openbao, namespace: openbao}
-spec: {maxUnavailable: 1, selector: {matchLabels: {app.kubernetes.io/name: openbao}}}
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata: {name: default-deny, namespace: openbao}
-spec: {podSelector: {}, policyTypes: [Ingress, Egress]}
----
-apiVersion: networking.k8s.io/v1
-kind: NetworkPolicy
-metadata: {name: allow-openbao-raft-and-clients, namespace: openbao}
+metadata:
+  name: openbao
+  namespace: openbao
 spec:
-  podSelector: {matchLabels: {app.kubernetes.io/name: openbao}}
-  policyTypes: [Ingress, Egress]
+  maxUnavailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: openbao
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: openbao
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-openbao-raft-and-clients
+  namespace: openbao
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: openbao
+  policyTypes:
+    - Ingress
+    - Egress
   ingress:
-    - from: [{podSelector: {matchLabels: {app.kubernetes.io/name: openbao}}}]
-      ports: [{protocol: TCP, port: 8201}]
-    - from: [{podSelector: {}}]
-      ports: [{protocol: TCP, port: 8200}]
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: openbao
+      ports:
+        - protocol: TCP
+          port: 8201
+    - from:
+        - podSelector: {}
+      ports:
+        - protocol: TCP
+          port: 8200
     - from:
         - namespaceSelector:
             matchExpressions:
-              - {key: kubernetes.io/metadata.name, operator: In, values: [cert-manager, crossplane-system, vault-secrets-operator, cloudnative-pg, kube-prometheus-stack, radar, backup-validation, kube-system, istio-gateway]}
-      ports: [{protocol: TCP, port: 8200}]
+              - key: kubernetes.io/metadata.name
+                operator: In
+                values:
+                  - cert-manager
+                  - crossplane-system
+                  - vault-secrets-operator
+                  - cloudnative-pg
+                  - kube-prometheus-stack
+                  - radar
+                  - backup-validation
+                  - kube-system
+                  - istio-gateway
+      ports:
+        - protocol: TCP
+          port: 8200
   egress:
-    - to: [{podSelector: {matchLabels: {app.kubernetes.io/name: openbao}}}]
-      ports: [{protocol: TCP, port: 8201}]
-    - to: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}}]
-      ports: [{protocol: UDP, port: 53}, {protocol: TCP, port: 53}, {protocol: TCP, port: 443}]
-    - ports: [{protocol: TCP, port: 6443}]
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: openbao
+      ports:
+        - protocol: TCP
+          port: 8201
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+        - protocol: TCP
+          port: 443
+    - ports:
+        - protocol: TCP
+          port: 6443
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
-metadata: {name: allow-openbao-snapshot-egress, namespace: openbao}
+metadata:
+  name: allow-openbao-snapshot-egress
+  namespace: openbao
 spec:
-  podSelector: {matchLabels: {app.kubernetes.io/name: openbao-snapshot}}
-  policyTypes: [Egress]
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: openbao-snapshot
+  policyTypes:
+    - Egress
   egress:
-    - to: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}}]
-      ports: [{protocol: UDP, port: 53}, {protocol: TCP, port: 53}]
-    - to: [{podSelector: {matchLabels: {app.kubernetes.io/name: openbao}}}]
-      ports: [{protocol: TCP, port: 8200}]
-    - ports: [{protocol: TCP, port: 443}]
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: openbao
+      ports:
+        - protocol: TCP
+          port: 8200
+    - ports:
+        - protocol: TCP
+          port: 443

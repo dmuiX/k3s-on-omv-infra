@@ -8,8 +8,13 @@ server:
       apiVersion: gateway.networking.k8s.io/v1
       activeService: true
       parentRefs:
-        - {group: gateway.networking.k8s.io, kind: Gateway, name: istio-gateway, namespace: istio-gateway, sectionName: https}
-  standalone: {enabled: false}
+        - group: gateway.networking.k8s.io
+          kind: Gateway
+          name: istio-gateway
+          namespace: istio-gateway
+          sectionName: https
+  standalone:
+    enabled: false
   ha:
     enabled: true
     replicas: 3
@@ -28,15 +33,38 @@ server:
         }
         service_registration "kubernetes" {}
         seal "static" { current_key_id = "1"; current_key = "file:///openbao/seal/key" }
-  dataStorage: {enabled: true, size: 1Gi, storageClass: longhorn, accessMode: ReadWriteOnce}
-  resources: {requests: {cpu: 100m, memory: 256Mi}, limits: {cpu: 500m, memory: 512Mi}}
+  dataStorage:
+    enabled: true
+    size: 1Gi
+    storageClass: longhorn
+    accessMode: ReadWriteOnce
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
   affinity: |
     podAntiAffinity:
       requiredDuringSchedulingIgnoredDuringExecution:
-        - labelSelector: {matchLabels: {app.kubernetes.io/name: openbao}}
+        - labelSelector:
+            matchLabels:
+              app.kubernetes.io/name: openbao
           topologyKey: kubernetes.io/hostname
-  tolerations: [{key: CriticalAddonsOnly, operator: Equal, value: "true", effect: NoSchedule}]
+  tolerations:
+    - key: CriticalAddonsOnly
+      operator: Equal
+      value: "true"
+      effect: NoSchedule
   extraSecretEnvironmentVars: []
-  volumes: [{name: seal, secret: {secretName: openbao-unseal-key}}]
-  volumeMounts: [{name: seal, mountPath: /openbao/seal, readOnly: true}]
-ui: {enabled: true}
+  volumes:
+    - name: seal
+      secret:
+        secretName: openbao-unseal-key
+  volumeMounts:
+    - name: seal
+      mountPath: /openbao/seal
+      readOnly: true
+ui:
+  enabled: true
