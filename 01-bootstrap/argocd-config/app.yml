@@ -3,25 +3,32 @@ kind: Application
 metadata:
   name: argocd-config
   namespace: argocd
-  annotations: 
+  annotations:
     argocd.argoproj.io/sync-wave: "1"
 spec:
   project: default
-  destination: 
+  destination:
     name: in-cluster
     namespace: argocd
   sources:
-    - repoURL: 'https://github.com/dmuiX/k3s-on-omv-infra.git'
+    - repoURL: https://argoproj.github.io/argo-helm
+      chart: argo-cd
+      targetRevision: 10.10.3
+      helm:
+        releaseName: argocd
+        valueFiles:
+          - $infra/01-bootstrap/argocd-config/values.yml
+    - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
       targetRevision: main
-      path: 01-bootstrap/argocd-config/resources
-    - repoURL: 'https://github.com/dmuiX/k3s-on-omv-live.git'
+      ref: infra
+    - repoURL: https://github.com/dmuiX/k3s-on-omv-live.git
       targetRevision: main
       path: infra/argocd-config
   syncPolicy:
-    automated: 
+    automated:
       enabled: true
       prune: false
       selfHeal: true
       allowEmpty: false
-    syncOptions: 
+    syncOptions:
       - ServerSideApply=true

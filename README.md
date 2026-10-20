@@ -11,3 +11,7 @@ Host and workload logging are independent infrastructure and are not selected by
 The Longhorn UI can only be routed through the native oauth2-proxy resource skeleton. Its upstream image pin and OpenBao OIDC compatibility remain deployment blockers; no custom proxy code exists.
 
 Sources are ordered chart, public Infra values, private Live values, authored Infra resources, then expressly required Live resources. There are no rendered charts or secrets. Automatic pruning is disabled. Deployment remains blocked while any `REQUIRED_*` marker or compatibility item is unresolved. Python remains limited to the two existing retention adapters.
+
+## Self-managed Argo CD
+
+Bootstrap renders the exact pinned `argo-cd` Helm chart (10.10.3 / Argo CD v3.5.5) using `01-bootstrap/argocd-config/values.yml`, and server-side applies the result once on a clean cluster. The `argocd-config` Application then renders the same Helm chart and values from Git, retaining private Live resources. The Argo CD health customization and insecure internal server setting are part of the same Helm values; separate ConfigMap sources were removed to avoid duplicate GitOps owners. This is a clean-cluster cutover, not an in-place migration.

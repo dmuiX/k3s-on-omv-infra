@@ -1,24 +1,121 @@
+# Shared by the one-time Bootstrap Helm render and the self-managed Argo CD Application.
+# Chart argo-cd 10.10.3, appVersion v3.5.5.
+configs:
+  cm:
+    resource.customizations.health.argoproj.io_Application: |
+        hs = {}
+        hs.status = "Progressing"
+        hs.message = "Waiting for child Application sync and health"
+        if obj.status ~= nil and obj.status.operationState ~= nil and obj.status.operationState.phase == "Failed" then
+          hs.status = "Degraded"
+          hs.message = obj.status.operationState.message or "Child sync failed"
+          return hs
+        end
+        if obj.status == nil or obj.status.sync == nil or obj.status.sync.status ~= "Synced" then
+          return hs
+        end
+        if obj.status.health ~= nil then
+          hs.status = obj.status.health.status
+          hs.message = obj.status.health.message or hs.message
+        end
+        return hs
+  params:
+    server.insecure: "true"
+
 controller:
+  containerSecurityContext:
+    runAsNonRoot: true
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    seccompProfile:
+      type: RuntimeDefault
+    capabilities:
+      drop:
+        - ALL
   resources:
-    requests: 
+    requests:
       cpu: 100m
       memory: 256Mi
-    limits: 
+    limits:
       cpu: 500m
       memory: 512Mi
+
 repoServer:
+  containerSecurityContext:
+    runAsNonRoot: true
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    seccompProfile:
+      type: RuntimeDefault
+    capabilities:
+      drop:
+        - ALL
   resources:
-    requests: 
+    requests:
       cpu: 100m
       memory: 128Mi
-    limits: 
+    limits:
       cpu: 500m
       memory: 512Mi
+
 server:
+  containerSecurityContext:
+    runAsNonRoot: true
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    seccompProfile:
+      type: RuntimeDefault
+    capabilities:
+      drop:
+        - ALL
   resources:
-    requests: 
+    requests:
       cpu: 50m
       memory: 128Mi
-    limits: 
+    limits:
       cpu: 250m
       memory: 256Mi
+
+applicationSet:
+  containerSecurityContext:
+    runAsNonRoot: true
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    seccompProfile:
+      type: RuntimeDefault
+    capabilities:
+      drop:
+        - ALL
+
+notifications:
+  containerSecurityContext:
+    runAsNonRoot: true
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    seccompProfile:
+      type: RuntimeDefault
+    capabilities:
+      drop:
+        - ALL
+
+dex:
+  containerSecurityContext:
+    runAsNonRoot: true
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    seccompProfile:
+      type: RuntimeDefault
+    capabilities:
+      drop:
+        - ALL
+
+redis:
+  containerSecurityContext:
+    runAsNonRoot: true
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    seccompProfile:
+      type: RuntimeDefault
+    capabilities:
+      drop:
+        - ALL

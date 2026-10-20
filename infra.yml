@@ -16,7 +16,7 @@ spec:
     path: .
     directory:
       recurse: true
-      include: '{01-bootstrap/argocd-config/application-health.yaml,*/*/app.yml}'
+      include: '*/*/app.yml'
   syncPolicy: 
     automated: 
       enabled: true
