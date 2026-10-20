@@ -10,13 +10,12 @@ spec:
   destination:
     name: in-cluster
     namespace: cert-manager
+  # Only the OpenBao/VSO credential link belongs here. Issuers and certificates
+  # are owned by the earlier tls-certificates Application.
   sources:
-    - repoURL: 'https://github.com/dmuiX/k3s-on-omv-infra.git'
+    - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
       targetRevision: main
       path: 06-platform/letsencrypt-dns01/resources
-    - repoURL: 'https://github.com/dmuiX/k3s-on-omv-live.git'
-      targetRevision: main
-      path: infra/letsencrypt-dns01
   syncPolicy:
     automated:
       enabled: true

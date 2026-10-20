@@ -4,14 +4,13 @@ metadata:
   name: istio-core
   namespace: argocd
   annotations:
-    argocd.argoproj.io/sync-wave: "1"
+    argocd.argoproj.io/sync-wave: "-30"
 spec:
   project: default
   destination:
     name: in-cluster
     namespace: istio-system
-  # These four chart sources deliberately remain separate Helm releases,
-  # preserving their original resource names during the Argo CD migration.
+  # Preserve the four existing chart release names; install before the Gateway.
   sources:
     - repoURL: https://blob.istio.io/istio-release/charts
       chart: base
