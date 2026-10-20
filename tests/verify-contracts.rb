@@ -349,10 +349,10 @@ class PlatformContractTest < Minitest::Test
     refute_match(/kind:\s*GatewayClass/, bootstrap_corpus)
     refute_match(/Install pinned Traefik/, bootstrap_corpus)
     gateway = yaml_documents(LIVE / "infra/istio-ambient/gateway.yaml").find { |document| document["kind"] == "Gateway" }
-    assert_equal "ingress-gateway", gateway.dig("metadata", "name")
-    assert_equal "istio-ingress", gateway.dig("metadata", "namespace")
+    assert_equal "istio-gateway", gateway.dig("metadata", "name")
+    assert_equal "istio-gateway", gateway.dig("metadata", "namespace")
     assert_equal "istio", gateway.dig("spec", "gatewayClassName")
-    assert_equal({"group" => "", "kind" => "ConfigMap", "name" => "ingress-gateway-options"}, gateway.dig("spec", "infrastructure", "parametersRef"))
+    assert_equal({"group" => "", "kind" => "ConfigMap", "name" => "istio-gateway-options"}, gateway.dig("spec", "infrastructure", "parametersRef"))
     options = yaml_documents(INFRA / "01-bootstrap/istio-ambient/resources/gateway-contract.yaml").find { |document| document["kind"] == "ConfigMap" }
     deployment = YAML.safe_load(options.dig("data", "deployment"))
     assert_equal 3, deployment.dig("spec", "replicas")
@@ -363,7 +363,7 @@ class PlatformContractTest < Minitest::Test
     assert_equal "CriticalAddonsOnly", pod.dig("tolerations", 0, "key")
     pdb = YAML.safe_load(options.dig("data", "podDisruptionBudget"))
     assert_equal 2, pdb.dig("spec", "minAvailable")
-    assert_equal "ingress-gateway", pdb.dig("spec", "selector", "matchLabels", "gateway.networking.k8s.io/gateway-name")
+    assert_equal "istio-gateway", pdb.dig("spec", "selector", "matchLabels", "gateway.networking.k8s.io/gateway-name")
   end
 
   def test_official_mesh_chart_pins
@@ -537,7 +537,7 @@ class PlatformContractTest < Minitest::Test
     assert snapshot_egress.dig("spec", "egress").any? { |rule| Array(rule["ports"]).any? { |port| port["port"] == 443 } }
     openbao_network = yaml_documents(INFRA / "04-core/openbao/resources/security.yaml")
       .find { |document| document.dig("metadata", "name") == "allow-openbao-raft-and-clients" }
-    assert_includes openbao_network.dig("spec", "ingress").to_s, "istio-ingress"
+    assert_includes openbao_network.dig("spec", "ingress").to_s, "istio-gateway"
     assert openbao_network.dig("spec", "egress").any? { |rule| Array(rule["ports"]).any? { |port| port["port"] == 6443 } }
 
     validation = (INFRA / "08-observability/backup-validation/resources").glob("*.yaml").map(&:read).join("\n")
