@@ -1,15 +1,39 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
-metadata: {name: longhorn, namespace: argocd, annotations: {argocd.argoproj.io/sync-wave: "2"}}
+metadata:
+  name: longhorn
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
 spec:
   project: default
-  destination: {name: in-cluster, namespace: longhorn}
+  destination:
+    name: in-cluster
+    namespace: longhorn
   sources:
     - repoURL: https://charts.longhorn.io
       chart: longhorn
       targetRevision: 1.13.0
-      helm: {valueFiles: [$infra/02-controllers/longhorn/values.yml, $live/infra/longhorn-values.yml]}
-    - {repoURL: 'https://github.com/dmuiX/k3s-on-omv-infra.git', targetRevision: main, ref: infra}
-    - {repoURL: 'https://github.com/dmuiX/k3s-on-omv-live.git', targetRevision: main, ref: live}
-    - {repoURL: 'https://github.com/dmuiX/k3s-on-omv-infra.git', targetRevision: main, path: 02-controllers/longhorn/resources}
-  syncPolicy: {automated: {enabled: true, prune: false, selfHeal: true, allowEmpty: false}, syncOptions: [CreateNamespace=true, ServerSideApply=true, RespectIgnoreDifferences=true]}
+      helm:
+        valueFiles:
+          - $infra/02-controllers/longhorn/values.yml
+          - $live/infra/longhorn-values.yml
+    - repoURL: 'https://github.com/dmuiX/k3s-on-omv-infra.git'
+      targetRevision: main
+      ref: infra
+    - repoURL: 'https://github.com/dmuiX/k3s-on-omv-live.git'
+      targetRevision: main
+      ref: live
+    - repoURL: 'https://github.com/dmuiX/k3s-on-omv-infra.git'
+      targetRevision: main
+      path: 02-controllers/longhorn/resources
+  syncPolicy:
+    automated:
+      enabled: true
+      prune: false
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+      - RespectIgnoreDifferences=true

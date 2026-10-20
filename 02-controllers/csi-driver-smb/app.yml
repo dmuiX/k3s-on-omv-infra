@@ -1,14 +1,22 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
-metadata: {name: csi-driver-smb, namespace: argocd, annotations: {argocd.argoproj.io/sync-wave: "2"}}
+metadata:
+  name: csi-driver-smb
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
 spec:
   project: default
-  destination: {name: in-cluster, namespace: kube-system}
+  destination:
+    name: in-cluster
+    namespace: kube-system
   sources:
     - repoURL: https://raw.githubusercontent.com/kubernetes-csi/csi-driver-smb/master/charts
       chart: csi-driver-smb
       targetRevision: 1.20.3
-      helm: {valueFiles: [$infra/02-controllers/csi-driver-smb/values.yml]}
+      helm:
+        valueFiles:
+          - $infra/02-controllers/csi-driver-smb/values.yml
     - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
       targetRevision: main
       ref: infra 
@@ -17,5 +25,12 @@ spec:
       targetRevision: main
       path: infra/csi-driver-smb
   syncPolicy:
-    automated: {enabled: true, prune: false, selfHeal: true, allowEmpty: false}
-    syncOptions: [ServerSideApply=true, PruneLast=true, SkipDryRunOnMissingResource=true]
+    automated:
+      enabled: true
+      prune: false
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - ServerSideApply=true
+      - PruneLast=true
+      - SkipDryRunOnMissingResource=true
