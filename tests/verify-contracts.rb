@@ -94,7 +94,7 @@ class RepositoryContractTest < Minitest::Test
   def test_roots_select_only_their_children
     infra_root = application(INFRA / "infra.yml")
     apps_root = application(APPS / "apps.yml")
-    assert_equal "{01-bootstrap/argocd-config/application-health.yaml,*/*/app.yml}", infra_root.dig("spec", "source", "directory", "include")
+    assert_equal "*/*/app.yml", infra_root.dig("spec", "source", "directory", "include")
     assert_equal "*/app.yml", apps_root.dig("spec", "source", "directory", "include")
     assert_equal ["radar"], application_files(APPS).map { |path| application(path).dig("metadata", "name") }
     assert_empty LIVE.glob("**/app.yml")
