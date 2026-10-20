@@ -286,6 +286,11 @@ class PlatformContractTest < Minitest::Test
       "Use Longhorn 1.13's persisted form to avoid repeated scalar-to-JSON setting updates"
   end
 
+  def test_openbao_uses_server_side_diff_for_api_defaults
+    app = application(INFRA / "04-core/openbao/app.yml")
+    assert_equal "ServerSideDiff=true", app.dig("metadata", "annotations", "argocd.argoproj.io/compare-options")
+  end
+
   def test_openbao_server_drops_all_capabilities
     values = YAML.load_file(INFRA / "04-core/openbao/values.yml")
     security = values.dig("server", "statefulSet", "securityContext", "container") || {}

@@ -5,6 +5,9 @@ metadata:
   namespace: argocd
   annotations:
     argocd.argoproj.io/sync-wave: "4"
+    # Include Kubernetes CRD defaults in the predicted state without ignoring route fields.
+    # https://argo-cd.readthedocs.io/en/stable/user-guide/diff-strategies/#server-side-diff
+    argocd.argoproj.io/compare-options: ServerSideDiff=true
 spec:
   project: default
   destination:
