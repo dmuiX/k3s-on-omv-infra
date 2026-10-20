@@ -10,8 +10,8 @@ server:
       parentRefs:
         - group: gateway.networking.k8s.io
           kind: Gateway
-          name: ingress-gateway
-          namespace: istio-ingress
+          name: istio-gateway
+          namespace: istio-gateway
           sectionName: https
   standalone:
     enabled: false

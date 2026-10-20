@@ -67,7 +67,7 @@ spec:
                   - radar
                   - backup-validation
                   - kube-system
-                  - istio-ingress
+                  - istio-gateway
       ports:
         - protocol: TCP
           port: 8200
