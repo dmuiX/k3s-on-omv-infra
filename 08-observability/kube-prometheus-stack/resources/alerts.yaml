@@ -1,6 +1,8 @@
 apiVersion: monitoring.coreos.com/v1
 kind: PrometheusRule
-metadata: {name: platform-required, namespace: kube-prometheus-stack}
+metadata:
+  name: platform-required
+  namespace: kube-prometheus-stack
 spec:
   groups:
     - name: platform.required
@@ -8,11 +10,13 @@ spec:
         - alert: PostgreSQLRestoreValidationStale
           expr: 'absent(kube_lease_renew_time{namespace="backup-validation",lease="postgresql-restore-status"}) or (time() - kube_lease_renew_time{namespace="backup-validation",lease="postgresql-restore-status"} > 8 * 24 * 3600) or on(namespace,lease) (restore_status_info{namespace="backup-validation",lease="postgresql-restore-status",result!="success"} == 1)'
           for: 15m
-          labels: {severity: critical}
+          labels:
+            severity: critical
         - alert: OpenBaoRestoreValidationStale
           expr: 'absent(kube_lease_renew_time{namespace="backup-validation",lease="openbao-restore-status"}) or (time() - kube_lease_renew_time{namespace="backup-validation",lease="openbao-restore-status"} > 35 * 24 * 3600) or on(namespace,lease) (restore_status_info{namespace="backup-validation",lease="openbao-restore-status",result!="success"} == 1)'
           for: 15m
-          labels: {severity: critical}
+          labels:
+            severity: critical
         - {alert: PersistentVolumeFilling, expr: '(kubelet_volume_stats_used_bytes / kubelet_volume_stats_capacity_bytes) > 0.85', for: 15m, labels: {severity: warning}}
         - {alert: OpenBaoRaftPeerMissing, expr: 'openbao_raft_peers < 3', for: 5m, labels: {severity: critical}}
         - {alert: OpenBaoSnapshotStale, expr: 'absent(kube_cronjob_status_last_successful_time{namespace="openbao",cronjob="openbao-snapshot"}) or time() - kube_cronjob_status_last_successful_time{namespace="openbao",cronjob="openbao-snapshot"} > 93600', for: 15m, labels: {severity: critical}}

@@ -1,21 +1,43 @@
 apiVersion: v1
 kind: ServiceAccount
-metadata: {name: postgresql-size-retention, namespace: cloudnative-pg}
+metadata:
+  name: postgresql-size-retention
+  namespace: cloudnative-pg
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
-metadata: {name: postgresql-size-retention, namespace: backup-validation}
-rules: [{apiGroups: [coordination.k8s.io], resources: [leases], resourceNames: [postgresql-restore-status], verbs: [get]}]
+metadata:
+  name: postgresql-size-retention
+  namespace: backup-validation
+rules:
+  - apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
+    resourceNames:
+      - postgresql-restore-status
+    verbs:
+      - get
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
-metadata: {name: postgresql-size-retention, namespace: backup-validation}
-subjects: [{kind: ServiceAccount, name: postgresql-size-retention, namespace: cloudnative-pg}]
-roleRef: {apiGroup: rbac.authorization.k8s.io, kind: Role, name: postgresql-size-retention}
+metadata:
+  name: postgresql-size-retention
+  namespace: backup-validation
+subjects:
+  - kind: ServiceAccount
+    name: postgresql-size-retention
+    namespace: cloudnative-pg
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: postgresql-size-retention
 ---
 apiVersion: batch/v1
 kind: CronJob
-metadata: {name: postgresql-size-retention, namespace: cloudnative-pg}
+metadata:
+  name: postgresql-size-retention
+  namespace: cloudnative-pg
 spec:
   schedule: "0 6 * * *"
   concurrencyPolicy: Forbid
@@ -29,14 +51,37 @@ spec:
           containers:
             - name: retention
               image: ghcr.io/cloudnative-pg/plugin-barman-cloud-sidecar:v0.15.1@sha256:2287a793a804db751edd0d07d44cd549e357677e98a800eb12e2cf7c0d53f9b0
-              command: [/venv/bin/python3]
-              args: [/adapter/retention.py, run]
-              resources: {requests: {cpu: 50m, memory: 64Mi}, limits: {cpu: 300m, memory: 256Mi}}
-              securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, runAsNonRoot: true, capabilities: {drop: [ALL]}}
+              command:
+                - /venv/bin/python3
+              args:
+                - /adapter/retention.py
+                - run
+              resources:
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+                limits:
+                  cpu: 300m
+                  memory: 256Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                runAsNonRoot: true
+                capabilities:
+                  drop:
+                    - ALL
               envFrom:
                 - {secretRef: {name: postgresql-r2-credentials}}
                 - {configMapRef: {name: postgresql-retention-target}}
               env:
-                - {name: PYTHONDONTWRITEBYTECODE, value: "1"}
-              volumeMounts: [{name: adapter, mountPath: /adapter, readOnly: true}]
-          volumes: [{name: adapter, configMap: {name: postgresql-size-retention-adapter, defaultMode: 0444}}]
+                - name: PYTHONDONTWRITEBYTECODE
+                  value: "1"
+              volumeMounts:
+                - name: adapter
+                  mountPath: /adapter
+                  readOnly: true
+          volumes:
+            - name: adapter
+              configMap:
+                name: postgresql-size-retention-adapter
+                defaultMode: 0444
