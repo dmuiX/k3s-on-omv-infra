@@ -1,0 +1,32 @@
+apiVersion: vault.vault.upbound.io/v1alpha1
+kind: Policy
+metadata:
+  name: postgresql-vso-read
+spec:
+  forProvider:
+    name: postgresql-vso-read
+    policy: |
+      path "auth/token/renew-self" { capabilities = ["update"] }
+      path "kv/data/postgresql/openbao-manager" { capabilities = ["read"] }
+      path "kv/metadata/postgresql/*" { capabilities = ["read"] }
+  providerConfigRef:
+    name: openbao
+---
+apiVersion: kubernetes.vault.upbound.io/v1alpha1
+kind: AuthBackendRole
+metadata:
+  name: postgresql-vso
+spec:
+  forProvider:
+    backend: kubernetes
+    roleName: postgresql-vso
+    boundServiceAccountNames:
+      - postgresql-vso
+    boundServiceAccountNamespaces:
+      - cloudnative-pg
+    tokenPolicies:
+      - postgresql-vso-read
+      - platform-r2-read
+    tokenTtl: 3600
+  providerConfigRef:
+    name: openbao

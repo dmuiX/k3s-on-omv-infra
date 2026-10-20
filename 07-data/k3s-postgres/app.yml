@@ -1,7 +1,7 @@
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
-  name: postgresql
+  name: k3s-postgres
   namespace: argocd
   annotations:
     argocd.argoproj.io/sync-wave: "7"
@@ -13,13 +13,16 @@ spec:
   sources:
     - repoURL: 'https://github.com/dmuiX/k3s-on-omv-infra.git'
       targetRevision: main
-      path: 07-data/postgresql/resources
+      path: 07-data/k3s-postgres/resources
+    - repoURL: 'https://github.com/dmuiX/k3s-on-omv-infra.git'
+      targetRevision: main
+      path: adapters/credential-custody
     - repoURL: 'https://github.com/dmuiX/k3s-on-omv-infra.git'
       targetRevision: main
       path: adapters/postgresql-size-retention
     - repoURL: 'https://github.com/dmuiX/k3s-on-omv-live.git'
       targetRevision: main
-      path: infra/postgresql
+      path: infra/k3s-postgres
   syncPolicy:
     automated:
       enabled: true

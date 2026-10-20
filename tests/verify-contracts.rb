@@ -28,9 +28,12 @@ EXPECTED_INFRA = {
   "openbao" => 4,
   "provider-vault-connection" => 5,
   "openbao-config" => 6,
+  "longhorn-config" => 6,
+  "radar-config" => 6,
+  "platform-credentials" => 6,
   "openbao-backups" => 6,
   "letsencrypt-dns01" => 6,
-  "postgresql" => 7,
+  "k3s-postgres" => 7,
   "kube-prometheus-stack" => 8,
   "backup-validation" => 8
 }.freeze
@@ -99,7 +102,9 @@ class RepositoryContractTest < Minitest::Test
     assert_equal "*/app.yml", apps_root.dig("spec", "source", "directory", "include")
     assert_equal ["radar"], application_files(APPS).map { |path| application(path).dig("metadata", "name") }
     assert_empty LIVE.glob("**/app.yml")
-    refute application_files(INFRA).any? { |path| path.to_s.include?("radar") }
+    refute application_files(INFRA).any? { |path| application(path).dig("metadata", "name") == "radar" }
+    radar_prerequisites = application(INFRA / "06-platform/radar/app.yml")
+    refute radar_prerequisites.dig("spec", "sources").any? { |source| source.key?("chart") || source["repoURL"] == "https://github.com/dmuiX/k3s-on-omv-apps.git" }
   end
 
   def test_argo_automation_self_heals_without_pruning
@@ -323,15 +328,15 @@ class PlatformContractTest < Minitest::Test
     assert_equal "1Gi", openbao.dig("server", "dataStorage", "size")
     assert_equal "longhorn", openbao.dig("server", "dataStorage", "storageClass")
 
-    postgresql = yaml_documents(INFRA / "07-data/postgresql/resources/cluster.yaml").find { |document| document["kind"] == "Cluster" }
+    postgresql = yaml_documents(INFRA / "07-data/k3s-postgres/resources/cluster.yaml").find { |document| document["kind"] == "Cluster" }
     assert_equal 3, postgresql.dig("spec", "instances")
     assert_equal "longhorn-local", postgresql.dig("spec", "storage", "storageClass")
     assert_equal "5Gi", postgresql.dig("spec", "storage", "size")
     assert_equal 1, postgresql.dig("spec", "postgresql", "synchronous", "number")
     assert_equal true, postgresql.dig("spec", "postgresql", "synchronous", "failoverQuorum")
     refute postgresql.key?("certificates")
-    refute_match(/serverTLSSecret|sslrootcert|verify-full/, (INFRA / "07-data/postgresql/resources/cluster.yaml").read)
-    assert_includes (INFRA / "07-data/postgresql/resources/network-policy.yaml").read, "mode: STRICT"
+    refute_match(/serverTLSSecret|sslrootcert|verify-full/, (INFRA / "07-data/k3s-postgres/resources/cluster.yaml").read)
+    assert_includes (INFRA / "07-data/k3s-postgres/resources/network-policy.yaml").read, "mode: STRICT"
 
     monitoring = YAML.load_file(INFRA / "08-observability/kube-prometheus-stack/values.yml")
     assert_equal 2, monitoring.dig("prometheus", "prometheusSpec", "replicas")
@@ -360,7 +365,7 @@ class PlatformContractTest < Minitest::Test
   end
 
   def test_pi_tolerations_are_limited_to_approved_workloads
-    allowed = %w[longhorn openbao postgresql istio-ambient kube-prometheus-stack]
+    allowed = %w[longhorn openbao k3s-postgres istio-ambient kube-prometheus-stack]
     offenders = []
     YAML_REPOSITORIES.each do |repository|
       yaml_files(repository).each do |path|
@@ -371,7 +376,12 @@ class PlatformContractTest < Minitest::Test
   end
 
   def test_openbao_policy_boundaries_are_narrow
-    documents = yaml_documents(INFRA / "06-platform/openbao-config/resources/policies.yaml")
+    documents = application_files(INFRA).flat_map do |path|
+      app = application(path)
+      (app.dig("spec", "sources") || []).select { |source| source["repoURL"] == "https://github.com/dmuiX/k3s-on-omv-infra.git" && source["path"] }.flat_map do |source|
+        yaml_files(INFRA / source["path"]).flat_map { |file| yaml_documents(file) }
+      end
+    end
     policies = documents.select { |document| document["kind"] == "Policy" }.to_h do |document|
       [document.dig("metadata", "name"), document.dig("spec", "forProvider", "policy")]
     end
@@ -450,7 +460,7 @@ class PlatformContractTest < Minitest::Test
     assert_includes runbook, "reason=Succeeded"
     assert_includes runbook, "keepDaily: 7"
     assert_includes runbook, "keepWeekly: 4"
-    assert_equal %w[openbao-snapshot postgresql-size-retention], (INFRA / "adapters").children.select(&:directory?).map { |path| path.basename.to_s }.sort
+    assert_equal %w[credential-custody openbao-snapshot postgresql-size-retention], (INFRA / "adapters").children.select(&:directory?).map { |path| path.basename.to_s }.sort
     assert_equal 2, (INFRA / "adapters").glob("**/*.py").length
   end
 
@@ -471,22 +481,23 @@ class PlatformContractTest < Minitest::Test
     assert_includes alertmanager, "path: monitoring/alertmanager-config"
     assert_includes alertmanager, "name: alertmanager-platform-config"
     assert_equal "alertmanager-platform-config", YAML.load_file(INFRA / "08-observability/kube-prometheus-stack/values.yml").dig("alertmanager", "alertmanagerSpec", "configSecret")
-    proxy = (INFRA / "06-platform/openbao-config/resources/longhorn-oidc-proxy.yaml").read
+    proxy = (INFRA / "06-platform/longhorn/resources/oidc-proxy.yaml").read
     assert_includes proxy, "quay.io/oauth2-proxy/oauth2-proxy:v7.15.5@sha256:8498b0d0ef0a7b29686414000a08aee467f02d0299c9ed1e006a8f33fc017916"
     assert_includes proxy, "upstream=http://longhorn-frontend.longhorn.svc:80"
     assert_includes proxy, "rolloutRestartTargets"
     refute_includes (INFRA / "02-controllers/longhorn/app.yml").read, "path: infra/longhorn"
-    assert_includes (INFRA / "06-platform/openbao-config/app.yml").read, "path: infra/longhorn"
+    assert_includes (INFRA / "06-platform/longhorn/app.yml").read, "path: infra/longhorn"
+    refute_includes (INFRA / "06-platform/openbao-config/app.yml").read, "infra/longhorn"
     route = yaml_documents(LIVE / "infra/longhorn/route.yaml").find { |document| document["kind"] == "HTTPRoute" }
     assert_equal "longhorn-oidc-proxy", route.dig("spec", "rules", 0, "backendRefs", 0, "name")
   end
 
   def test_vso_transformations_fail_closed_on_missing_required_keys
     files = [
-      "06-platform/openbao-config/resources/platform-credentials.yaml",
+      "06-platform/platform-credentials/resources/credentials.yaml",
       "06-platform/openbao-backups/resources/snapshot.yaml",
-      "06-platform/openbao-config/resources/longhorn-oidc-proxy.yaml",
-      "07-data/postgresql/resources/credentials.yaml",
+      "06-platform/longhorn/resources/oidc-proxy.yaml",
+      "07-data/k3s-postgres/resources/credentials.yaml",
       "08-observability/backup-validation/resources/credentials.yaml",
       "08-observability/kube-prometheus-stack/resources/alertmanager-email.yaml",
       "08-observability/kube-prometheus-stack/resources/prometheus-k8up-credentials.yaml",
@@ -551,9 +562,9 @@ class PlatformContractTest < Minitest::Test
 
   def test_shared_r2_source_has_isolated_vso_identities_including_restore_validation
     credential_files = [
-      INFRA / "06-platform/openbao-config/resources/platform-credentials.yaml",
+      INFRA / "06-platform/platform-credentials/resources/credentials.yaml",
       INFRA / "06-platform/openbao-backups/resources/snapshot.yaml",
-      INFRA / "07-data/postgresql/resources/credentials.yaml",
+      INFRA / "07-data/k3s-postgres/resources/credentials.yaml",
       INFRA / "08-observability/backup-validation/resources/credentials.yaml"
     ]
     static_secrets = credential_files.flat_map { |path| yaml_documents(path) }
@@ -596,8 +607,8 @@ class PlatformContractTest < Minitest::Test
   end
 
   def test_restore_lease_and_no_direct_barman_s3_delete
-    retention = (INFRA / "07-data/postgresql/resources/retention.yaml").read
-    role = yaml_documents(INFRA / "07-data/postgresql/resources/retention.yaml").find { |document| document["kind"] == "Role" }
+    retention = (INFRA / "07-data/k3s-postgres/resources/retention.yaml").read
+    role = yaml_documents(INFRA / "07-data/k3s-postgres/resources/retention.yaml").find { |document| document["kind"] == "Role" }
     rule = role.fetch("rules").find { |item| item.fetch("resources").include?("leases") }
     assert_equal ["postgresql-restore-status"], rule.fetch("resourceNames")
     assert_equal ["get"], rule.fetch("verbs")

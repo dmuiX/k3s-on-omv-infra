@@ -1,0 +1,61 @@
+apiVersion: vault.vault.upbound.io/v1alpha1
+kind: Policy
+metadata:
+  name: platform-r2-read
+spec:
+  forProvider:
+    name: platform-r2-read
+    policy: "path \"auth/token/renew-self\" { capabilities = [\"update\"] }\npath \"kv/data/platform/r2\" { capabilities = [\"read\"] }\npath \"kv/metadata/platform/r2\" { capabilities = [\"read\"] }\n"
+  providerConfigRef:
+    name: openbao
+---
+apiVersion: vault.vault.upbound.io/v1alpha1
+kind: Policy
+metadata:
+  name: smb-vso-read
+spec:
+  forProvider:
+    name: smb-vso-read
+    policy: "path \"auth/token/renew-self\" { capabilities = [\"update\"] }\npath \"kv/data/platform/smb\" { capabilities = [\"read\"] }\npath \"kv/metadata/platform/smb\" { capabilities = [\"read\"] }\n"
+  providerConfigRef:
+    name: openbao
+---
+apiVersion: kubernetes.vault.upbound.io/v1alpha1
+kind: AuthBackendRole
+metadata:
+  name: platform-r2-vso
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  forProvider:
+    backend: kubernetes
+    roleName: platform-r2-vso
+    boundServiceAccountNames:
+      - platform-r2-vso
+    boundServiceAccountNamespaces:
+      - kube-system
+    tokenPolicies:
+      - platform-r2-read
+    tokenTtl: 3600
+  providerConfigRef:
+    name: openbao
+---
+apiVersion: kubernetes.vault.upbound.io/v1alpha1
+kind: AuthBackendRole
+metadata:
+  name: smb-vso
+  annotations:
+    argocd.argoproj.io/sync-wave: "0"
+spec:
+  forProvider:
+    backend: kubernetes
+    roleName: smb-vso
+    boundServiceAccountNames:
+      - smb-vso
+    boundServiceAccountNamespaces:
+      - kube-system
+    tokenPolicies:
+      - smb-vso-read
+    tokenTtl: 3600
+  providerConfigRef:
+    name: openbao

@@ -1,0 +1,32 @@
+apiVersion: vault.vault.upbound.io/v1alpha1
+kind: Policy
+metadata:
+  name: k8up-validation-vso-read
+spec:
+  forProvider:
+    name: k8up-validation-vso-read
+    policy: |
+      path "auth/token/renew-self" { capabilities = ["update"] }
+      path "kv/data/k8up/repository-password" { capabilities = ["read"] }
+      path "kv/metadata/k8up/repository-password" { capabilities = ["read"] }
+  providerConfigRef:
+    name: openbao
+---
+apiVersion: kubernetes.vault.upbound.io/v1alpha1
+kind: AuthBackendRole
+metadata:
+  name: k8up-validation-vso
+spec:
+  forProvider:
+    backend: kubernetes
+    roleName: k8up-validation-vso
+    boundServiceAccountNames:
+      - k8up-validation-vso
+    boundServiceAccountNamespaces:
+      - backup-validation
+    tokenPolicies:
+      - k8up-validation-vso-read
+      - platform-r2-read
+    tokenTtl: 900
+  providerConfigRef:
+    name: openbao

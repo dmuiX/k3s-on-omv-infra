@@ -1,0 +1,29 @@
+apiVersion: vault.vault.upbound.io/v1alpha1
+kind: Policy
+metadata:
+  name: cert-manager-dns01-read
+spec:
+  forProvider:
+    name: cert-manager-dns01-read
+    policy: "path \"auth/token/renew-self\" { capabilities = [\"update\"] }\npath \"kv/data/cert-manager/cloudflare\" { capabilities = [\"read\"] }\npath \"kv/metadata/cert-manager/cloudflare\" { capabilities = [\"read\"] }\n"
+  providerConfigRef:
+    name: openbao
+---
+apiVersion: kubernetes.vault.upbound.io/v1alpha1
+kind: AuthBackendRole
+metadata:
+  name: cert-manager-dns01
+spec:
+  forProvider:
+    backend: kubernetes
+    roleName: cert-manager-dns01
+    boundServiceAccountNames:
+      - cert-manager-dns01
+    boundServiceAccountNamespaces:
+      - cert-manager
+    tokenPolicies:
+      - cert-manager-dns01-read
+    tokenTtl: 3600
+    audience: "vault://cert-manager-dns01"
+  providerConfigRef:
+    name: openbao

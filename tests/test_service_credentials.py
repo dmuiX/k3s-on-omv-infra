@@ -9,6 +9,7 @@ from pathlib import Path
 import secrets
 import socket
 import subprocess
+import sys
 import tempfile
 import time
 import types
@@ -23,9 +24,13 @@ import yaml
 INFRA = Path(__file__).resolve().parents[1]
 LIVE = INFRA.parent / 'k3s-on-omv-live'
 APPS = INFRA.parent / 'k3s-on-omv-apps'
-MANIFEST = INFRA / '06-platform/openbao-config/resources/service-credentials.yaml'
-DOCUMENTS = list(yaml.safe_load_all(MANIFEST.read_text()))
-SCRIPT = next(d['data']['provision.py'] for d in DOCUMENTS if d['kind'] == 'ConfigMap')
+OWNERS = {'longhorn': '06-platform/longhorn', 'radar': '06-platform/radar',
+          'k3s-postgres': '07-data/k3s-postgres'}
+DOCUMENTS = {name: list(yaml.safe_load_all((INFRA / directory / 'resources/provision-credentials.yaml').read_text()))
+             for name, directory in OWNERS.items()}
+MANIFEST = INFRA / 'adapters/credential-custody/resources.yaml'
+SCRIPT = next(d['data']['credential_helpers.py'] for d in yaml.safe_load_all(MANIFEST.read_text())
+              if d['kind'] == 'ConfigMap')
 BINARY = os.environ.get('OPENBAO_TEST_BINARY')
 
 
@@ -36,20 +41,37 @@ def module():
 
 
 class ServiceCredentialContracts(unittest.TestCase):
-    def test_job_is_before_secret_consumers_and_bounded(self):
-        job = next(d for d in DOCUMENTS if d['kind'] == 'Job')
-        self.assertEqual(job['metadata']['annotations']['argocd.argoproj.io/sync-wave'], '1')
-        self.assertEqual(job['spec']['activeDeadlineSeconds'], 600)
-        pod = job['spec']['template']['spec']
-        self.assertFalse(pod['automountServiceAccountToken'])
-        self.assertEqual(pod['restartPolicy'], 'Never')
-        for container in pod['containers'] + pod['initContainers']:
-            self.assertIn('@sha256:', container['image'])
-            self.assertTrue(container['securityContext']['readOnlyRootFilesystem'])
-        policy = next(d for d in DOCUMENTS if d['kind'] == 'Policy')['spec']['forProvider']['policy']
-        self.assertNotIn('"update"', policy)
-        self.assertNotIn('path "*"', policy)
-        self.assertNotIn('root', SCRIPT)
+    def test_jobs_are_consumer_owned_before_secret_consumers_and_bounded(self):
+        for name, documents in DOCUMENTS.items():
+            with self.subTest(consumer=name):
+                script = next(d['data']['provision.py'] for d in documents if d['kind'] == 'ConfigMap')
+                compile(script, '<' + name + '-provision>', 'exec')
+                job = next(d for d in documents if d['kind'] == 'Job')
+                wave = '-1' if name == 'k3s-postgres' else '1'
+                self.assertEqual(job['metadata']['annotations']['argocd.argoproj.io/sync-wave'], wave)
+                self.assertEqual(job['spec']['activeDeadlineSeconds'], 600)
+                pod = job['spec']['template']['spec']
+                self.assertFalse(pod['automountServiceAccountToken'])
+                self.assertEqual(pod['restartPolicy'], 'Never')
+                self.assertEqual(job['metadata']['namespace'], 'cloudnative-pg' if name == 'k3s-postgres' else name)
+                self.assertEqual(job['spec']['template']['metadata']['labels']['istio.io/dataplane-mode'], 'ambient')
+                for container in pod['containers'] + pod.get('initContainers', []):
+                    self.assertIn('@sha256:', container['image'])
+                    self.assertTrue(container['securityContext']['readOnlyRootFilesystem'])
+                policy = next(d for d in documents if d['kind'] == 'Policy')['spec']['forProvider']['policy']
+                self.assertNotIn('"update"', policy)
+                self.assertNotIn('path "*"', policy)
+                if name != 'radar':
+                    self.assertFalse(any(d['kind'] in ('Role', 'RoleBinding') for d in documents))
+                    self.assertNotIn('initContainers', pod)
+                else:
+                    binding = next(d for d in documents if d['kind'] == 'RoleBinding')
+                    self.assertEqual(binding['metadata']['namespace'], 'argocd')
+                    self.assertEqual(binding['subjects'][0]['namespace'], 'radar')
+        for consumer in ('longhorn/', 'radar/', 'postgresql/'):
+            self.assertNotIn(consumer, SCRIPT, 'Shared custody helper must not own service decisions')
+        self.assertNotIn('argocd', SCRIPT)
+        self.assertFalse((INFRA / '06-platform/openbao-config/resources/service-credentials.yaml').exists())
 
     def test_sql_blocks_are_json_wrapped_for_the_native_plugin_parser(self):
         for path in [APPS / 'radar/resources/postgres-access.yaml',
@@ -65,7 +87,11 @@ class ServiceCredentialContracts(unittest.TestCase):
             self.assertNotIn('NOREPLICATION', alter)
 
     def test_argo_errors_cannot_echo_a_token(self):
-        m = module()
+        helper = module()
+        m = types.ModuleType('radar_provision')
+        script = next(d['data']['provision.py'] for d in DOCUMENTS['radar'] if d['kind'] == 'ConfigMap')
+        with patch.dict(sys.modules, {'credential_helpers': helper}):
+            exec(compile(script, '<radar-provision>', 'exec'), m.__dict__)
         sensitive = secrets.token_urlsafe(32)
         with patch.object(m.subprocess, 'run', return_value=subprocess.CompletedProcess(
                 [], 1, stdout=sensitive, stderr=sensitive)):
@@ -102,10 +128,13 @@ class ServiceCredentialOpenBao(unittest.TestCase):
         else:
             raise AssertionError('Disposable OpenBao did not start; private logs withheld')
         cls.api('sys/mounts/kv', {'type': 'kv', 'options': {'version': '2'}})
-        policy = next(d for d in DOCUMENTS if d['kind'] == 'Policy')['spec']['forProvider']['policy']
-        cls.api('sys/policies/acl/service-credentials', {'policy': policy})
-        cls.job_token = cls.api('auth/token/create', {
-            'policies': ['service-credentials'], 'no_default_policy': True})['auth']['client_token']
+        cls.job_tokens = {}
+        for name, documents in DOCUMENTS.items():
+            policy = next(d for d in documents if d['kind'] == 'Policy')['spec']['forProvider']['policy']
+            cls.api('sys/policies/acl/' + name, {'policy': policy})
+            cls.job_tokens[name] = cls.api('auth/token/create', {
+                'policies': [name], 'no_default_policy': True})['auth']['client_token']
+        cls.job_token = cls.job_tokens['k3s-postgres']
 
     @classmethod
     def stop_server(cls):
@@ -134,16 +163,31 @@ class ServiceCredentialOpenBao(unittest.TestCase):
         self.assertEqual(denied.exception.status, 403, 'Job ACL must forbid changing existing values')
         self.api('kv/data/radar/auth', {'data': {'auth-secret': 'foreign-test-fixture'}})
         with self.assertRaisesRegex(m.Failure, 'foreign'):
-            m.kv_read(self.job_token, 'radar/auth')
+            m.kv_read(self.job_tokens['radar'], 'radar/auth')
         self.api('kv/data/radar/argocd', {'data': {'managed-by': m.OWNER, 'token': 'fixture'}})
         req = urllib.request.Request(self.address + 'kv/data/radar/argocd', method='DELETE',
                                      headers={'X-Vault-Token': self.root_token})
         urllib.request.urlopen(req, timeout=5).close()
         with self.assertRaisesRegex(m.Failure, 'history'):
-            m.kv_read(self.job_token, 'radar/argocd')
+            m.kv_read(self.job_tokens['radar'], 'radar/argocd')
         with self.assertRaises(m.APIError) as denied:
             self.api('kv/data/platform/r2', token=self.job_token)
         self.assertEqual(denied.exception.status, 403)
+
+    def test_consumer_credentials_cannot_cross_service_boundaries(self):
+        paths = {'longhorn': 'longhorn/oidc-proxy', 'radar': 'radar/auth',
+                 'k3s-postgres': 'postgresql/openbao-manager'}
+        for name, token in self.job_tokens.items():
+            for owner, path in paths.items():
+                if name == owner:
+                    continue
+                with self.subTest(issuer=name, forbidden_owner=owner):
+                    with self.assertRaises(self.m.APIError) as denied:
+                        self.api('kv/data/' + path, token=token)
+                    self.assertEqual(denied.exception.status, 403)
+                    with self.assertRaises(self.m.APIError) as denied:
+                        self.api('kv/data/' + path, {'options': {'cas': 0}, 'data': {'fixture': 'test'}}, token)
+                    self.assertEqual(denied.exception.status, 403)
 
     def test_real_oidc_code_exchange_custom_claims_pkce_and_group_assignment(self):
         self.api('sys/auth/userpass', {'type': 'userpass'})
@@ -157,8 +201,8 @@ class ServiceCredentialOpenBao(unittest.TestCase):
         # An entity-backed test token exercises authorization, not a root-token shortcut.
         self.api('auth/userpass/users/operator', {'password': 'disposable-oidc-test-only'})
         human = self.api('auth/userpass/login/operator', {'password': 'disposable-oidc-test-only'})['auth']['client_token']
-        files = [INFRA / '06-platform/openbao-config/resources/radar-identity.yaml',
-                 LIVE / 'infra/openbao-config/longhorn-oidc.yaml']
+        files = [INFRA / '06-platform/radar/resources/identity.yaml',
+                 LIVE / 'infra/longhorn/oidc.yaml']
         for path in files:
             for resource in yaml.safe_load_all(path.read_text()):
                 if resource['kind'] not in ('OidcKey', 'OidcScope'):
@@ -204,6 +248,22 @@ class ServiceCredentialOpenBao(unittest.TestCase):
         with self.assertRaises(self.m.APIError) as rejected:
             self.api('identity/oidc/provider/longhorn/authorize?' + urllib.parse.urlencode(query), token=human)
         self.assertEqual(rejected.exception.status, 400)
+
+    def test_service_entrypoints_reuse_real_native_credentials(self):
+        paths = {'longhorn': 'longhorn/oidc-proxy', 'k3s-postgres': 'postgresql/openbao-manager'}
+        for name, path in paths.items():
+            script = next(d['data']['provision.py'] for d in DOCUMENTS[name] if d['kind'] == 'ConfigMap')
+            entrypoint = types.ModuleType(name + '_provision')
+            with patch.dict(sys.modules, {'credential_helpers': self.m}):
+                exec(compile(script, '<' + name + '-provision>', 'exec'), entrypoint.__dict__)
+            with patch.object(entrypoint, 'login', return_value=self.job_tokens[name]):
+                with contextlib.redirect_stdout(io.StringIO()):
+                    entrypoint.main()
+                    first = self.m.kv_read(self.job_tokens[name], path)
+                    entrypoint.main()
+                    second = self.m.kv_read(self.job_tokens[name], path)
+            self.assertEqual(first, second)
+            self.assertEqual(self.api('kv/metadata/' + path)['data']['current_version'], 1)
 
 
 if __name__ == '__main__':

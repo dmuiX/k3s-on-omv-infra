@@ -1,0 +1,28 @@
+apiVersion: vault.vault.upbound.io/v1alpha1
+kind: Policy
+metadata:
+  name: longhorn-oidc-proxy-read
+spec:
+  forProvider:
+    name: longhorn-oidc-proxy-read
+    policy: "path \"auth/token/renew-self\" { capabilities = [\"update\"] }\npath \"kv/data/longhorn/oidc-proxy\" { capabilities = [\"read\"] }\npath \"kv/metadata/longhorn/oidc-proxy\" { capabilities = [\"read\"] }\n"
+  providerConfigRef:
+    name: openbao
+---
+apiVersion: kubernetes.vault.upbound.io/v1alpha1
+kind: AuthBackendRole
+metadata:
+  name: longhorn-oidc-proxy
+spec:
+  forProvider:
+    backend: kubernetes
+    roleName: longhorn-oidc-proxy
+    boundServiceAccountNames:
+      - longhorn-oidc-proxy
+    boundServiceAccountNamespaces:
+      - longhorn
+    tokenPolicies:
+      - longhorn-oidc-proxy-read
+    tokenTtl: 3600
+  providerConfigRef:
+    name: openbao

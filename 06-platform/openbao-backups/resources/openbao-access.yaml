@@ -1,0 +1,31 @@
+apiVersion: vault.vault.upbound.io/v1alpha1
+kind: Policy
+metadata:
+  name: openbao-snapshot
+spec:
+  forProvider:
+    name: openbao-snapshot
+    policy: |
+      path "auth/token/renew-self" { capabilities = ["update"] }
+      path "sys/storage/raft/snapshot" { capabilities = ["read", "sudo"] }
+  providerConfigRef:
+    name: openbao
+---
+apiVersion: kubernetes.vault.upbound.io/v1alpha1
+kind: AuthBackendRole
+metadata:
+  name: openbao-snapshot
+spec:
+  forProvider:
+    backend: kubernetes
+    roleName: openbao-snapshot
+    boundServiceAccountNames:
+      - openbao-snapshot
+    boundServiceAccountNamespaces:
+      - openbao
+    tokenPolicies:
+      - openbao-snapshot
+      - platform-r2-read
+    tokenTtl: 900
+  providerConfigRef:
+    name: openbao

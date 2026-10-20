@@ -22,7 +22,7 @@ class BootstrapOrderTest(unittest.TestCase):
                     list(yaml.safe_load_all(p.read_text()))
 
     def test_radar_identity_precedes_clients_and_attended_membership(self):
-        docs = list(yaml.safe_load_all((ROOT / '06-platform/openbao-config/resources/radar-identity.yaml').read_text()))
+        docs = list(yaml.safe_load_all((ROOT / '06-platform/radar/resources/identity.yaml').read_text()))
         self.assertEqual({d['kind'] for d in docs}, {'Group', 'OidcKey', 'OidcScope'})
         for doc in docs:
             self.assertEqual(doc['metadata']['annotations']['argocd.argoproj.io/sync-wave'], '-1')
@@ -30,9 +30,34 @@ class BootstrapOrderTest(unittest.TestCase):
         group = next(d for d in docs if d['kind'] == 'Group')
         self.assertTrue(group['spec']['forProvider']['externalMemberEntityIds'])
         self.assertFalse((ROOT.parent / 'k3s-on-omv-apps/radar/resources/oidc.yaml').exists())
-        consumers = list(yaml.safe_load_all((ROOT / '06-platform/openbao-config/resources/longhorn-oidc-proxy.yaml').read_text()))
+        consumers = list(yaml.safe_load_all((ROOT / '06-platform/longhorn/resources/oidc-proxy.yaml').read_text()))
         deployment = next(d for d in consumers if d['kind'] == 'Deployment')
         self.assertEqual(deployment['metadata']['annotations']['argocd.argoproj.io/sync-wave'], '20')
+
+    def test_consumer_ownership_and_stable_database_identity(self):
+        apps = applications()
+        core = apps['openbao-config']['spec']['sources']
+        self.assertEqual([s.get('path') for s in core], ['06-platform/openbao-config/resources'])
+        docs = [d for p in (ROOT / core[0]['path']).glob('*.yaml')
+                for d in yaml.safe_load_all(p.read_text()) if d]
+        self.assertEqual({d['kind'] for d in docs}, {'Mount', 'Backend'})
+        for name, folder, live_path in [('longhorn-config', 'longhorn', 'infra/longhorn'),
+                                         ('radar-config', 'radar', 'apps/radar')]:
+            app = apps[name]
+            sources = [s.get('path') for s in app['spec']['sources']]
+            self.assertIn('06-platform/' + folder + '/resources', sources)
+            self.assertIn(live_path, sources)
+            self.assertEqual(app['metadata']['annotations']['argocd.argoproj.io/sync-wave'], '6')
+        self.assertNotIn('postgresql', apps)
+        app = apps['k3s-postgres']
+        self.assertEqual(app['metadata']['annotations']['argocd.argoproj.io/sync-wave'], '7')
+        self.assertEqual(app['spec']['destination']['namespace'], 'cloudnative-pg')
+        cluster = next(d for d in yaml.safe_load_all((ROOT / '07-data/k3s-postgres/resources/cluster.yaml').read_text())
+                       if d['kind'] == 'Cluster')
+        self.assertEqual(cluster['metadata'], {'name': 'k3s-postgres', 'namespace': 'cloudnative-pg'})
+        for source in app['spec']['sources']:
+            if source['repoURL'] == LIVE:
+                self.assertEqual(source['path'], 'infra/k3s-postgres')
 
     def test_openbao_ambient_transport_preserves_peer_scope(self):
         docs = list(yaml.safe_load_all((ROOT / '04-core/openbao/resources/security.yaml').read_text()))

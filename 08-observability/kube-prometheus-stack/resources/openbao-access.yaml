@@ -1,0 +1,75 @@
+apiVersion: vault.vault.upbound.io/v1alpha1
+kind: Policy
+metadata:
+  name: grafana-vso-read
+spec:
+  forProvider:
+    name: grafana-vso-read
+    policy: "path \"auth/token/renew-self\" { capabilities = [\"update\"] }\npath \"database/static-creds/grafana\" { capabilities = [\"read\"] }\n"
+  providerConfigRef:
+    name: openbao
+---
+apiVersion: vault.vault.upbound.io/v1alpha1
+kind: Policy
+metadata:
+  name: alertmanager-vso-read
+spec:
+  forProvider:
+    name: alertmanager-vso-read
+    policy: "path \"auth/token/renew-self\" { capabilities = [\"update\"] }\npath \"kv/data/monitoring/alertmanager-config\" { capabilities = [\"read\"] }\npath \"kv/metadata/monitoring/alertmanager-config\" { capabilities = [\"read\"] }\n"
+  providerConfigRef:
+    name: openbao
+---
+apiVersion: kubernetes.vault.upbound.io/v1alpha1
+kind: AuthBackendRole
+metadata:
+  name: grafana-vso
+spec:
+  forProvider:
+    backend: kubernetes
+    roleName: grafana-vso
+    boundServiceAccountNames:
+      - grafana-vso
+    boundServiceAccountNamespaces:
+      - kube-prometheus-stack
+    tokenPolicies:
+      - grafana-vso-read
+    tokenTtl: 3600
+  providerConfigRef:
+    name: openbao
+---
+apiVersion: kubernetes.vault.upbound.io/v1alpha1
+kind: AuthBackendRole
+metadata:
+  name: alertmanager-vso
+spec:
+  forProvider:
+    backend: kubernetes
+    roleName: alertmanager-vso
+    boundServiceAccountNames:
+      - alertmanager-vso
+    boundServiceAccountNamespaces:
+      - kube-prometheus-stack
+    tokenPolicies:
+      - alertmanager-vso-read
+    tokenTtl: 3600
+  providerConfigRef:
+    name: openbao
+---
+apiVersion: kubernetes.vault.upbound.io/v1alpha1
+kind: AuthBackendRole
+metadata:
+  name: prometheus-k8up-vso
+spec:
+  forProvider:
+    backend: kubernetes
+    roleName: prometheus-k8up-vso
+    boundServiceAccountNames:
+      - prometheus-k8up-vso
+    boundServiceAccountNamespaces:
+      - kube-prometheus-stack
+    tokenPolicies:
+      - k8up-validation-vso-read
+    tokenTtl: 900
+  providerConfigRef:
+    name: openbao

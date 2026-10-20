@@ -1,0 +1,111 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: credential-custody
+  annotations:
+    argocd.argoproj.io/sync-wave: '-2'
+data:
+  credential_helpers.py: |
+    """Shared transport and create-once custody; consumers own all provisioning decisions."""
+    import json
+    import os
+    from pathlib import Path
+    import secrets
+    import sys
+    import urllib.error
+    import urllib.request
+
+    OWNER = "service-credentials-v1"
+    BAO = "http://openbao-active.openbao.svc.cluster.local:8200/v1/"
+    SA = Path("/var/run/secrets/kubernetes.io/serviceaccount")
+    WORK = Path("/work")
+
+    class Failure(Exception):
+        pass
+
+    class APIError(Failure):
+        def __init__(self, status):
+            self.status = status
+            super().__init__(f"API request failed (HTTP {status}); response withheld")
+
+    def request(base, path, token, data=None, context=None):
+        headers = {"Content-Type": "application/json"}
+        headers["X-Vault-Token" if base == BAO else "Authorization"] = (
+            token if base == BAO else "Bearer " + token)
+        req = urllib.request.Request(base + path, headers=headers,
+            data=None if data is None else json.dumps(data).encode())
+        try:
+            with urllib.request.urlopen(req, context=context, timeout=30) as response:
+                raw = response.read()
+                return json.loads(raw) if raw else {}
+        except urllib.error.HTTPError as error:
+            status = error.code
+            error.close()
+            raise APIError(status) from None
+        except (urllib.error.URLError, TimeoutError, ValueError):
+            raise Failure("API transport or response error; details withheld") from None
+
+    def kv_read(token, path):
+        try:
+            result = request(BAO, "kv/data/" + path, token)
+        except APIError as error:
+            if error.status != 404:
+                raise
+            # A tombstone/history is not an absent secret: never regenerate it.
+            try:
+                request(BAO, "kv/metadata/" + path, token)
+            except APIError as metadata_error:
+                if metadata_error.status == 404:
+                    return None
+                raise
+            raise Failure("Refusing to replace deleted credential history: " + path)
+        data = result.get("data", {}).get("data")
+        if not isinstance(data, dict) or data.get("managed-by") != OWNER:
+            raise Failure("Credential has foreign or malformed ownership: " + path)
+        return data
+
+    def ensure(token, path, make, validate):
+        data = kv_read(token, path)
+        if data is None:
+            expected = {**make(), "managed-by": OWNER}
+            validate(expected)
+            try:
+                request(BAO, "kv/data/" + path, token,
+                    {"options": {"cas": 0}, "data": expected})
+            except APIError as error:
+                if error.status not in (400, 403):
+                    raise
+                # A concurrent creator may have won; no unconditional update.
+                data = kv_read(token, path)
+                if data is None:
+                    raise
+            else:
+                data = kv_read(token, path)
+                if data != expected:
+                    raise Failure("Credential read-back mismatch: " + path)
+        validate(data)
+        print("Credential verified: " + path, flush=True)
+        return data
+
+    def fields(data, *names):
+        if not isinstance(data, dict) or any(
+            not isinstance(data.get(name), str) or not data[name] for name in names):
+            raise Failure("Required credential fields are missing or malformed")
+
+    def random_value():
+        return secrets.token_urlsafe(32)
+
+    def login(role):
+        result = request(BAO, "auth/kubernetes/login", "", {
+            "role": role, "jwt": Path("/var/run/openbao/token").read_text().strip()})
+        return result["auth"]["client_token"]
+
+
+    def run(main):
+        os.umask(0o077)
+        try:
+            main()
+        except Exception as error:
+            print(str(error) if isinstance(error, Failure) else
+                  "Credential provisioning failed; sensitive details withheld", file=sys.stderr)
+            sys.exit(1)
