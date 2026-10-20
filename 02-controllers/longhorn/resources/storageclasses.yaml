@@ -11,6 +11,10 @@ allowVolumeExpansion: true
 parameters:
   numberOfReplicas: "3"
   encrypted: "true"
+  csi.storage.k8s.io/node-stage-secret-name: longhorn-crypto
+  csi.storage.k8s.io/node-stage-secret-namespace: longhorn
+  csi.storage.k8s.io/node-expand-secret-name: longhorn-crypto
+  csi.storage.k8s.io/node-expand-secret-namespace: longhorn
   csi.storage.k8s.io/provisioner-secret-name: longhorn-crypto
   csi.storage.k8s.io/provisioner-secret-namespace: longhorn
   csi.storage.k8s.io/node-publish-secret-name: longhorn-crypto
@@ -28,6 +32,10 @@ parameters:
   numberOfReplicas: "1"
   dataLocality: strict-local
   encrypted: "true"
+  csi.storage.k8s.io/node-stage-secret-name: longhorn-crypto
+  csi.storage.k8s.io/node-stage-secret-namespace: longhorn
+  csi.storage.k8s.io/node-expand-secret-name: longhorn-crypto
+  csi.storage.k8s.io/node-expand-secret-namespace: longhorn
   csi.storage.k8s.io/provisioner-secret-name: longhorn-crypto
   csi.storage.k8s.io/provisioner-secret-namespace: longhorn
   csi.storage.k8s.io/node-publish-secret-name: longhorn-crypto
@@ -46,6 +54,10 @@ parameters:
   dataLocality: strict-local
   nodeSelector: monitoring-storage
   encrypted: "true"
+  csi.storage.k8s.io/node-stage-secret-name: longhorn-crypto
+  csi.storage.k8s.io/node-stage-secret-namespace: longhorn
+  csi.storage.k8s.io/node-expand-secret-name: longhorn-crypto
+  csi.storage.k8s.io/node-expand-secret-namespace: longhorn
   csi.storage.k8s.io/provisioner-secret-name: longhorn-crypto
   csi.storage.k8s.io/provisioner-secret-namespace: longhorn
   csi.storage.k8s.io/node-publish-secret-name: longhorn-crypto

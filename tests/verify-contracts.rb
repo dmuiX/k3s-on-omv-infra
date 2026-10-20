@@ -276,6 +276,12 @@ class PlatformContractTest < Minitest::Test
       assert_equal "strict-local", storage_class.dig("parameters", "dataLocality")
     end
     assert_equal "monitoring-storage", classes["longhorn-monitoring"].dig("parameters", "nodeSelector")
+    classes.each_value do |storage_class|
+      %w[node-stage node-publish node-expand].each do |operation|
+        assert_equal "longhorn-crypto", storage_class.dig("parameters", "csi.storage.k8s.io/#{operation}-secret-name")
+        assert_equal "longhorn", storage_class.dig("parameters", "csi.storage.k8s.io/#{operation}-secret-namespace")
+      end
+    end
   end
 
   def test_longhorn_has_one_storageclass_owner_and_canonical_replica_setting
