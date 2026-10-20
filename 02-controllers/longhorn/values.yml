@@ -1,9 +1,12 @@
 defaultSettings:
-  defaultReplicaCount: 3
+  # Match the persisted 1.13 representation; scalar input causes repeated writes.
+  defaultReplicaCount: '{"v1":"3","v2":"3"}'
   defaultDataLocality: disabled
   storageOverProvisioningPercentage: 100
   replicaAutoBalance: best-effort
 persistence:
+  # StorageClasses are owned by resources/storageclasses.yaml, not the chart's controller ConfigMap.
+  createStorageClass: false
   defaultClass: false
   reclaimPolicy: Retain
   defaultFsType: ext4

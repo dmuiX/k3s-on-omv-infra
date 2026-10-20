@@ -273,6 +273,14 @@ class PlatformContractTest < Minitest::Test
     assert_equal "monitoring-storage", classes["longhorn-monitoring"].dig("parameters", "nodeSelector")
   end
 
+  def test_longhorn_has_one_storageclass_owner_and_canonical_replica_setting
+    values = YAML.load_file(INFRA / "02-controllers/longhorn/values.yml")
+    assert_equal false, values.dig("persistence", "createStorageClass"),
+      "The chart ConfigMap must not recreate the Git-owned encrypted StorageClass"
+    assert_equal '{"v1":"3","v2":"3"}', values.dig("defaultSettings", "defaultReplicaCount"),
+      "Use Longhorn 1.13's persisted form to avoid repeated scalar-to-JSON setting updates"
+  end
+
   def test_ha_replica_and_storage_contracts_are_present
     openbao = YAML.load_file(INFRA / "04-core/openbao/values.yml")
     assert_equal 3, openbao.dig("server", "ha", "replicas")
