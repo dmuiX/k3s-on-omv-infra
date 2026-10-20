@@ -56,7 +56,18 @@ spec:
     - from:
         - namespaceSelector:
             matchExpressions:
-              - {key: kubernetes.io/metadata.name, operator: In, values: [cert-manager, crossplane-system, vault-secrets-operator, cloudnative-pg, kube-prometheus-stack, radar, backup-validation, kube-system, istio-ingress]}
+              - key: kubernetes.io/metadata.name
+                operator: In
+                values:
+                  - cert-manager
+                  - crossplane-system
+                  - vault-secrets-operator
+                  - cloudnative-pg
+                  - kube-prometheus-stack
+                  - radar
+                  - backup-validation
+                  - kube-system
+                  - istio-ingress
       ports:
         - protocol: TCP
           port: 8200

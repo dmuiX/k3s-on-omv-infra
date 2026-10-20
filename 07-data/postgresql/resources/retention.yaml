@@ -71,8 +71,10 @@ spec:
                   drop:
                     - ALL
               envFrom:
-                - {secretRef: {name: postgresql-r2-credentials}}
-                - {configMapRef: {name: postgresql-retention-target}}
+                - secretRef:
+                    name: postgresql-r2-credentials
+                - configMapRef:
+                    name: postgresql-retention-target
               env:
                 - name: PYTHONDONTWRITEBYTECODE
                   value: "1"

@@ -18,11 +18,45 @@ metadata:
   name: restore-validation
   namespace: backup-validation
 rules:
-  - {apiGroups: [coordination.k8s.io], resources: [leases], verbs: [create]}
-  - {apiGroups: [coordination.k8s.io], resources: [leases], resourceNames: [postgresql-restore-status], verbs: [get, update]}
-  - {apiGroups: [postgresql.cnpg.io], resources: [clusters], verbs: [get, create, delete]}
-  - {apiGroups: [barmancloud.cnpg.io], resources: [objectstores], verbs: [get, create, delete]}
-  - {apiGroups: [''], resources: [secrets], resourceNames: [postgresql-pitr-validation-app], verbs: [get]}
+  - apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
+    verbs:
+      - create
+  - apiGroups:
+      - coordination.k8s.io
+    resources:
+      - leases
+    resourceNames:
+      - postgresql-restore-status
+    verbs:
+      - get
+      - update
+  - apiGroups:
+      - postgresql.cnpg.io
+    resources:
+      - clusters
+    verbs:
+      - get
+      - create
+      - delete
+  - apiGroups:
+      - barmancloud.cnpg.io
+    resources:
+      - objectstores
+    verbs:
+      - get
+      - create
+      - delete
+  - apiGroups:
+      - ''
+    resources:
+      - secrets
+    resourceNames:
+      - postgresql-pitr-validation-app
+    verbs:
+      - get
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -44,8 +78,22 @@ metadata:
   name: restore-validation-source-reader
   namespace: cloudnative-pg
 rules:
-  - {apiGroups: [''], resources: [secrets], resourceNames: [k3s-postgres-app], verbs: [get]}
-  - {apiGroups: [barmancloud.cnpg.io], resources: [objectstores], resourceNames: [k3s-postgres-backups], verbs: [get]}
+  - apiGroups:
+      - ''
+    resources:
+      - secrets
+    resourceNames:
+      - k3s-postgres-app
+    verbs:
+      - get
+  - apiGroups:
+      - barmancloud.cnpg.io
+    resources:
+      - objectstores
+    resourceNames:
+      - k3s-postgres-backups
+    verbs:
+      - get
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -155,8 +203,14 @@ spec:
                   mountPath: /omv
                   readOnly: true
           volumes:
-            - {name: validator, configMap: {name: postgresql-pitr-validator, defaultMode: 0444}}
-            - {name: omv, persistentVolumeClaim: {claimName: postgresql-backup-mirror-validation, readOnly: true}}
+            - name: validator
+              configMap:
+                name: postgresql-pitr-validator
+                defaultMode: 0444
+            - name: omv
+              persistentVolumeClaim:
+                claimName: postgresql-backup-mirror-validation
+                readOnly: true
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim

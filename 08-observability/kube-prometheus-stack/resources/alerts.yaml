@@ -17,7 +17,23 @@ spec:
           for: 15m
           labels:
             severity: critical
-        - {alert: PersistentVolumeFilling, expr: '(kubelet_volume_stats_used_bytes / kubelet_volume_stats_capacity_bytes) > 0.85', for: 15m, labels: {severity: warning}}
-        - {alert: OpenBaoRaftPeerMissing, expr: 'openbao_raft_peers < 3', for: 5m, labels: {severity: critical}}
-        - {alert: OpenBaoSnapshotStale, expr: 'absent(kube_cronjob_status_last_successful_time{namespace="openbao",cronjob="openbao-snapshot"}) or time() - kube_cronjob_status_last_successful_time{namespace="openbao",cronjob="openbao-snapshot"} > 93600', for: 15m, labels: {severity: critical}}
-        - {alert: PostgreSQLClusterNotHealthy, expr: 'cnpg_collector_up < 1', for: 5m, labels: {severity: critical}}
+        - alert: PersistentVolumeFilling
+          expr: '(kubelet_volume_stats_used_bytes / kubelet_volume_stats_capacity_bytes) > 0.85'
+          for: 15m
+          labels:
+            severity: warning
+        - alert: OpenBaoRaftPeerMissing
+          expr: 'openbao_raft_peers < 3'
+          for: 5m
+          labels:
+            severity: critical
+        - alert: OpenBaoSnapshotStale
+          expr: 'absent(kube_cronjob_status_last_successful_time{namespace="openbao",cronjob="openbao-snapshot"}) or time() - kube_cronjob_status_last_successful_time{namespace="openbao",cronjob="openbao-snapshot"} > 93600'
+          for: 15m
+          labels:
+            severity: critical
+        - alert: PostgreSQLClusterNotHealthy
+          expr: 'cnpg_collector_up < 1'
+          for: 5m
+          labels:
+            severity: critical
