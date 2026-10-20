@@ -4,6 +4,8 @@ defaultSettings:
   defaultDataLocality: disabled
   storageOverProvisioningPercentage: 100
   replicaAutoBalance: best-effort
+  # CSI and instance/engine managers must run on the tainted third storage node.
+  taintToleration: CriticalAddonsOnly=true:NoSchedule
 persistence:
   # StorageClasses are owned by resources/storageclasses.yaml, not the chart's controller ConfigMap.
   createStorageClass: false
@@ -13,6 +15,11 @@ persistence:
 longhornUI:
   replicas: 2
 longhornManager:
+  tolerations:
+    - key: CriticalAddonsOnly
+      operator: Equal
+      value: "true"
+      effect: NoSchedule
   resources:
     requests:
       cpu: 100m

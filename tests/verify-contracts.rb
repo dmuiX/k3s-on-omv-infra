@@ -284,6 +284,19 @@ class PlatformContractTest < Minitest::Test
     end
   end
 
+  def test_longhorn_manager_and_system_components_tolerate_storage_pi
+    values = YAML.load_file(INFRA / "02-controllers/longhorn/values.yml")
+    assert_equal "CriticalAddonsOnly=true:NoSchedule", values.dig("defaultSettings", "taintToleration")
+    assert_includes values.dig("longhornManager", "tolerations") || [],
+      {"key" => "CriticalAddonsOnly", "operator" => "Equal", "value" => "true", "effect" => "NoSchedule"}
+  end
+
+  def test_openbao_hcl_uses_newline_separated_attributes
+    config = YAML.load_file(INFRA / "04-core/openbao/values.yml").dig("server", "ha", "raft", "config")
+    refute_includes config, ";", "HCL attributes must be separated by newlines, not semicolons"
+    assert_includes config, 'current_key = "file:///openbao/seal/key"'
+  end
+
   def test_longhorn_has_one_storageclass_owner_and_canonical_replica_setting
     values = YAML.load_file(INFRA / "02-controllers/longhorn/values.yml")
     assert_equal false, values.dig("persistence", "createStorageClass"),

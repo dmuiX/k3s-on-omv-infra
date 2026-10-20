@@ -30,7 +30,10 @@ server:
       setNodeId: true
       config: |
         ui = true
-        listener "tcp" { address = "[::]:8200"; tls_disable = 1 }
+        listener "tcp" {
+          address = "[::]:8200"
+          tls_disable = 1
+        }
         storage "raft" {
           path = "/openbao/data"
           retry_join {
@@ -39,7 +42,10 @@ server:
           }
         }
         service_registration "kubernetes" {}
-        seal "static" { current_key_id = "1"; current_key = "file:///openbao/seal/key" }
+        seal "static" {
+          current_key_id = "1"
+          current_key = "file:///openbao/seal/key"
+        }
   dataStorage:
     enabled: true
     size: 1Gi
