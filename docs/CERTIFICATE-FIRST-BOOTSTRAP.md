@@ -6,10 +6,10 @@ companion Bootstrap PR before the Infra root syncs.
 
 | Root wave | Application | Required before this wave |
 | --- | --- | --- |
-| -50 | cert-manager | accepted K3s + Argo CD; DNS Secret already seeded |
-| -40 | tls-certificates | cert-manager; ClusterIssuers and explicit Certificates |
-| -30 | istio-core | Certificates ready, not just present |
-| -20 | istio-ambient (Gateway resources) | Istio controller + wildcard TLS Secret |
+| -5 | cert-manager | accepted K3s + Argo CD; DNS Secret already seeded |
+| -4 | tls-certificates | cert-manager; ClusterIssuers and explicit Certificates |
+| -3 | istio-core | Certificates ready, not just present |
+| -2 | istio-ambient (Gateway resources) | Istio controller + wildcard TLS Secret |
 | 1 | argocd-config, prometheus-operator-crds | Gateway exists for the Argo CD route |
 | 2-8 | existing platform waves | existing provider/storage/OpenBao dependencies |
 

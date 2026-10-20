@@ -25,7 +25,7 @@ class BootstrapOrderTest(unittest.TestCase):
         apps = applications()
         names = ['cert-manager', 'tls-certificates', 'istio-core', 'istio-ambient', 'argocd-config']
         waves = [int(apps[n]['metadata']['annotations']['argocd.argoproj.io/sync-wave']) for n in names]
-        self.assertEqual(waves[:4], [-50, -40, -30, -20])
+        self.assertEqual(waves[:4], [-5, -4, -3, -2])
         self.assertTrue(all(a < b for a, b in zip(waves, waves[1:])))
         self.assertEqual(int(apps['openbao']['metadata']['annotations']['argocd.argoproj.io/sync-wave']), 4)
         self.assertEqual(int(apps['letsencrypt-dns01']['metadata']['annotations']['argocd.argoproj.io/sync-wave']), 6)
