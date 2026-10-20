@@ -247,6 +247,11 @@ class PlatformContractTest < Minitest::Test
     refute activated.any? { |type| type.include?(".pki.vault.upbound.io") }
   end
 
+  def test_provider_vault_runtime_uses_default_seccomp
+    runtime = yaml_documents(INFRA / "03-controllers/provider-vault/resources/provider.yaml").find { |doc| doc["kind"] == "DeploymentRuntimeConfig" }
+    assert_equal "RuntimeDefault", runtime.dig("spec", "deploymentTemplate", "spec", "template", "spec", "securityContext", "seccompProfile", "type")
+  end
+
   def test_provider_vault_resource_waves_are_minus_twenty_minus_ten_zero
     documents = yaml_documents(INFRA / "03-controllers/provider-vault/resources/provider.yaml")
     waves = documents.to_h { |document| [document["kind"], document.dig("metadata", "annotations", "argocd.argoproj.io/sync-wave")] }

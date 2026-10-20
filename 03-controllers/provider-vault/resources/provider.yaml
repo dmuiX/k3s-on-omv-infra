@@ -45,6 +45,9 @@ spec:
       template:
         spec:
           serviceAccountName: provider-vault
+          securityContext:
+            seccompProfile:
+              type: RuntimeDefault
           containers:
             - name: package-runtime
               resources:
