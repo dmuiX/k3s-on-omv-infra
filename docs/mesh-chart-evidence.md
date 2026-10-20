@@ -5,9 +5,9 @@ Static upstream review and local renders: 2026-10-18. No hosts, Kubernetes API, 
 ## Official mechanisms and pins
 
 - [Istio 1.31 ambient Helm installation](https://istio.io/v1.31/docs/ambient/install/helm/) requires separate `base`, `istiod` (`profile: ambient`), `cni` (`profile: ambient`), and `ztunnel` charts. All four are pinned to **1.31.2** from `https://blob.istio.io/istio-release/charts`; the official index metadata agrees. There is no aggregate ambient chart.
-- Separate child Applications use parent sync waves -2, -1, 0, 1 respectively; `istio-ambient` at wave 2 owns only gateway resources and the Live Gateway. These ordering annotations rely on Argo's child-Application health customization, which Bootstrap installs before creating the Infra root. Static tests still cannot prove initial reconciliation ordering. Base owns `istio-system`; CNI and ztunnel require the upstream elevated node capabilities, so that namespace remains privileged.
+- One `istio-core` child Application groups the four official chart sources as independent Helm render sources, preserving their previous release names; the `istio-ambient` child Application (wave 2) owns Gateway configuration and Live's Gateway. This reduces the Istio footprint to two Applications and keeps only `istio-system` and `istio-ingress`. Argo CD does **not** wait for each chart to become healthy before applying the next chart within one multi-source Application; all components must converge, and first-install/upgrade sequencing requires runtime validation. `istio-system` remains privileged for CNI/ztunnel; `istio-ingress` remains restricted with an explicit `RuntimeDefault` seccomp profile in the generated Gateway pod.
 - [K3s prerequisites](https://istio.io/v1.31/docs/ambient/install/platform-prerequisites/#k3s) support bundled CNIs via `global.platform: k3s`. The selected chart renders `/var/lib/rancher/k3s/data/cni` for binaries and `/var/lib/rancher/k3s/agent/etc/cni/net.d` for configuration. CNI and ztunnel share `/var/run/ztunnel`.
-- [Gateway API automated deployment](https://istio.io/v1.31/docs/tasks/traffic-management/ingress/gateway-api/#automated-deployment) makes a separate `gateway` Helm release unnecessary. Live's Gateway references Infra's same-namespace ConfigMap through `spec.infrastructure.parametersRef`. Its native overlays request three replicas, required hostname anti-affinity, topology spread, Pi toleration, resource bounds, and minimum two available. Scheduling, admission, probes, PDB, exposure and overlay processing still require runtime evidence.
+- [Gateway API automated deployment](https://istio.io/v1.31/docs/tasks/traffic-management/ingress/gateway-api/#automated-deployment) makes a separate `gateway` Helm release unnecessary. Live's Gateway references Infra's same-namespace ConfigMap through `spec.infrastructure.parametersRef`. Its overlays request three replicas, preferred hostname anti-affinity, best-effort topology spread, Pi toleration, a `RuntimeDefault` seccomp profile, resource bounds, and minimum two available. This avoids hard scheduling constraints and missing seccomp being barriers to ingress pod readiness. Admission, probes, Gateway status, TLS, and endpoints still require runtime evidence.
 - `base.validationFailurePolicy: Fail` is set for both base and istiod to avoid the upstream-documented server-side-apply ownership conflict. Gateway API CRDs remain externally owned.
 
 ## Artifact checks
@@ -33,6 +33,10 @@ ruby tests/verify-contracts.rb
 ```
 
 The test never downloads dependencies or contacts Kubernetes. Without a cache it explicitly skips.
+
+## Transition from the previous five Applications
+
+Argo CD automatic pruning is disabled. After merging this change, the old `istio-base`, `istio-istiod`, `istio-cni`, and `istio-ztunnel` Application objects remain even though Git stops declaring them. They must be deleted **without cascading Kubernetes resource deletion**, allowing `istio-core` to adopt their rendered resources. Do not use foreground/cascading deletion, which could remove CRDs, control plane and networking components. Verify that `istio-core` is Synced/Healthy and the Gateway Deployment has ready endpoints; chart grouping and seccomp changes cannot be verified from Git alone. The private Live Gateway must remain present.
 
 ## Remaining deployment blockers
 
