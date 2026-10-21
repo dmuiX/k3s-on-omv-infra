@@ -90,6 +90,18 @@ class ServiceCredentialContracts(unittest.TestCase):
         self.assertNotIn('argocd', SCRIPT)
         self.assertFalse((INFRA / '06-platform/openbao-config/resources/service-credentials.yaml').exists())
 
+    def test_radar_native_core_discovery_and_portforward_permissions_stay_namespaced(self):
+        role = next(d for d in DOCUMENTS['radar'] if d['kind'] == 'Role')
+        self.assertEqual(role['metadata']['namespace'], 'argocd')
+        rules = role['rules']
+        for resource, verbs in [('services', {'get', 'list'}), ('pods', {'get', 'list'}),
+                                ('pods/portforward', {'get', 'create'})]:
+            self.assertTrue(any(resource in rule['resources'] and verbs.issubset(rule['verbs'])
+                                and rule['apiGroups'] == [''] for rule in rules), resource)
+        self.assertFalse(any(d['kind'] in ('ClusterRole', 'ClusterRoleBinding') for d in DOCUMENTS['radar']))
+        self.assertFalse(any('create' in r['verbs'] and 'pods' in r['resources'] for r in rules),
+                         'Native port forwarding does not require permission to create arbitrary Pods')
+
     def test_radar_binary_copy_does_not_charge_tmpfs_to_the_128mi_init_container(self):
         job = next(d for d in DOCUMENTS['radar'] if d['kind'] == 'Job')
         volumes = {v['name']: v for v in job['spec']['template']['spec']['volumes']}
