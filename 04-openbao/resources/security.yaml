@@ -136,6 +136,62 @@ spec:
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
+  name: allow-openbao-agent-injector
+  namespace: openbao
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: openbao-agent-injector
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    # Host-network API servers call the webhook directly on its target port.
+    - from:
+        - ipBlock:
+            cidr: 192.168.1.2/32
+        - ipBlock:
+            cidr: 192.168.1.5/32
+        - ipBlock:
+            cidr: 192.168.1.7/32
+        # Istio Ambient rewrites kubelet health-probe source addresses.
+        # https://istio.io/latest/docs/ambient/usage/networkpolicy/
+        - ipBlock:
+            cidr: 169.254.7.127/32
+      ports:
+        - protocol: TCP
+          port: 8080
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Cover the API service before DNAT and the three API endpoints after DNAT.
+    - to:
+        - ipBlock:
+            cidr: 10.43.0.1/32
+      ports:
+        - protocol: TCP
+          port: 443
+    - to:
+        - ipBlock:
+            cidr: 192.168.1.2/32
+        - ipBlock:
+            cidr: 192.168.1.5/32
+        - ipBlock:
+            cidr: 192.168.1.7/32
+      ports:
+        - protocol: TCP
+          port: 6443
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
   name: allow-openbao-snapshot-egress
   namespace: openbao
 spec:
