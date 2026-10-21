@@ -133,6 +133,25 @@ class RepositoryContractTest < Minitest::Test
     end
   end
 
+  def test_gateway_route_reference_defaults_are_authored_explicitly
+    YAML_REPOSITORIES.each do |repository|
+      yaml_files(repository).each do |path|
+        yaml_documents(path).each do |document|
+          walk(document) do |key, value|
+            next unless %w[parentRefs backendRefs].include?(key) && value.is_a?(Array)
+            value.each do |reference|
+              assert reference.key?("group"), "#{path}: #{key} must declare group"
+              assert reference.key?("kind"), "#{path}: #{key} must declare kind"
+              if key == "backendRefs"
+                assert reference.key?("weight"), "#{path}: backendRefs must declare weight"
+              end
+            end
+          end
+        end
+      end
+    end
+  end
+
   def test_multi_source_order_and_references
     (application_files(INFRA) + application_files(APPS)).each do |path|
       app = application(path)
