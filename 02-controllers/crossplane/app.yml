@@ -17,27 +17,10 @@ spec:
     helm:
       valuesObject:
         replicas: 1
-        # Crossplane creates the default policy only once. Keep this list equal
-        # to resources/activation-policy.yaml so a fresh install never expands
-        # the Vault provider to every API shipped in its package.
+        # Do not create a default policy. The sole activation allowlist belongs
+        # to provider-vault-exact-16 in the provider Application.
         provider:
-          defaultActivations:
-          - secretbackendconnections.database.vault.upbound.io
-          - secretbackendstaticroles.database.vault.upbound.io
-          - oidcclients.identity.vault.upbound.io
-          - oidckeys.identity.vault.upbound.io
-          - oidcproviders.identity.vault.upbound.io
-          - oidcscopes.identity.vault.upbound.io
-          - mounts.vault.vault.upbound.io
-          - policies.vault.vault.upbound.io
-          - secretbackendv2s.kv.vault.upbound.io
-          - backends.auth.vault.upbound.io
-          - policies.password.vault.upbound.io
-          - authbackendroles.kubernetes.vault.upbound.io
-          - secretbackendroles.database.vault.upbound.io
-          - groups.identity.vault.upbound.io
-          - oidcroles.identity.vault.upbound.io
-          - oidcassignments.identity.vault.upbound.io
+          defaultActivations: []
         resourcesCrossplane:
           requests:
             cpu: 100m

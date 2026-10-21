@@ -91,14 +91,15 @@ class BootstrapOrderTest(unittest.TestCase):
         crossplane = applications()['crossplane']
         values = crossplane['spec']['sources'][0]['helm']['valuesObject']
         chart_allowlist = values['provider']['defaultActivations']
-        policy_path = ROOT / '02-controllers/crossplane/resources/activation-policy.yaml'
+        policy_path = ROOT / '03-provider-vault/resources/activation-policy.yaml'
         policy = yaml.safe_load(policy_path.read_text())
         policy_allowlist = policy['spec']['activate']
-        self.assertEqual(policy['metadata']['name'], 'default')
-        self.assertEqual(chart_allowlist, policy_allowlist)
-        self.assertEqual(len(chart_allowlist), len(set(chart_allowlist)))
-        self.assertNotIn('*', chart_allowlist)
-        self.assertEqual(len(chart_allowlist), 16)
+        self.assertEqual(policy['metadata']['name'], 'provider-vault-exact-16')
+        self.assertEqual(chart_allowlist, [])
+        self.assertEqual(len(policy_allowlist), len(set(policy_allowlist)))
+        self.assertNotIn('*', policy_allowlist)
+        self.assertEqual(len(policy_allowlist), 16)
+        self.assertFalse((ROOT / '02-controllers/crossplane/resources/activation-policy.yaml').exists())
 
         provider_documents = list(yaml.safe_load_all(
             (ROOT / '03-provider-vault/resources/provider.yaml').read_text()))
@@ -116,7 +117,7 @@ class BootstrapOrderTest(unittest.TestCase):
                     plural = kind.lower()[:-1] + 'ies' if kind.lower().endswith('policy') else kind.lower() + 's'
                     authored.add(plural + '.' + group)
         self.assertTrue(authored)
-        self.assertEqual(authored - set(chart_allowlist), set(),
+        self.assertEqual(authored - set(policy_allowlist), set(),
                          'Every authored Vault managed resource API must be explicitly activated')
 
     def test_argocd_excludes_unused_vault_and_generated_crossplane_caches(self):

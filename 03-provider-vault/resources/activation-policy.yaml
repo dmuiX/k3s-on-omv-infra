@@ -1,10 +1,10 @@
 apiVersion: apiextensions.crossplane.io/v1alpha1
 kind: ManagedResourceActivationPolicy
 metadata:
-  name: default
+  name: provider-vault-exact-16
   annotations:
-    # The Crossplane CRDs and one-time init policy must exist first.
-    argocd.argoproj.io/sync-wave: "10"
+    # Activate the reviewed APIs before installing the provider package.
+    argocd.argoproj.io/sync-wave: "-20"
 spec:
   # Extend this reviewed list in the same change that introduces a new Vault
   # managed resource. Never use a wildcard: activation policies are additive.
