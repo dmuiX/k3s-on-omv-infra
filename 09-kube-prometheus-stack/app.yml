@@ -63,8 +63,16 @@ spec:
                       storage: 1Gi
         grafana:
           replicas: 2
+          # Hard anti-affinity leaves no third monitoring node for a surge pod.
+          deploymentStrategy:
+            type: RollingUpdate
+            rollingUpdate:
+              maxSurge: 0
+              maxUnavailable: 1
           nodeSelector:
             monitoring: 'true'
+          # Live configures external PostgreSQL for durable Grafana state.
+          # Local caches and provisioned files are disposable across replicas.
           persistence:
             enabled: false
           podDisruptionBudget:
