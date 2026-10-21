@@ -1,0 +1,27 @@
+apiVersion: apiextensions.crossplane.io/v1alpha1
+kind: ManagedResourceActivationPolicy
+metadata:
+  name: default
+  annotations:
+    # The Crossplane CRDs and one-time init policy must exist first.
+    argocd.argoproj.io/sync-wave: "10"
+spec:
+  # Extend this reviewed list in the same change that introduces a new Vault
+  # managed resource. Never use a wildcard: activation policies are additive.
+  activate:
+  - secretbackendconnections.database.vault.upbound.io
+  - secretbackendstaticroles.database.vault.upbound.io
+  - oidcclients.identity.vault.upbound.io
+  - oidckeys.identity.vault.upbound.io
+  - oidcproviders.identity.vault.upbound.io
+  - oidcscopes.identity.vault.upbound.io
+  - mounts.vault.vault.upbound.io
+  - policies.vault.vault.upbound.io
+  - secretbackendv2s.kv.vault.upbound.io
+  - backends.auth.vault.upbound.io
+  - policies.password.vault.upbound.io
+  - authbackendroles.kubernetes.vault.upbound.io
+  - secretbackendroles.database.vault.upbound.io
+  - groups.identity.vault.upbound.io
+  - oidcroles.identity.vault.upbound.io
+  - oidcassignments.identity.vault.upbound.io

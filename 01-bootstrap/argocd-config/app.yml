@@ -21,6 +21,57 @@ spec:
           cm:
             accounts.radar: apiKey
             accounts.radar.enabled: 'true'
+            # Preserve Argo's default high-churn exclusions and avoid caching
+            # provider APIs that the reviewed Crossplane allowlist cannot use.
+            resource.exclusions: |
+              - apiGroups: ['', discovery.k8s.io]
+                kinds: [Endpoints, EndpointSlice]
+              - apiGroups: [coordination.k8s.io]
+                kinds: [Lease]
+              - apiGroups: [authentication.k8s.io, authorization.k8s.io]
+                kinds: [SelfSubjectReview, TokenReview, LocalSubjectAccessReview, SelfSubjectAccessReview, SelfSubjectRulesReview, SubjectAccessReview]
+              - apiGroups: [certificates.k8s.io, cert-manager.io]
+                kinds: [CertificateSigningRequest, CertificateRequest]
+              - apiGroups: [cilium.io]
+                kinds: [CiliumIdentity, CiliumEndpoint, CiliumEndpointSlice]
+              - apiGroups: [kyverno.io, reports.kyverno.io, wgpolicyk8s.io]
+                kinds: [PolicyReport, ClusterPolicyReport, EphemeralReport, ClusterEphemeralReport, AdmissionReport, ClusterAdmissionReport, BackgroundScanReport, ClusterBackgroundScanReport, UpdateRequest]
+              - apiGroups:
+                - '*.vault.m.upbound.io'
+                - vault.m.upbound.io
+                - ad.vault.upbound.io
+                - alicloud.vault.upbound.io
+                - approle.vault.upbound.io
+                - audit.vault.upbound.io
+                - aws.vault.upbound.io
+                - azure.vault.upbound.io
+                - cert.vault.upbound.io
+                - consul.vault.upbound.io
+                - egp.vault.upbound.io
+                - gcp.vault.upbound.io
+                - generic.vault.upbound.io
+                - github.vault.upbound.io
+                - jwt.vault.upbound.io
+                - kmip.vault.upbound.io
+                - ldap.vault.upbound.io
+                - managed.vault.upbound.io
+                - mfa.vault.upbound.io
+                - mongodbatlas.vault.upbound.io
+                - nomad.vault.upbound.io
+                - okta.vault.upbound.io
+                - pki.vault.upbound.io
+                - quota.vault.upbound.io
+                - rabbitmq.vault.upbound.io
+                - raft.vault.upbound.io
+                - rgp.vault.upbound.io
+                - ssh.vault.upbound.io
+                - terraform.vault.upbound.io
+                - token.vault.upbound.io
+                - transform.vault.upbound.io
+                - transit.vault.upbound.io
+                kinds: ['*']
+              - apiGroups: [apiextensions.crossplane.io]
+                kinds: [ManagedResourceDefinition]
             resource.customizations.health.argoproj.io_Application: |
               -- Keep health-gated waves, but permit drift after a full sync of the current inputs.
               -- Argo Application status fields: https://argo-cd.readthedocs.io/en/stable/operator-manual/health/

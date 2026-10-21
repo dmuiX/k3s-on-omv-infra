@@ -22,6 +22,12 @@ Numbered directories retain their existing deployment phases; `sync-wave` in eac
 
 These directory changes do not rename namespaces, Helm releases, Secret/KV paths, or database resources. Existing Argo identities `istio-core`, `istio-ambient`, and `platform-credentials` remain unchanged; the separately agreed issuer/credential Applications are named `letsencrypt-dns01-issuer` and `letsencrypt-dns01-credentials`.
 
+## Crossplane API activation
+
+Crossplane initializes and continuously reconciles the cluster-scoped `default` `ManagedResourceActivationPolicy` from the reviewed Vault API allowlist in `02-controllers/crossplane/app.yml` and `02-controllers/crossplane/resources/activation-policy.yaml`. Activation policies are additive, so no second policy or wildcard is permitted. A change that authors a new Vault managed resource must extend both copies of the allowlist in the same pull request; offline tests enforce equality and coverage. Argo excludes inactive Vault API groups and generated managed-resource definitions from its cache, but never excludes an authored managed resource.
+
+Reducing the allowlist does not deactivate an API that Crossplane has already activated. Retiring one therefore requires a separately reviewed inventory and cleanup operation that proves the managed-resource type is empty and not referenced by desired state. Normal deployment must not delete MRDs, CRDs, or external resources.
+
 ## Self-managed Argo CD
 
 Bootstrap renders the exact pinned `argo-cd` Helm chart (10.10.3 / Argo CD v3.5.5) using the inline `helm.valuesObject` from `01-bootstrap/argocd-config/app.yml`, and server-side applies the result once on a clean cluster. The `argocd-config` Application then renders the same Helm chart and values from Git, retaining private Live resources. The Argo CD health customization and native HTTPS server setting are part of the same Helm values; separate ConfigMap sources were removed to avoid duplicate GitOps owners. The first chart install is greenfield-only. For existing installations, Bootstrap updates only an already owned Infra root from its original public source to the reviewed private Live overlay. Resource adoption and retirement of legacy Application identities still require the controlled cutover described in `docs/service-credentials.md`.

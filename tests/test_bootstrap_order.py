@@ -1,5 +1,6 @@
 """Offline guards for the certificate-first GitOps graph and local references."""
 from pathlib import Path
+import fnmatch
 import re
 import shutil
 import subprocess
@@ -85,6 +86,65 @@ class BootstrapOrderTest(unittest.TestCase):
                                          text=True, capture_output=True, timeout=30)
                 self.assertNotEqual(failure.returncode, 0)
                 self.assertIn(key + ' is required', failure.stderr)
+
+    def test_vault_activation_allowlist_is_exact_and_covers_authored_types(self):
+        crossplane = applications()['crossplane']
+        values = crossplane['spec']['sources'][0]['helm']['valuesObject']
+        chart_allowlist = values['provider']['defaultActivations']
+        policy_path = ROOT / '02-controllers/crossplane/resources/activation-policy.yaml'
+        policy = yaml.safe_load(policy_path.read_text())
+        policy_allowlist = policy['spec']['activate']
+        self.assertEqual(policy['metadata']['name'], 'default')
+        self.assertEqual(chart_allowlist, policy_allowlist)
+        self.assertEqual(len(chart_allowlist), len(set(chart_allowlist)))
+        self.assertNotIn('*', chart_allowlist)
+        self.assertEqual(len(chart_allowlist), 16)
+
+        provider_documents = list(yaml.safe_load_all(
+            (ROOT / '03-provider-vault/resources/provider.yaml').read_text()))
+        self.assertFalse(any(d.get('kind') == 'ManagedResourceActivationPolicy'
+                             for d in provider_documents))
+
+        authored = set()
+        roots = [ROOT, ROOT.parent / 'k3s-on-omv-apps']
+        pattern = re.compile(r'^apiVersion:\s*([^\s]+\.vault\.upbound\.io)/[^\n]+\nkind:\s*([A-Za-z0-9]+)', re.M)
+        for repository in roots:
+            for path in repository.rglob('*'):
+                if path.suffix not in ('.yaml', '.yml', '.tpl') or '.git' in path.parts:
+                    continue
+                for group, kind in pattern.findall(path.read_text()):
+                    plural = kind.lower()[:-1] + 'ies' if kind.lower().endswith('policy') else kind.lower() + 's'
+                    authored.add(plural + '.' + group)
+        self.assertTrue(authored)
+        self.assertEqual(authored - set(chart_allowlist), set(),
+                         'Every authored Vault managed resource API must be explicitly activated')
+
+    def test_argocd_excludes_unused_vault_and_generated_crossplane_caches(self):
+        app = applications()['argocd-config']
+        config = app['spec']['sources'][0]['helm']['valuesObject']['configs']['cm']
+        exclusions = yaml.safe_load(config['resource.exclusions'])
+
+        def excluded(group, kind):
+            return any(any(fnmatch.fnmatchcase(group, pattern) for pattern in entry['apiGroups']) and
+                       any(fnmatch.fnmatchcase(kind, pattern) for pattern in entry['kinds'])
+                       for entry in exclusions)
+
+        self.assertTrue(excluded('database.vault.m.upbound.io', 'SecretBackendConnection'))
+        self.assertTrue(excluded('pki.vault.upbound.io', 'SecretBackend'))
+        self.assertTrue(excluded('apiextensions.crossplane.io', 'ManagedResourceDefinition'))
+        self.assertFalse(excluded('database.vault.upbound.io', 'SecretBackendConnection'))
+        self.assertFalse(excluded('identity.vault.upbound.io', 'OidcClient'))
+
+        for path in ROOT.glob('[0-9][0-9]-*/**/*'):
+            if path.suffix not in ('.yaml', '.yml'):
+                continue
+            for resource in yaml.safe_load_all(path.read_text()):
+                if not isinstance(resource, dict) or not resource.get('kind') or not resource.get('apiVersion'):
+                    continue
+                api_version = resource['apiVersion']
+                group = api_version.split('/', 1)[0] if '/' in api_version else ''
+                self.assertFalse(excluded(group, resource['kind']),
+                                 f'Authored resource excluded from Argo cache: {path.relative_to(ROOT)}')
 
     def test_consumer_ownership_and_stable_database_identity(self):
         apps = applications()
