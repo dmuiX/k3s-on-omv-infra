@@ -44,6 +44,19 @@ def module():
 
 
 class ServiceCredentialContracts(unittest.TestCase):
+    def test_audiobookshelf_custody_can_reach_openbao_api_and_ambient(self):
+        documents = yaml.safe_load_all((INFRA / '04-openbao/resources/security.yaml').read_text())
+        policy = next(d for d in documents if d and d['kind'] == 'NetworkPolicy'
+                      and d['metadata']['name'] == 'allow-openbao-raft-and-clients')
+        for port in (8200, 15008):
+            rules = [r for r in policy['spec']['ingress']
+                     if any(p['port'] == port for p in r.get('ports', []))]
+            self.assertTrue(any('audiobookshelf' in match.get('values', [])
+                for rule in rules for peer in rule.get('from', [])
+                for match in peer.get('namespaceSelector', {}).get('matchExpressions', [])
+                if match.get('key') == 'kubernetes.io/metadata.name'
+                and match.get('operator') == 'In'), port)
+
     def test_secret_engines_and_auth_objects_survive_native_owner_migration_without_delete_permission(self):
         checked = 0
         for directory in ('06-platform', '07-k3s-postgres', '08-backup-validation', '09-kube-prometheus-stack'):
