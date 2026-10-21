@@ -118,6 +118,25 @@ class InlineHelmValuesTest(unittest.TestCase):
         self.assertEqual(ini['database']['name'], 'grafana')
         self.assertIn('$__file{', ini['database']['password'])
 
+    def test_node_exporter_has_an_isolated_host_metrics_namespace(self):
+        app = yaml.safe_load((INFRA / '09-kube-prometheus-stack/app.yml').read_text())
+        exporter = app['spec']['sources'][0]['helm']['valuesObject']['prometheus-node-exporter']
+        self.assertEqual(exporter['namespaceOverride'], 'node-exporter')
+        self.assertEqual(exporter['resources']['requests']['memory'], '32Mi')
+        self.assertEqual(exporter['resources']['limits']['memory'], '128Mi')
+        self.assertFalse(exporter['containerSecurityContext']['allowPrivilegeEscalation'])
+        self.assertEqual(exporter['containerSecurityContext']['capabilities']['drop'], ['ALL'])
+        namespace = yaml.safe_load((INFRA / '09-kube-prometheus-stack/resources/node-exporter-namespace.yaml').read_text())
+        self.assertEqual(namespace['metadata']['name'], exporter['namespaceOverride'])
+        self.assertEqual(namespace['metadata']['labels']['pod-security.kubernetes.io/enforce'], 'privileged')
+        monitoring = next(d for d in yaml.safe_load_all((INFRA / '09-kube-prometheus-stack/resources/grafana.yaml').read_text()) if d['kind'] == 'Namespace')
+        self.assertEqual(monitoring['metadata']['labels']['pod-security.kubernetes.io/enforce'], 'restricted')
+
+    def test_prometheus_backup_podconfig_uses_a_boolean(self):
+        docs = yaml.safe_load_all((LIVE / 'infra/kube-prometheus-stack/prometheus-k8up-omv.yaml').read_text())
+        config = next(d for d in docs if d['kind'] == 'PodConfig')
+        self.assertIs(config['spec']['template']['spec']['securityContext']['runAsNonRoot'], True)
+
     def test_no_duplicate_infra_values_files_remain(self):
         # Apps are deliberately deferred; their private Radar overrides stay in Live.
         for repository in (INFRA, LIVE):

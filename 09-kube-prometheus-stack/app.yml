@@ -91,6 +91,29 @@ spec:
             limits:
               cpu: 500m
               memory: 512Mi
+        prometheus-node-exporter:
+          # Only host collectors require a Pod Security exception, not Grafana/Prometheus.
+          namespaceOverride: node-exporter
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 100m
+              memory: 128Mi
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65534
+            runAsGroup: 65534
+            fsGroup: 65534
+            seccompProfile:
+              type: RuntimeDefault
+          containerSecurityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+              - ALL
         kubeApiServer:
           serviceMonitor:
             metricRelabelings:
