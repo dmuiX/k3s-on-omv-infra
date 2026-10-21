@@ -1,8 +1,7 @@
 name: Bootstrap dependency order
 on:
-  pull_request:
-  push:
-    branches: [main]
+  workflow_dispatch:
+  
 permissions:
   contents: read
 jobs:
