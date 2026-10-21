@@ -101,6 +101,23 @@ class InlineHelmValuesTest(unittest.TestCase):
             self.assertEqual(identities(applications), identities(expected))
             self.assertEqual(len(identities(applications)), len(applications))
 
+    def test_grafana_rollout_fits_two_nodes_and_keeps_external_database(self):
+        app = yaml.safe_load((INFRA / '09-kube-prometheus-stack/app.yml').read_text())
+        grafana = app['spec']['sources'][0]['helm']['valuesObject']['grafana']
+        self.assertEqual(grafana['replicas'], 2)
+        self.assertEqual(grafana['deploymentStrategy'], {
+            'type': 'RollingUpdate',
+            'rollingUpdate': {'maxSurge': 0, 'maxUnavailable': 1},
+        })
+        self.assertFalse(grafana['persistence']['enabled'])
+        self.assertEqual(grafana['podDisruptionBudget']['minAvailable'], 1)
+        self.assertTrue(grafana['affinity']['podAntiAffinity']['requiredDuringSchedulingIgnoredDuringExecution'])
+        patches = yaml.safe_load((LIVE / 'infra/applications/patches/kube-prometheus-stack.yaml').read_text())
+        ini = next(p['value'] for p in patches if p['path'].endswith('/grafana/grafana.ini'))
+        self.assertEqual(ini['database']['type'], 'postgres')
+        self.assertEqual(ini['database']['name'], 'grafana')
+        self.assertIn('$__file{', ini['database']['password'])
+
     def test_no_duplicate_infra_values_files_remain(self):
         # Apps are deliberately deferred; their private Radar overrides stay in Live.
         for repository in (INFRA, LIVE):
