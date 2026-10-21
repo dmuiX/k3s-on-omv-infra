@@ -4,6 +4,7 @@ require "minitest/autorun"
 require "open3"
 require "pathname"
 require "yaml"
+require "tempfile"
 
 # Explicit local chart cache only: never resolve a repository or contact a cluster.
 class MeshRenderTest < Minitest::Test
@@ -11,7 +12,7 @@ class MeshRenderTest < Minitest::Test
   INFRA = WORKSPACE / "k3s-on-omv-infra"
   LIVE = WORKSPACE / "k3s-on-omv-live"
 
-  def render(chart, release, namespace, *values)
+  def render(chart, release, namespace)
     cache = ENV["CHART_CACHE_DIR"]
     skip "Set CHART_CACHE_DIR to extracted official charts for offline render checks" unless cache
     path = Pathname(cache) / chart
@@ -19,16 +20,22 @@ class MeshRenderTest < Minitest::Test
     metadata = YAML.load_file(path / "Chart.yaml")
     assert_equal "1.31.2", metadata["version"]
     command = ["helm", "template", release, path.to_s, "--namespace", namespace, "--skip-tests"]
-    values.each { |value| command.concat(["--values", value.to_s]) }
-    output, error, status = Open3.capture3(*command)
-    assert status.success?, error
-    YAML.load_stream(output).compact
+    application = YAML.load_file(INFRA / "01-bootstrap/istio/app.yml")
+    source = application.fetch("spec").fetch("sources").find { |item| item["chart"] == chart }
+    Tempfile.create(["istio-inline-values", ".yaml"]) do |values|
+      values.write(YAML.dump(source.fetch("helm").fetch("valuesObject")))
+      values.flush
+      command.concat(["--values", values.path])
+      output, error, status = Open3.capture3(*command)
+      assert status.success?, error
+      YAML.load_stream(output).compact
+    end
   end
 
   def test_base_and_istiod
-    base = render("base", "istio-base", "istio-system", INFRA / "01-bootstrap/istio-ambient/base-values.yml")
+    base = render("base", "istio-base", "istio-system")
     assert base.any? { |document| document["kind"] == "CustomResourceDefinition" }
-    istiod = render("istiod", "istio-istiod", "istio-system", INFRA / "01-bootstrap/istio-ambient/istiod-values.yml")
+    istiod = render("istiod", "istio-istiod", "istio-system")
     deployment = istiod.find { |document| document["kind"] == "Deployment" }
     assert_equal "registry.istio.io/release/pilot:1.31.2-distroless", deployment.dig("spec", "template", "spec", "containers", 0, "image")
     [base, istiod].each do |documents|
@@ -38,8 +45,8 @@ class MeshRenderTest < Minitest::Test
   end
 
   def test_cni_and_ztunnel
-    cni = render("cni", "istio-cni", "istio-system", INFRA / "01-bootstrap/istio-ambient/cni-values.yml")
-    ztunnel = render("ztunnel", "ztunnel", "istio-system", INFRA / "01-bootstrap/istio-ambient/ztunnel-values.yml")
+    cni = render("cni", "istio-cni", "istio-system")
+    ztunnel = render("ztunnel", "ztunnel", "istio-system")
     cni_pod = cni.find { |document| document["kind"] == "DaemonSet" }.dig("spec", "template", "spec")
     paths = cni_pod.fetch("volumes").map { |volume| volume.dig("hostPath", "path") }.compact
     assert_includes paths, "/var/lib/rancher/k3s/data/cni"

@@ -32,7 +32,8 @@ class ApplicationHealthTest < Minitest::Test
 
   def assess(app)
     Dir.mktmpdir("argocd-health-test") do |dir|
-      values = YAML.load_file(File.join(ROOT, "01-bootstrap/argocd-config/values.yml"))
+      definition = YAML.load_file(File.join(ROOT, "01-bootstrap/argocd-config/app.yml"))
+      values = definition.fetch("spec").fetch("sources").find { |source| source["chart"] == "argo-cd" }.fetch("helm").fetch("valuesObject")
       cm = {"apiVersion" => "v1", "kind" => "ConfigMap", "metadata" => {"name" => "argocd-cm"},
             "data" => {KEY => values.fetch("configs").fetch("cm").fetch(KEY)}}
       cm_path = File.join(dir, "cm.yaml")

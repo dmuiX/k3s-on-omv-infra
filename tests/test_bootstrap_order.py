@@ -10,7 +10,7 @@ LIVE = 'https://github.com/dmuiX/k3s-on-omv-live.git'
 
 
 def applications():
-    return {d['metadata']['name']: d for p in ROOT.glob('*/*/app.yml')
+    return {d['metadata']['name']: d for p in ROOT.glob('**/app.yml')
             for d in yaml.safe_load_all(p.read_text()) if d}
 
 
@@ -22,7 +22,7 @@ class BootstrapOrderTest(unittest.TestCase):
                     list(yaml.safe_load_all(p.read_text()))
 
     def test_radar_identity_precedes_clients_and_attended_membership(self):
-        docs = list(yaml.safe_load_all((ROOT / '06-platform/radar/resources/identity.yaml').read_text()))
+        docs = list(yaml.safe_load_all((ROOT / '06-platform/radar-config/resources/identity.yaml').read_text()))
         self.assertEqual({d['kind'] for d in docs}, {'Group', 'OidcKey', 'OidcScope'})
         for doc in docs:
             self.assertEqual(doc['metadata']['annotations']['argocd.argoproj.io/sync-wave'], '-1')
@@ -30,7 +30,7 @@ class BootstrapOrderTest(unittest.TestCase):
         group = next(d for d in docs if d['kind'] == 'Group')
         self.assertTrue(group['spec']['forProvider']['externalMemberEntityIds'])
         self.assertFalse((ROOT.parent / 'k3s-on-omv-apps/radar/resources/oidc.yaml').exists())
-        consumers = list(yaml.safe_load_all((ROOT / '06-platform/longhorn/resources/oidc-proxy.yaml').read_text()))
+        consumers = list(yaml.safe_load_all((ROOT / '06-platform/longhorn-config/resources/oidc-proxy.yaml').read_text()))
         deployment = next(d for d in consumers if d['kind'] == 'Deployment')
         self.assertEqual(deployment['metadata']['annotations']['argocd.argoproj.io/sync-wave'], '20')
 
@@ -41,8 +41,8 @@ class BootstrapOrderTest(unittest.TestCase):
         docs = [d for p in (ROOT / core[0]['path']).glob('*.yaml')
                 for d in yaml.safe_load_all(p.read_text()) if d]
         self.assertEqual({d['kind'] for d in docs}, {'Mount', 'Backend'})
-        for name, folder, live_path in [('longhorn-config', 'longhorn', 'infra/longhorn'),
-                                         ('radar-config', 'radar', 'apps/radar')]:
+        for name, folder, live_path in [('longhorn-config', 'longhorn-config', 'infra/longhorn'),
+                                         ('radar-config', 'radar-config', 'apps/radar')]:
             app = apps[name]
             sources = [s.get('path') for s in app['spec']['sources']]
             self.assertIn('06-platform/' + folder + '/resources', sources)
@@ -52,7 +52,7 @@ class BootstrapOrderTest(unittest.TestCase):
         app = apps['k3s-postgres']
         self.assertEqual(app['metadata']['annotations']['argocd.argoproj.io/sync-wave'], '7')
         self.assertEqual(app['spec']['destination']['namespace'], 'cloudnative-pg')
-        cluster = next(d for d in yaml.safe_load_all((ROOT / '07-data/k3s-postgres/resources/cluster.yaml').read_text())
+        cluster = next(d for d in yaml.safe_load_all((ROOT / '07-k3s-postgres/resources/cluster.yaml').read_text())
                        if d['kind'] == 'Cluster')
         self.assertEqual(cluster['metadata'], {'name': 'k3s-postgres', 'namespace': 'cloudnative-pg'})
         for source in app['spec']['sources']:
@@ -73,13 +73,13 @@ class BootstrapOrderTest(unittest.TestCase):
                                                 'backup-validation', f'{name}: {path}')
 
     def test_validation_kustomization_includes_its_openbao_access(self):
-        directory = ROOT / '08-observability/backup-validation/resources'
+        directory = ROOT / '08-backup-validation/resources'
         config = yaml.safe_load((directory / 'kustomization.yaml').read_text())
         self.assertIn('openbao-access.yaml', config['resources'])
         self.assertIn('postgresql-retention-access.yaml', config['resources'])
 
     def test_openbao_ambient_transport_preserves_peer_scope(self):
-        docs = list(yaml.safe_load_all((ROOT / '04-core/openbao/resources/security.yaml').read_text()))
+        docs = list(yaml.safe_load_all((ROOT / '04-openbao/resources/security.yaml').read_text()))
         policy = next(d['spec'] for d in docs if d['metadata']['name'] == 'allow-openbao-raft-and-clients')
         hbone = [r for r in policy['ingress'] if any(p['port'] == 15008 for p in r['ports'])]
         self.assertEqual(len(hbone), 1)
@@ -93,23 +93,33 @@ class BootstrapOrderTest(unittest.TestCase):
         self.assertEqual({p['port'] for r in snapshot['egress'] if r.get('to') == peers for p in r['ports']},
                          {8200, 15008})
 
+    def test_backup_validation_precedes_observability(self):
+        apps = applications()
+        self.assertEqual(apps['backup-validation']['metadata']['annotations']['argocd.argoproj.io/sync-wave'], '8')
+        self.assertEqual(apps['kube-prometheus-stack']['metadata']['annotations']['argocd.argoproj.io/sync-wave'], '9')
+        self.assertEqual(apps['backup-validation']['spec']['sources'][0]['path'],
+                         '08-backup-validation/resources')
+        self.assertTrue(any(source.get('path') == '09-kube-prometheus-stack/resources'
+                            for source in apps['kube-prometheus-stack']['spec']['sources']))
+        self.assertIsInstance(apps['kube-prometheus-stack']['spec']['sources'][0]['helm']['valuesObject'], dict)
+
     def test_early_dependencies_are_strictly_ordered(self):
         apps = applications()
-        names = ['cert-manager', 'tls-certificates', 'istio-core', 'istio-ambient', 'argocd-config']
+        names = ['cert-manager', 'letsencrypt-dns01-issuer', 'istio-core', 'istio-ambient', 'argocd-config']
         waves = [int(apps[n]['metadata']['annotations']['argocd.argoproj.io/sync-wave']) for n in names]
         self.assertEqual(waves[:4], [-5, -4, -3, -2])
         self.assertTrue(all(a < b for a, b in zip(waves, waves[1:])))
         self.assertEqual(int(apps['openbao']['metadata']['annotations']['argocd.argoproj.io/sync-wave']), 4)
-        self.assertEqual(int(apps['letsencrypt-dns01']['metadata']['annotations']['argocd.argoproj.io/sync-wave']), 6)
+        self.assertEqual(int(apps['letsencrypt-dns01-credentials']['metadata']['annotations']['argocd.argoproj.io/sync-wave']), 6)
 
     def test_certificate_phase_has_no_openbao_or_istio_resource_dependency(self):
         apps = applications()
-        early = apps['tls-certificates']['spec']['sources']
+        early = apps['letsencrypt-dns01-issuer']['spec']['sources']
         self.assertEqual([(s['repoURL'], s.get('path')) for s in early], [
-            (INFRA, '00-bootstrap/tls-certificates/resources'), (LIVE, 'infra/letsencrypt-dns01')])
-        late = apps['letsencrypt-dns01']['spec']['sources']
-        self.assertEqual(late, [{'repoURL': INFRA, 'targetRevision': 'main', 'path': '06-platform/letsencrypt-dns01/resources'}])
-        docs = list(yaml.safe_load_all((ROOT / '06-platform/letsencrypt-dns01/resources/identity.yaml').read_text()))
+            (INFRA, '00-letsencrypt-dns01-issuer/resources'), (LIVE, 'infra/letsencrypt-dns01')])
+        late = apps['letsencrypt-dns01-credentials']['spec']['sources']
+        self.assertEqual(late, [{'repoURL': INFRA, 'targetRevision': 'main', 'path': '06-platform/letsencrypt-dns01-credentials/resources'}])
+        docs = list(yaml.safe_load_all((ROOT / '06-platform/letsencrypt-dns01-credentials/resources/identity.yaml').read_text()))
         secret = next(d for d in docs if d['kind'] == 'VaultStaticSecret')
         self.assertEqual(secret['spec']['destination'], {'name': 'cloudflare-dns01', 'create': False})
 
@@ -119,7 +129,16 @@ class BootstrapOrderTest(unittest.TestCase):
             for d in yaml.safe_load_all(p.read_text()):
                 if isinstance(d, dict) and d.get('kind') == 'Namespace' and d.get('metadata', {}).get('name') == 'istio-gateway':
                     owners.append(str(p.relative_to(ROOT)))
-        self.assertEqual(owners, ['00-bootstrap/tls-certificates/resources/namespace.yaml'])
+        self.assertEqual(owners, ['00-letsencrypt-dns01-issuer/resources/namespace.yaml'])
+
+    def test_root_selects_every_application_once_at_both_directory_depths(self):
+        root = yaml.safe_load((ROOT / 'kustomization.yaml').read_text())
+        paths = sorted(ROOT.glob('**/app.yml'))
+        names = [yaml.safe_load(p.read_text())['metadata']['name'] for p in paths]
+        self.assertEqual(len(names), len(set(names)), 'Argo Application names must be unique')
+        self.assertTrue(any(len(p.relative_to(ROOT).parts) == 2 for p in paths))
+        self.assertTrue(any(len(p.relative_to(ROOT).parts) == 3 for p in paths))
+        self.assertEqual(sorted(root['resources']), sorted(str(path.relative_to(ROOT)) for path in paths))
 
     def test_application_schema_options_and_infra_paths(self):
         for name, app in applications().items():

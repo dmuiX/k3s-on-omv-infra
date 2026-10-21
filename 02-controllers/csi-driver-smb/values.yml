@@ -1,8 +1,0 @@
-# Exact keys verified against the official csi-driver-smb 1.20.3 chart.
-controller:
-  replicas: 1
-linux:
-  enabled: true
-  kubelet: /var/lib/kubelet
-windows:
-  enabled: false

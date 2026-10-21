@@ -4,26 +4,31 @@ metadata:
   name: csi-driver-smb
   namespace: argocd
   annotations:
-    argocd.argoproj.io/sync-wave: "2"
+    argocd.argoproj.io/sync-wave: '2'
 spec:
   project: default
   destination:
     name: in-cluster
     namespace: kube-system
   sources:
-    - repoURL: https://raw.githubusercontent.com/kubernetes-csi/csi-driver-smb/master/charts
-      chart: csi-driver-smb
-      targetRevision: 1.20.3
-      helm:
-        valueFiles:
-          - $infra/02-controllers/csi-driver-smb/values.yml
-    - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
-      targetRevision: main
-      ref: infra 
-      path: 02-controllers/csi-driver-smb/resources
-    - repoURL: 'https://github.com/dmuiX/k3s-on-omv-live.git'
-      targetRevision: main
-      path: infra/csi-driver-smb
+  - repoURL: https://raw.githubusercontent.com/kubernetes-csi/csi-driver-smb/master/charts
+    chart: csi-driver-smb
+    targetRevision: 1.20.3
+    helm:
+      valuesObject:
+        controller:
+          replicas: 1
+        linux:
+          enabled: true
+          kubelet: /var/lib/kubelet
+        windows:
+          enabled: false
+  - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
+    targetRevision: main
+    path: 02-controllers/csi-driver-smb/resources
+  - repoURL: https://github.com/dmuiX/k3s-on-omv-live.git
+    targetRevision: main
+    path: infra/csi-driver-smb
   syncPolicy:
     automated:
       enabled: true
@@ -31,6 +36,6 @@ spec:
       selfHeal: true
       allowEmpty: false
     syncOptions:
-      - ServerSideApply=true
-      - PruneLast=true
-      - SkipDryRunOnMissingResource=true
+    - ServerSideApply=true
+    - PruneLast=true
+    - SkipDryRunOnMissingResource=true

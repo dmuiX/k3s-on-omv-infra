@@ -14,7 +14,7 @@ EXPECTED_INFRA = {
   "argocd-config" => 1,
   "prometheus-operator-crds" => 1,
   "cert-manager" => -5,
-  "tls-certificates" => -4,
+  "letsencrypt-dns01-issuer" => -4,
   "csi-driver-smb" => 2,
   "k8up" => 2,
   "longhorn" => 2,
@@ -32,9 +32,9 @@ EXPECTED_INFRA = {
   "radar-config" => 6,
   "platform-credentials" => 6,
   "openbao-backups" => 6,
-  "letsencrypt-dns01" => 6,
+  "letsencrypt-dns01-credentials" => 6,
   "k3s-postgres" => 7,
-  "kube-prometheus-stack" => 8,
+  "kube-prometheus-stack" => 9,
   "backup-validation" => 8
 }.freeze
 
@@ -58,6 +58,23 @@ module ContractHelpers
 
   def application_files(root)
     root.glob("**/app.yml").sort
+  end
+
+  def chart_values(path, chart = nil)
+    path = INFRA / path unless path.is_a?(Pathname)
+    sources = application(path).dig("spec", "sources")
+    source = chart ? sources.find { |item| item["chart"] == chart } : sources.find { |item| item["chart"] }
+    source.fetch("helm").fetch("valuesObject")
+  end
+
+  def private_value(name, *keys)
+    operations = YAML.load_file(LIVE / "infra/applications/patches/#{name}.yaml")
+    operations.each do |operation|
+      prefix = operation.fetch("path").split("/").drop(6).map { |part| part.gsub("~1", "/").gsub("~0", "~") }
+      next unless keys.take(prefix.length) == prefix
+      return keys.drop(prefix.length).reduce(operation.fetch("value")) { |value, key| value.fetch(key) }
+    end
+    flunk("Missing private override #{name}: #{keys.join('.')}")
   end
 
   def walk(value, key = nil, &block)
@@ -98,12 +115,15 @@ class RepositoryContractTest < Minitest::Test
   def test_roots_select_only_their_children
     infra_root = application(INFRA / "infra.yml")
     apps_root = application(APPS / "apps.yml")
-    assert_equal "*/*/app.yml", infra_root.dig("spec", "source", "directory", "include")
+    assert_equal "https://github.com/dmuiX/k3s-on-omv-live.git", infra_root.dig("spec", "source", "repoURL")
+    assert_equal "infra/applications", infra_root.dig("spec", "source", "path")
+    assert_equal application_files(INFRA).map { |path| path.relative_path_from(INFRA).to_s }.sort,
+      YAML.load_file(INFRA / "kustomization.yaml").fetch("resources").sort
     assert_equal "*/app.yml", apps_root.dig("spec", "source", "directory", "include")
     assert_equal ["radar"], application_files(APPS).map { |path| application(path).dig("metadata", "name") }
     assert_empty LIVE.glob("**/app.yml")
     refute application_files(INFRA).any? { |path| application(path).dig("metadata", "name") == "radar" }
-    radar_prerequisites = application(INFRA / "06-platform/radar/app.yml")
+    radar_prerequisites = application(INFRA / "06-platform/radar-config/app.yml")
     refute radar_prerequisites.dig("spec", "sources").any? { |source| source.key?("chart") || source["repoURL"] == "https://github.com/dmuiX/k3s-on-omv-apps.git" }
   end
 
@@ -242,7 +262,7 @@ class PlatformContractTest < Minitest::Test
   include ContractHelpers
 
   def test_provider_vault_activates_exactly_the_specified_sixteen_types
-    document = yaml_documents(INFRA / "03-controllers/provider-vault/resources/provider.yaml")
+    document = yaml_documents(INFRA / "03-provider-vault/resources/provider.yaml")
       .find { |item| item["kind"] == "ManagedResourceActivationPolicy" }
     activated = document.dig("spec", "activate")
     assert_equal 16, activated.length
@@ -253,12 +273,12 @@ class PlatformContractTest < Minitest::Test
   end
 
   def test_provider_vault_runtime_uses_default_seccomp
-    runtime = yaml_documents(INFRA / "03-controllers/provider-vault/resources/provider.yaml").find { |doc| doc["kind"] == "DeploymentRuntimeConfig" }
+    runtime = yaml_documents(INFRA / "03-provider-vault/resources/provider.yaml").find { |doc| doc["kind"] == "DeploymentRuntimeConfig" }
     assert_equal "RuntimeDefault", runtime.dig("spec", "deploymentTemplate", "spec", "template", "spec", "securityContext", "seccompProfile", "type")
   end
 
   def test_provider_vault_resource_waves_are_minus_twenty_minus_ten_zero
-    documents = yaml_documents(INFRA / "03-controllers/provider-vault/resources/provider.yaml")
+    documents = yaml_documents(INFRA / "03-provider-vault/resources/provider.yaml")
     waves = documents.to_h { |document| [document["kind"], document.dig("metadata", "annotations", "argocd.argoproj.io/sync-wave")] }
     assert_equal "-20", waves["ManagedResourceActivationPolicy"]
     assert_equal "-10", waves["DeploymentRuntimeConfig"]
@@ -290,20 +310,20 @@ class PlatformContractTest < Minitest::Test
   end
 
   def test_longhorn_manager_and_system_components_tolerate_storage_pi
-    values = YAML.load_file(INFRA / "02-controllers/longhorn/values.yml")
+    values = chart_values("02-controllers/longhorn/app.yml")
     assert_equal "CriticalAddonsOnly=true:NoSchedule", values.dig("defaultSettings", "taintToleration")
     assert_includes values.dig("longhornManager", "tolerations") || [],
       {"key" => "CriticalAddonsOnly", "operator" => "Equal", "value" => "true", "effect" => "NoSchedule"}
   end
 
   def test_openbao_hcl_uses_newline_separated_attributes
-    config = YAML.load_file(INFRA / "04-core/openbao/values.yml").dig("server", "ha", "raft", "config")
+    config = chart_values("04-openbao/app.yml").dig("server", "ha", "raft", "config")
     refute_includes config, ";", "HCL attributes must be separated by newlines, not semicolons"
     assert_includes config, 'current_key = "file:///openbao/seal/key"'
   end
 
   def test_longhorn_has_one_storageclass_owner_and_canonical_replica_setting
-    values = YAML.load_file(INFRA / "02-controllers/longhorn/values.yml")
+    values = chart_values("02-controllers/longhorn/app.yml")
     assert_equal false, values.dig("persistence", "createStorageClass"),
       "The chart ConfigMap must not recreate the Git-owned encrypted StorageClass"
     assert_equal '{"v1":"3","v2":"3"}', values.dig("defaultSettings", "defaultReplicaCount"),
@@ -311,34 +331,34 @@ class PlatformContractTest < Minitest::Test
   end
 
   def test_openbao_uses_server_side_diff_for_api_defaults
-    app = application(INFRA / "04-core/openbao/app.yml")
+    app = application(INFRA / "04-openbao/app.yml")
     assert_equal "ServerSideDiff=true", app.dig("metadata", "annotations", "argocd.argoproj.io/compare-options")
   end
 
   def test_openbao_server_drops_all_capabilities
-    values = YAML.load_file(INFRA / "04-core/openbao/values.yml")
+    values = chart_values("04-openbao/app.yml")
     security = values.dig("server", "statefulSet", "securityContext", "container") || {}
     assert_equal false, security["allowPrivilegeEscalation"]
     assert_equal ["ALL"], security.dig("capabilities", "drop")
   end
 
   def test_ha_replica_and_storage_contracts_are_present
-    openbao = YAML.load_file(INFRA / "04-core/openbao/values.yml")
+    openbao = chart_values("04-openbao/app.yml")
     assert_equal 3, openbao.dig("server", "ha", "replicas")
     assert_equal "1Gi", openbao.dig("server", "dataStorage", "size")
     assert_equal "longhorn", openbao.dig("server", "dataStorage", "storageClass")
 
-    postgresql = yaml_documents(INFRA / "07-data/k3s-postgres/resources/cluster.yaml").find { |document| document["kind"] == "Cluster" }
+    postgresql = yaml_documents(INFRA / "07-k3s-postgres/resources/cluster.yaml").find { |document| document["kind"] == "Cluster" }
     assert_equal 3, postgresql.dig("spec", "instances")
     assert_equal "longhorn-local", postgresql.dig("spec", "storage", "storageClass")
     assert_equal "5Gi", postgresql.dig("spec", "storage", "size")
     assert_equal 1, postgresql.dig("spec", "postgresql", "synchronous", "number")
     assert_equal true, postgresql.dig("spec", "postgresql", "synchronous", "failoverQuorum")
     refute postgresql.key?("certificates")
-    refute_match(/serverTLSSecret|sslrootcert|verify-full/, (INFRA / "07-data/k3s-postgres/resources/cluster.yaml").read)
-    assert_includes (INFRA / "07-data/k3s-postgres/resources/network-policy.yaml").read, "mode: STRICT"
+    refute_match(/serverTLSSecret|sslrootcert|verify-full/, (INFRA / "07-k3s-postgres/resources/cluster.yaml").read)
+    assert_includes (INFRA / "07-k3s-postgres/resources/network-policy.yaml").read, "mode: STRICT"
 
-    monitoring = YAML.load_file(INFRA / "08-observability/kube-prometheus-stack/values.yml")
+    monitoring = chart_values("09-kube-prometheus-stack/app.yml")
     assert_equal 2, monitoring.dig("prometheus", "prometheusSpec", "replicas")
     assert_equal 2, monitoring.dig("alertmanager", "alertmanagerSpec", "replicas")
     assert_equal 2, monitoring.dig("grafana", "replicas")
@@ -365,7 +385,7 @@ class PlatformContractTest < Minitest::Test
   end
 
   def test_pi_tolerations_are_limited_to_approved_workloads
-    allowed = %w[longhorn openbao k3s-postgres istio-ambient kube-prometheus-stack]
+    allowed = %w[longhorn openbao k3s-postgres istio-ambient istio-gateway kube-prometheus-stack]
     offenders = []
     YAML_REPOSITORIES.each do |repository|
       yaml_files(repository).each do |path|
@@ -408,7 +428,7 @@ class PlatformContractTest < Minitest::Test
     assert_equal "istio-gateway", gateway.dig("metadata", "namespace")
     assert_equal "istio", gateway.dig("spec", "gatewayClassName")
     assert_equal({"group" => "", "kind" => "ConfigMap", "name" => "istio-gateway-options"}, gateway.dig("spec", "infrastructure", "parametersRef"))
-    options = yaml_documents(INFRA / "01-bootstrap/istio-ambient/resources/gateway-config.yaml").find { |document| document["kind"] == "ConfigMap" }
+    options = yaml_documents(INFRA / "01-bootstrap/istio-gateway/resources/gateway-config.yaml").find { |document| document["kind"] == "ConfigMap" }
     deployment = YAML.safe_load(options.dig("data", "deployment"))
     assert_equal 3, deployment.dig("spec", "replicas")
     pod = deployment.dig("spec", "template", "spec")
@@ -422,30 +442,31 @@ class PlatformContractTest < Minitest::Test
   end
 
   def test_official_mesh_chart_pins
-    core = application(INFRA / "01-bootstrap/istio-core/app.yml")
+    core = application(INFRA / "01-bootstrap/istio/app.yml")
     charts = core.dig("spec", "sources").select { |source| source["chart"] }
     assert_equal %w[base istiod cni ztunnel], charts.map { |source| source["chart"] }
     charts.each do |source|
       assert_equal "https://blob.istio.io/istio-release/charts", source["repoURL"]
       assert_equal "1.31.2", source["targetRevision"]
     end
-    assert_equal ["$infra/01-bootstrap/istio-ambient/istiod-values.yml"], charts[1].dig("helm", "valueFiles")
+    assert_equal "ambient", charts[1].dig("helm", "valuesObject", "profile")
+    refute charts.any? { |source| source.dig("helm", "valueFiles") }
     assert_equal %w[CreateNamespace=true ServerSideApply=true], core.dig("spec", "syncPolicy", "syncOptions")
-    assert_equal %w[CreateNamespace=true ServerSideApply=true], application(INFRA / "01-bootstrap/istio-ambient/app.yml").dig("spec", "syncPolicy", "syncOptions")
-    %w[istiod-values.yml cni-values.yml].each do |file|
-      assert_equal "ambient", YAML.load_file(INFRA / "01-bootstrap/istio-ambient/#{file}")["profile"]
+    assert_equal %w[CreateNamespace=true ServerSideApply=true], application(INFRA / "01-bootstrap/istio-gateway/app.yml").dig("spec", "syncPolicy", "syncOptions")
+    %w[istiod cni].each do |chart|
+      assert_equal "ambient", chart_values("01-bootstrap/istio/app.yml", chart)["profile"]
     end
-    assert_equal "k3s", YAML.load_file(INFRA / "01-bootstrap/istio-ambient/cni-values.yml").dig("global", "platform")
+    assert_equal "k3s", chart_values("01-bootstrap/istio/app.yml", "cni").dig("global", "platform")
   end
 
   def test_prometheus_snapshot_first_k8up_support_uses_reviewed_standard_library_tooling
-    refute (INFRA / "08-observability/fluent-bit").exist?
+    refute (INFRA / "09-fluent-bit").exist?
     refute (LIVE / "infra/fluent-bit-values.yml").exist?
-    assert_equal false, YAML.load_file(INFRA / "08-observability/kube-prometheus-stack/values.yml").dig("crds", "enabled")
+    assert_equal false, chart_values("09-kube-prometheus-stack/app.yml").dig("crds", "enabled")
 
-    monitoring = YAML.load_file(INFRA / "08-observability/kube-prometheus-stack/values.yml")
+    monitoring = chart_values("09-kube-prometheus-stack/app.yml")
     assert_equal true, monitoring.dig("prometheus", "prometheusSpec", "enableAdminAPI")
-    documents = yaml_documents(INFRA / "08-observability/kube-prometheus-stack/resources/prometheus-snapshot.yaml")
+    documents = yaml_documents(INFRA / "09-kube-prometheus-stack/resources/prometheus-snapshot.yaml")
     contract = documents.find { |document| document["kind"] == "ConfigMap" }
     pre_backup = documents.find { |document| document["kind"] == "PreBackupPod" }
     assert contract
@@ -465,9 +486,8 @@ class PlatformContractTest < Minitest::Test
   end
 
   def test_native_chart_routes_are_preferred_over_duplicate_live_manifests
-    monitoring = YAML.load_file(LIVE / "infra/kube-prometheus-stack-values.yml")
-    assert_equal true, monitoring.dig("grafana", "route", "main", "enabled")
-    assert_equal "HTTPRoute", monitoring.dig("grafana", "route", "main", "kind")
+    assert_equal true, private_value("kube-prometheus-stack", "grafana", "route", "main", "enabled")
+    assert_equal "HTTPRoute", private_value("kube-prometheus-stack", "grafana", "route", "main", "kind")
     refute (LIVE / "infra/kube-prometheus-stack/route.yaml").exist?
 
     radar = YAML.load_file(LIVE / "apps/radar-values.yml")
@@ -477,16 +497,16 @@ class PlatformContractTest < Minitest::Test
   end
 
   def test_alertmanager_and_longhorn_proxy_use_vso_and_pinned_proxy_image
-    alertmanager = (INFRA / "08-observability/kube-prometheus-stack/resources/alertmanager-email.yaml").read
+    alertmanager = (INFRA / "09-kube-prometheus-stack/resources/alertmanager-email.yaml").read
     assert_includes alertmanager, "path: monitoring/alertmanager-config"
     assert_includes alertmanager, "name: alertmanager-platform-config"
-    assert_equal "alertmanager-platform-config", YAML.load_file(INFRA / "08-observability/kube-prometheus-stack/values.yml").dig("alertmanager", "alertmanagerSpec", "configSecret")
-    proxy = (INFRA / "06-platform/longhorn/resources/oidc-proxy.yaml").read
+    assert_equal "alertmanager-platform-config", chart_values("09-kube-prometheus-stack/app.yml").dig("alertmanager", "alertmanagerSpec", "configSecret")
+    proxy = (INFRA / "06-platform/longhorn-config/resources/oidc-proxy.yaml").read
     assert_includes proxy, "quay.io/oauth2-proxy/oauth2-proxy:v7.15.5@sha256:8498b0d0ef0a7b29686414000a08aee467f02d0299c9ed1e006a8f33fc017916"
     assert_includes proxy, "upstream=http://longhorn-frontend.longhorn.svc:80"
     assert_includes proxy, "rolloutRestartTargets"
     refute_includes (INFRA / "02-controllers/longhorn/app.yml").read, "path: infra/longhorn"
-    assert_includes (INFRA / "06-platform/longhorn/app.yml").read, "path: infra/longhorn"
+    assert_includes (INFRA / "06-platform/longhorn-config/app.yml").read, "path: infra/longhorn"
     refute_includes (INFRA / "06-platform/openbao-config/app.yml").read, "infra/longhorn"
     route = yaml_documents(LIVE / "infra/longhorn/route.yaml").find { |document| document["kind"] == "HTTPRoute" }
     assert_equal "longhorn-oidc-proxy", route.dig("spec", "rules", 0, "backendRefs", 0, "name")
@@ -494,14 +514,14 @@ class PlatformContractTest < Minitest::Test
 
   def test_vso_transformations_fail_closed_on_missing_required_keys
     files = [
-      "06-platform/platform-credentials/resources/credentials.yaml",
+      "06-platform/backup-credentials/resources/credentials.yaml",
       "06-platform/openbao-backups/resources/snapshot.yaml",
-      "06-platform/longhorn/resources/oidc-proxy.yaml",
-      "07-data/k3s-postgres/resources/credentials.yaml",
-      "08-observability/backup-validation/resources/credentials.yaml",
-      "08-observability/kube-prometheus-stack/resources/alertmanager-email.yaml",
-      "08-observability/kube-prometheus-stack/resources/prometheus-k8up-credentials.yaml",
-      "08-observability/kube-prometheus-stack/resources/grafana.yaml"
+      "06-platform/longhorn-config/resources/oidc-proxy.yaml",
+      "07-k3s-postgres/resources/credentials.yaml",
+      "08-backup-validation/resources/credentials.yaml",
+      "09-kube-prometheus-stack/resources/alertmanager-email.yaml",
+      "09-kube-prometheus-stack/resources/prometheus-k8up-credentials.yaml",
+      "09-kube-prometheus-stack/resources/grafana.yaml"
     ]
     files.each do |relative|
       manifest = (INFRA / relative).read
@@ -525,7 +545,7 @@ class PlatformContractTest < Minitest::Test
     assert_equal "csi-driver-smb", source["chart"]
     assert_equal "1.20.3", source["targetRevision"]
     assert_includes application(INFRA / "02-controllers/csi-driver-smb/app.yml").dig("spec", "syncPolicy", "syncOptions"), "SkipDryRunOnMissingResource=true"
-    assert_equal false, YAML.load_file(INFRA / "02-controllers/csi-driver-smb/values.yml").dig("windows", "enabled")
+    assert_equal false, chart_values("02-controllers/csi-driver-smb/app.yml").dig("windows", "enabled")
 
     storage_class = YAML.load_file(LIVE / "infra/csi-driver-smb/storageclass.yaml")
     assert_equal "smb.csi.k8s.io", storage_class["provisioner"]
@@ -562,10 +582,10 @@ class PlatformContractTest < Minitest::Test
 
   def test_shared_r2_source_has_isolated_vso_identities_including_restore_validation
     credential_files = [
-      INFRA / "06-platform/platform-credentials/resources/credentials.yaml",
+      INFRA / "06-platform/backup-credentials/resources/credentials.yaml",
       INFRA / "06-platform/openbao-backups/resources/snapshot.yaml",
-      INFRA / "07-data/k3s-postgres/resources/credentials.yaml",
-      INFRA / "08-observability/backup-validation/resources/credentials.yaml"
+      INFRA / "07-k3s-postgres/resources/credentials.yaml",
+      INFRA / "08-backup-validation/resources/credentials.yaml"
     ]
     static_secrets = credential_files.flat_map { |path| yaml_documents(path) }
       .select { |document| document["kind"] == "VaultStaticSecret" && document.dig("spec", "path") == "platform/r2" }
@@ -587,28 +607,28 @@ class PlatformContractTest < Minitest::Test
     assert_equal %w[AWS_ACCESS_KEY_ID AWS_REGION AWS_SECRET_ACCESS_KEY S3_ENDPOINT], openbao_destination.dig("spec", "destination", "transformation", "templates").keys.sort
     snapshot = yaml_documents(INFRA / "06-platform/openbao-backups/resources/snapshot.yaml").find { |document| document["kind"] == "CronJob" }
     assert_equal "openbao-snapshot", snapshot.dig("spec", "jobTemplate", "spec", "template", "metadata", "labels", "app.kubernetes.io/name")
-    snapshot_egress = yaml_documents(INFRA / "04-core/openbao/resources/security.yaml")
+    snapshot_egress = yaml_documents(INFRA / "04-openbao/resources/security.yaml")
       .find { |document| document.dig("metadata", "name") == "allow-openbao-snapshot-egress" }
     assert snapshot_egress
     assert snapshot_egress.dig("spec", "egress").any? { |rule| Array(rule["ports"]).any? { |port| port["port"] == 443 } }
-    openbao_network = yaml_documents(INFRA / "04-core/openbao/resources/security.yaml")
+    openbao_network = yaml_documents(INFRA / "04-openbao/resources/security.yaml")
       .find { |document| document.dig("metadata", "name") == "allow-openbao-raft-and-clients" }
     assert_includes openbao_network.dig("spec", "ingress").to_s, "istio-gateway"
     assert openbao_network.dig("spec", "egress").any? { |rule| Array(rule["ports"]).any? { |port| port["port"] == 6443 } }
 
-    validation = (INFRA / "08-observability/backup-validation/resources").glob("*.yaml").map(&:read).join("\n")
+    validation = (INFRA / "08-backup-validation/resources").glob("*.yaml").map(&:read).join("\n")
     assert_includes validation, "path: platform/r2"
     assert_includes validation, "name: postgresql-validation-r2"
     refute_match(/backup-capacity/, validation)
-    refute (INFRA / "08-observability/backup-validation/resources/capacity.yaml").exist?
-    egress = yaml_documents(INFRA / "08-observability/backup-validation/resources/network-policy.yaml")
+    refute (INFRA / "08-backup-validation/resources/capacity.yaml").exist?
+    egress = yaml_documents(INFRA / "08-backup-validation/resources/network-policy.yaml")
       .find { |document| document.dig("metadata", "name") == "allow-backup-validation-egress" }
     assert egress.dig("spec", "egress").any? { |rule| !rule.key?("to") && Array(rule["ports"]).any? { |port| port["port"] == 443 } }
   end
 
   def test_restore_lease_and_no_direct_barman_s3_delete
-    retention = (INFRA / "07-data/k3s-postgres/resources/retention.yaml").read
-    role = yaml_documents(INFRA / "08-observability/backup-validation/resources/postgresql-retention-access.yaml").find { |document| document["kind"] == "Role" }
+    retention = (INFRA / "07-k3s-postgres/resources/retention.yaml").read
+    role = yaml_documents(INFRA / "08-backup-validation/resources/postgresql-retention-access.yaml").find { |document| document["kind"] == "Role" }
     rule = role.fetch("rules").find { |item| item.fetch("resources").include?("leases") }
     assert_equal ["postgresql-restore-status"], rule.fetch("resourceNames")
     assert_equal ["get"], rule.fetch("verbs")

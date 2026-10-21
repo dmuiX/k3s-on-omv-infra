@@ -24,8 +24,8 @@ import yaml
 INFRA = Path(__file__).resolve().parents[1]
 LIVE = INFRA.parent / 'k3s-on-omv-live'
 APPS = INFRA.parent / 'k3s-on-omv-apps'
-OWNERS = {'longhorn': '06-platform/longhorn', 'radar': '06-platform/radar',
-          'k3s-postgres': '07-data/k3s-postgres'}
+OWNERS = {'longhorn': '06-platform/longhorn-config', 'radar': '06-platform/radar-config',
+          'k3s-postgres': '07-k3s-postgres'}
 DOCUMENTS = {name: list(yaml.safe_load_all((INFRA / directory / 'resources/provision-credentials.yaml').read_text()))
              for name, directory in OWNERS.items()}
 MANIFEST = INFRA / 'adapters/credential-custody/resources.yaml'
@@ -75,7 +75,7 @@ class ServiceCredentialContracts(unittest.TestCase):
 
     def test_sql_blocks_are_json_wrapped_for_the_native_plugin_parser(self):
         for path in [APPS / 'radar/resources/postgres-access.yaml',
-                     INFRA / '08-observability/kube-prometheus-stack/resources/grafana.yaml']:
+                     INFRA / '09-kube-prometheus-stack/resources/grafana.yaml']:
             role = next(d for d in yaml.safe_load_all(path.read_text())
                         if d and d['kind'] == 'SecretBackendStaticRole')
             statement, = role['spec']['forProvider']['rotationStatements']
@@ -201,7 +201,7 @@ class ServiceCredentialOpenBao(unittest.TestCase):
         # An entity-backed test token exercises authorization, not a root-token shortcut.
         self.api('auth/userpass/users/operator', {'password': 'disposable-oidc-test-only'})
         human = self.api('auth/userpass/login/operator', {'password': 'disposable-oidc-test-only'})['auth']['client_token']
-        files = [INFRA / '06-platform/radar/resources/identity.yaml',
+        files = [INFRA / '06-platform/radar-config/resources/identity.yaml',
                  LIVE / 'infra/longhorn/oidc.yaml']
         for path in files:
             for resource in yaml.safe_load_all(path.read_text()):

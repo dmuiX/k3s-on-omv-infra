@@ -1,0 +1,28 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: istio-ambient
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  project: default
+  destination:
+    name: in-cluster
+    namespace: istio-system
+  sources:
+    - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
+      targetRevision: main
+      path: 01-bootstrap/istio-gateway/resources
+    - repoURL: https://github.com/dmuiX/k3s-on-omv-live.git
+      targetRevision: main
+      path: infra/istio-ambient
+  syncPolicy:
+    automated:
+      enabled: true
+      prune: false
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true

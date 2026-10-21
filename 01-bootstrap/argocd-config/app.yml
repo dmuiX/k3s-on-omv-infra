@@ -4,28 +4,181 @@ metadata:
   name: argocd-config
   namespace: argocd
   annotations:
-    argocd.argoproj.io/sync-wave: "1"
+    argocd.argoproj.io/sync-wave: '1'
 spec:
   project: default
   destination:
     name: in-cluster
     namespace: argocd
   sources:
-    - repoURL: https://argoproj.github.io/argo-helm
-      chart: argo-cd
-      targetRevision: 10.10.3
-      helm:
-        releaseName: argocd
-        valueFiles:
-          - $infra/01-bootstrap/argocd-config/values.yml
-          - $live/infra/argocd-config-values.yml
-    - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
-      targetRevision: main
-      ref: infra
-    - repoURL: https://github.com/dmuiX/k3s-on-omv-live.git
-      targetRevision: main
-      path: infra/argocd-config
-      ref: live
+  - repoURL: https://argoproj.github.io/argo-helm
+    chart: argo-cd
+    targetRevision: 10.10.3
+    helm:
+      releaseName: argocd
+      valuesObject:
+        configs:
+          cm:
+            accounts.radar: apiKey
+            accounts.radar.enabled: 'true'
+            resource.customizations.health.argoproj.io_Application: |
+              -- Keep health-gated waves, but permit drift after a full sync of the current inputs.
+              -- Argo Application status fields: https://argo-cd.readthedocs.io/en/stable/operator-manual/health/
+              local hs = {status = "Progressing", message = "Waiting for current child rollout and health"}
+              local function equal(a, b)
+                if type(a) ~= type(b) then return false end
+                if type(a) ~= "table" then return a == b end
+                for k, v in pairs(a) do
+                  if not equal(v, b[k]) then return false end
+                end
+                for k, _ in pairs(b) do
+                  if a[k] == nil then return false end
+                end
+                return true
+              end
+              local status = obj.status
+              if status == nil then return hs end
+              local op = status.operationState
+              if op ~= nil and (op.phase == "Failed" or op.phase == "Error") then
+                return {status = "Degraded", message = op.message or "Child sync failed"}
+              end
+              for _, condition in ipairs(status.conditions or {}) do
+                if condition.type == "ComparisonError" or condition.type == "InvalidSpecError" or condition.type == "SyncError" then
+                  return {status = "Degraded", message = condition.message or condition.type}
+                end
+              end
+              if obj.operation ~= nil or op == nil or op.phase ~= "Succeeded" then return hs end
+              local sync = status.sync
+              local spec = obj.spec or {}
+              if sync == nil or (sync.status ~= "Synced" and sync.status ~= "OutOfSync") then return hs end
+              local compared = sync.comparedTo or {}
+              local multi = spec.sources ~= nil and #spec.sources > 0
+              if not equal(spec.destination, compared.destination) then return hs end
+              if multi then
+                if not equal(spec.sources, compared.sources) then return hs end
+              elseif not equal(spec.source, compared.source) then return hs end
+              if sync.status == "OutOfSync" then
+                local result = op.syncResult or {}
+                local request = (op.operation or {}).sync
+                -- Selective syncs and dry runs cannot prove a full deployment of these inputs.
+                if request == nil or request.dryRun == true or (request.resources ~= nil and #request.resources > 0) then return hs end
+                if multi then
+                  if sync.revisions == nil or #sync.revisions ~= #spec.sources then return hs end
+                  for _, revision in ipairs(sync.revisions) do
+                    if revision == "" then return hs end
+                  end
+                  if not equal(sync.revisions, result.revisions) or not equal(spec.sources, result.sources) then return hs end
+                else
+                  if sync.revision == nil or sync.revision == "" or sync.revision ~= result.revision then return hs end
+                  if not equal(spec.source, result.source) then return hs end
+                end
+              end
+              if status.health ~= nil then
+                hs.status = status.health.status or "Progressing"
+                hs.message = status.health.message or "Child rollout evaluated; resource drift remains visible on the child"
+              end
+              return hs
+          rbac:
+            policy.csv: |
+              p, role:radar, applications, get, */*, allow
+              p, role:radar, projects, get, *, allow
+              g, radar, role:radar
+          params:
+            server.insecure: 'false'
+        controller:
+          containerSecurityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            seccompProfile:
+              type: RuntimeDefault
+            capabilities:
+              drop:
+              - ALL
+          resources:
+            requests:
+              cpu: 100m
+              memory: 512Mi
+            limits:
+              cpu: 500m
+              memory: 2Gi
+        repoServer:
+          containerSecurityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            seccompProfile:
+              type: RuntimeDefault
+            capabilities:
+              drop:
+              - ALL
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+        server:
+          containerSecurityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            seccompProfile:
+              type: RuntimeDefault
+            capabilities:
+              drop:
+              - ALL
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+        applicationSet:
+          containerSecurityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            seccompProfile:
+              type: RuntimeDefault
+            capabilities:
+              drop:
+              - ALL
+        notifications:
+          containerSecurityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            seccompProfile:
+              type: RuntimeDefault
+            capabilities:
+              drop:
+              - ALL
+        dex:
+          containerSecurityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            seccompProfile:
+              type: RuntimeDefault
+            capabilities:
+              drop:
+              - ALL
+        redis:
+          containerSecurityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            seccompProfile:
+              type: RuntimeDefault
+            capabilities:
+              drop:
+              - ALL
+  - repoURL: https://github.com/dmuiX/k3s-on-omv-live.git
+    targetRevision: main
+    path: infra/argocd-config
   syncPolicy:
     automated:
       enabled: true
@@ -33,4 +186,4 @@ spec:
       selfHeal: true
       allowEmpty: false
     syncOptions:
-      - ServerSideApply=true
+    - ServerSideApply=true

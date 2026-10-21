@@ -4,29 +4,53 @@ metadata:
   name: longhorn
   namespace: argocd
   annotations:
-    argocd.argoproj.io/sync-wave: "2"
+    argocd.argoproj.io/sync-wave: '2'
 spec:
   project: default
   destination:
     name: in-cluster
     namespace: longhorn
   sources:
-    - repoURL: https://charts.longhorn.io
-      chart: longhorn
-      targetRevision: 1.13.0
-      helm:
-        valueFiles:
-          - $infra/02-controllers/longhorn/values.yml
-          - $live/infra/longhorn-values.yml
-    - repoURL: 'https://github.com/dmuiX/k3s-on-omv-infra.git'
-      targetRevision: main
-      ref: infra
-    - repoURL: 'https://github.com/dmuiX/k3s-on-omv-live.git'
-      targetRevision: main
-      ref: live
-    - repoURL: 'https://github.com/dmuiX/k3s-on-omv-infra.git'
-      targetRevision: main
-      path: 02-controllers/longhorn/resources
+  - repoURL: https://charts.longhorn.io
+    chart: longhorn
+    targetRevision: 1.13.0
+    helm:
+      valuesObject:
+        defaultSettings:
+          defaultReplicaCount: '{"v1":"3","v2":"3"}'
+          defaultDataLocality: disabled
+          storageOverProvisioningPercentage: 100
+          replicaAutoBalance: best-effort
+          taintToleration: CriticalAddonsOnly=true:NoSchedule
+        persistence:
+          createStorageClass: false
+          defaultClass: false
+          reclaimPolicy: Retain
+          defaultFsType: ext4
+        longhornUI:
+          replicas: 2
+        longhornManager:
+          tolerations:
+          - key: CriticalAddonsOnly
+            operator: Equal
+            value: 'true'
+            effect: NoSchedule
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              memory: 1Gi
+        preUpgradeChecker:
+          jobEnabled: false
+        csi:
+          attacherReplicaCount: 3
+          provisionerReplicaCount: 3
+          resizerReplicaCount: 3
+          snapshotterReplicaCount: 3
+  - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
+    targetRevision: main
+    path: 02-controllers/longhorn/resources
   syncPolicy:
     automated:
       enabled: true
@@ -34,6 +58,6 @@ spec:
       selfHeal: true
       allowEmpty: false
     syncOptions:
-      - CreateNamespace=true
-      - ServerSideApply=true
-      - RespectIgnoreDifferences=true
+    - CreateNamespace=true
+    - ServerSideApply=true
+    - RespectIgnoreDifferences=true

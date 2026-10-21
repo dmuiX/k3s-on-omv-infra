@@ -4,25 +4,51 @@ metadata:
   name: cert-manager
   namespace: argocd
   annotations:
-    argocd.argoproj.io/sync-wave: "-5"
+    argocd.argoproj.io/sync-wave: '-5'
 spec:
   project: default
   destination:
     name: in-cluster
     namespace: cert-manager
   sources:
-    - repoURL: https://charts.jetstack.io
-      chart: cert-manager
-      targetRevision: v1.21.2
-      helm:
-        valueFiles:
-          - $infra/02-controllers/cert-manager/values.yml
-    - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
-      targetRevision: main
-      ref: infra
-    - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
-      targetRevision: main
-      path: 02-controllers/cert-manager/resources
+  - repoURL: https://charts.jetstack.io
+    chart: cert-manager
+    targetRevision: v1.21.2
+    helm:
+      valuesObject:
+        crds:
+          enabled: true
+        config:
+          gatewayAPI:
+            enabled: true
+        dns01RecursiveNameservers: 1.1.1.1:53,1.0.0.1:53
+        dns01RecursiveNameserversOnly: true
+        podAnnotations:
+          ambient.istio.io/dns-capture: 'false'
+        replicaCount: 2
+        podDisruptionBudget:
+          enabled: true
+          minAvailable: 1
+        webhook:
+          replicaCount: 2
+          podDisruptionBudget:
+            enabled: true
+            minAvailable: 1
+        cainjector:
+          replicaCount: 2
+          podDisruptionBudget:
+            enabled: true
+            minAvailable: 1
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 300m
+            memory: 256Mi
+  - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
+    targetRevision: main
+    path: 02-controllers/cert-manager/resources
   syncPolicy:
     automated:
       enabled: true
@@ -30,5 +56,5 @@ spec:
       selfHeal: true
       allowEmpty: false
     syncOptions:
-      - CreateNamespace=true
-      - ServerSideApply=true
+    - CreateNamespace=true
+    - ServerSideApply=true

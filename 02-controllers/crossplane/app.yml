@@ -4,25 +4,47 @@ metadata:
   name: crossplane
   namespace: argocd
   annotations:
-    argocd.argoproj.io/sync-wave: "2"
+    argocd.argoproj.io/sync-wave: '2'
 spec:
   project: default
   destination:
     name: in-cluster
     namespace: crossplane-system
   sources:
-    - repoURL: https://charts.crossplane.io/stable
-      chart: crossplane
-      targetRevision: 2.4.2
-      helm:
-        valueFiles:
-          - $infra/02-controllers/crossplane/values.yml
-    - repoURL: 'https://github.com/dmuiX/k3s-on-omv-infra.git'
-      targetRevision: main
-      ref: infra
-    - repoURL: 'https://github.com/dmuiX/k3s-on-omv-infra.git'
-      targetRevision: main
-      path: 02-controllers/crossplane/resources
+  - repoURL: https://charts.crossplane.io/stable
+    chart: crossplane
+    targetRevision: 2.4.2
+    helm:
+      valuesObject:
+        replicas: 1
+        resourcesCrossplane:
+          requests:
+            cpu: 100m
+            memory: 256Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+        podSecurityContextCrossplane:
+          runAsNonRoot: true
+          seccompProfile:
+            type: RuntimeDefault
+        podSecurityContextRBACManager:
+          runAsNonRoot: true
+          seccompProfile:
+            type: RuntimeDefault
+        securityContextCrossplane:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+        securityContextRBACManager:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+  - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
+    targetRevision: main
+    path: 02-controllers/crossplane/resources
   syncPolicy:
     automated:
       enabled: true
@@ -30,5 +52,5 @@ spec:
       selfHeal: true
       allowEmpty: false
     syncOptions:
-      - CreateNamespace=true
-      - ServerSideApply=true
+    - CreateNamespace=true
+    - ServerSideApply=true

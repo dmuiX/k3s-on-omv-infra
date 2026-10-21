@@ -1,0 +1,134 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kube-prometheus-stack
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: '9'
+spec:
+  project: default
+  destination:
+    name: in-cluster
+    namespace: kube-prometheus-stack
+  sources:
+  - repoURL: https://prometheus-community.github.io/helm-charts
+    chart: kube-prometheus-stack
+    targetRevision: 92.10.1
+    helm:
+      valuesObject:
+        crds:
+          enabled: false
+        prometheus:
+          prometheusSpec:
+            replicas: 2
+            enableAdminAPI: true
+            retention: 15d
+            retentionSize: 18GB
+            nodeSelector:
+              monitoring: 'true'
+            podAntiAffinity: hard
+            serviceMonitorSelectorNilUsesHelmValues: false
+            ruleSelectorNilUsesHelmValues: false
+            storageSpec:
+              volumeClaimTemplate:
+                spec:
+                  storageClassName: longhorn-monitoring
+                  accessModes:
+                  - ReadWriteOnce
+                  resources:
+                    requests:
+                      storage: 20Gi
+            resources:
+              requests:
+                cpu: 250m
+                memory: 1Gi
+              limits:
+                cpu: '1'
+                memory: 2Gi
+        alertmanager:
+          alertmanagerSpec:
+            replicas: 2
+            nodeSelector:
+              monitoring: 'true'
+            podAntiAffinity: hard
+            configSecret: alertmanager-platform-config
+            storage:
+              volumeClaimTemplate:
+                spec:
+                  storageClassName: longhorn-monitoring
+                  accessModes:
+                  - ReadWriteOnce
+                  resources:
+                    requests:
+                      storage: 1Gi
+        grafana:
+          replicas: 2
+          nodeSelector:
+            monitoring: 'true'
+          persistence:
+            enabled: false
+          podDisruptionBudget:
+            minAvailable: 1
+          affinity:
+            podAntiAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+              - labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: grafana
+                topologyKey: kubernetes.io/hostname
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+        kubeApiServer:
+          serviceMonitor:
+            metricRelabelings:
+            - sourceLabels:
+              - __name__
+              regex: (apiserver_watch_events_dispatch_duration_seconds|apiserver_storage_list_duration_seconds|apiserver_watch_list_duration_seconds|apiserver_watch_cache_read_wait_seconds|apiserver_watch_cache_initialization_duration_seconds|etcd_request_duration_seconds)_(bucket|sum|count)
+              action: drop
+        kube-state-metrics:
+          customResourceState:
+            enabled: true
+            config:
+              spec:
+                resources:
+                - groupVersionKind:
+                    group: coordination.k8s.io
+                    version: v1
+                    kind: Lease
+                  labelsFromPath:
+                    result:
+                    - metadata
+                    - annotations
+                    - platform.example.io/result
+                  metricNamePrefix: restore
+                  metrics:
+                  - name: status
+                    help: Restore status lease
+                    each:
+                      type: Info
+                      info:
+                        labelsFromPath:
+                          lease:
+                          - metadata
+                          - name
+  - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
+    targetRevision: main
+    path: 09-kube-prometheus-stack/resources
+  - repoURL: https://github.com/dmuiX/k3s-on-omv-live.git
+    targetRevision: main
+    path: infra/kube-prometheus-stack
+  syncPolicy:
+    automated:
+      enabled: true
+      prune: false
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+    - CreateNamespace=true
+    - ServerSideApply=true
+    - SkipDryRunOnMissingResource=true

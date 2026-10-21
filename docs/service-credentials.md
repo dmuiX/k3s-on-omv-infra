@@ -7,13 +7,13 @@ OpenBao is the secret store, not the owner of every consumer's integration.
 | Application | Repository directory | Responsibility |
 | --- | --- | --- |
 | `cloudnative-pg` | Infra `02-controllers/cloudnative-pg` | PostgreSQL operator, CRDs and webhook |
-| `k3s-postgres` | Infra `07-data/k3s-postgres` | Concrete `k3s-postgres` Cluster, manager login/password, connection, cluster backup and retention |
+| `k3s-postgres` | Infra `07-k3s-postgres` | Concrete `k3s-postgres` Cluster, manager login/password, connection, cluster backup and retention |
 | `longhorn` | Infra `02-controllers/longhorn` | Storage controller and early storage prerequisites |
-| `longhorn-config` | Infra `06-platform/longhorn` | Longhorn's OIDC identities, proxy, credentials and route |
-| `radar-config` | Infra `06-platform/radar` | Radar's namespace, bootstrap identity, OIDC client/provider and credential issuance |
+| `longhorn-config` | Infra `06-platform/longhorn-config` | Longhorn's OIDC identities, proxy, credentials and route |
+| `radar-config` | Infra `06-platform/radar-config` | Radar's namespace, bootstrap identity, OIDC client/provider and credential issuance |
 | `radar` | Apps `radar` | Radar UI, application database/role, RBAC and Secret consumers |
 | `argocd-config` | Infra `01-bootstrap/argocd-config` | Local Argo account definition and Argo application/project read permissions |
-| `platform-credentials` | Infra `06-platform/platform-credentials` | Shared platform R2/SMB access and Secret delivery |
+| `platform-credentials` | Infra `06-platform/backup-credentials` | Shared platform R2/SMB access and Secret delivery |
 | `openbao-config` | Infra `06-platform/openbao-config` | General OpenBao mounts and userpass backend only |
 
 Other consumer-specific OpenBao policies/auth roles live in their owner's `resources/openbao-access.yaml`: OpenBao snapshots, certificate DNS validation, monitoring and backup validation. OpenBao's own PeerAuthentication belongs to the core OpenBao Application. The general provider-vault `Mount` and `Backend` CRDs have Kubernetes scope `Cluster`; their manifests intentionally have no `metadata.namespace`, regardless of the Application's default destination namespace.
@@ -26,7 +26,7 @@ Live keeps Longhorn identity/route settings under `infra/longhorn`, Radar identi
 
 `radar-config` is also selected by Infra in wave 6. Its administrator group must exist before attended group assignment and MFA; its generated OIDC client ID must exist before Apps registration. Keeping these prerequisites in a Radar-owned Infra directory avoids requiring access to the private Apps repository before the attended Apps credentials are supplied. Radar's UI and application-specific PostgreSQL resources remain in Apps. The Radar namespace is created before namespace-local credential helpers/jobs. Group membership remains externally managed by the attended ceremony.
 
-`k3s-postgres` remains in wave 7. Its narrowly scoped manager-credential producer runs before the VSO Secret consumers and Cluster. Full Infra acceptance still checks all consumer Applications after the attended external credentials have been supplied.
+`k3s-postgres` remains in wave 7. Its narrowly scoped manager-credential producer runs before the VSO Secret consumers and Cluster. Backup/restore validation follows in wave 8 (`08-backup-validation`); observability follows in wave 9 (`09-kube-prometheus-stack`). The early Prometheus CRD installation remains in wave 1 so validation resources do not depend on the later monitoring stack. Full Infra acceptance still checks all consumer Applications through wave 9 after the attended external credentials have been supplied.
 
 ## Native mechanisms and narrowly scoped gaps
 
@@ -62,12 +62,12 @@ Native evidence: [Radar values](https://github.com/skyhook-io/radar/blob/v1.17.0
 
 ## Existing-cluster cutover is a separate operation
 
-Do not publish/synchronize this ownership change as an unattended rename. The previous `postgresql` Application and central issuer may still exist; automated pruning is disabled, so Git deletion does not remove them.
+Do not treat this ownership change as an unattended rename. Legacy `postgresql`, `tls-certificates` and `letsencrypt-dns01` Applications and the central issuer may still exist; automated pruning is disabled, so Git deletion does not remove them. Publishing the new paths without updating existing child sources can produce comparison/sync errors even while the parent is paused.
 
 1. Quiesce the Infra root and affected old Application synchronizations; retain their configuration for rollback. Stop the legacy `openbao/service-credentials` Job before enabling replacement issuers. Do not run old/new credential issuers concurrently.
-2. Publish the coordinated Infra/Live sources and bootstrap trust-policy allowlist, then refresh comparisons. Update the existing `openbao-config` specification so it no longer manages consumer resources.
+2. Publish the public Infra Application base, pin that exact commit in Live `infra/applications/kustomization.yaml`, then publish Live and Bootstrap. The root's source is the private Live overlay. Advance the pin with each reviewed public Application-definition change; do not use a floating remote base that Argo may cache independently of Live. Bootstrap validates ownership/source paths, applies the new root, and resumes a previously paused owned root. Update the existing `openbao-config` specification so it no longer manages consumer resources.
 3. Transfer unchanged resources to the new consumer Applications, confirming each tracking owner and source revision. Create `k3s-postgres` with its original Cluster/Secret/backup identities. Disable the old `postgresql` reconciler during adoption.
-4. Only after verified adoption, remove the old `postgresql` Application **non-cascading** (`argocd app delete postgresql --cascade=false`). Never delete the Cluster, namespace, PVCs, database roles or KV entries as part of the rename. Never force-remove finalizers to get a green status.
+4. Only after verified adoption, remove the old `postgresql`, `tls-certificates` and `letsencrypt-dns01` Applications **non-cascading**, for example `argocd app delete postgresql --cascade=false`. Never delete the Cluster, namespace, PVCs, database roles or KV entries as part of the rename. Never force-remove finalizers to get a green status.
 5. Retire the legacy issuer's ServiceAccount, RoleBinding, Job and its narrowly named OpenBao policy/login role using an authorized administrator; account for any still-valid short-lived issuer tokens. Verify old ownership is gone before resuming automated reconciliation and final acceptance.
 
 This source reorganization itself does not perform that live cutover or update a live root policy.
