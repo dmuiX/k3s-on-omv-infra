@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import secrets
+import shutil
 import socket
 import subprocess
 import sys
@@ -88,6 +89,39 @@ class ServiceCredentialContracts(unittest.TestCase):
             self.assertNotIn(consumer, SCRIPT, 'Shared custody helper must not own service decisions')
         self.assertNotIn('argocd', SCRIPT)
         self.assertFalse((INFRA / '06-platform/openbao-config/resources/service-credentials.yaml').exists())
+
+    def test_radar_binary_copy_does_not_charge_tmpfs_to_the_128mi_init_container(self):
+        job = next(d for d in DOCUMENTS['radar'] if d['kind'] == 'Job')
+        volumes = {v['name']: v for v in job['spec']['template']['spec']['volumes']}
+        self.assertNotEqual(volumes['tools']['emptyDir'].get('medium'), 'Memory',
+                            'The pinned Argo CLI is 250176085 bytes; copying it to tmpfs OOMs the 128Mi init container')
+        self.assertEqual(volumes['work']['emptyDir']['medium'], 'Memory',
+                         'Temporary credentials must remain in memory')
+
+    @unittest.skipUnless(shutil.which('helm'), 'Helm Go/Sprig renderer is required')
+    def test_native_cookie_template_preserves_key_bytes_in_oauth2_proxy_url_encoding(self):
+        resources = yaml.safe_load_all((INFRA / '06-platform/longhorn-config/resources/oidc-proxy.yaml').read_text())
+        secret = next(r for r in resources if r['kind'] == 'VaultStaticSecret')
+        template = secret['spec']['destination']['transformation']['templates']['cookie-secret']['text']
+        key = bytes([251, 255]) * 16
+        original = base64.b64encode(key).decode()
+        self.assertRegex(original, r'[+/]', 'Fixture must exercise the actual alphabet incompatibility')
+        with tempfile.TemporaryDirectory(prefix='cookie-template-') as directory:
+            chart = Path(directory); (chart / 'templates').mkdir()
+            (chart / 'Chart.yaml').write_text('apiVersion: v2\nname: fixture\nversion: 0.1.0\n')
+            (chart / 'values.yaml').write_text(yaml.safe_dump({'fixture': {'cookie-secret': original}}))
+            (chart / 'templates/cookie.yaml').write_text(
+                'apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: fixture\ndata:\n  cookie: '
+                '{{ include "cookie" (dict "Secrets" .Values.fixture) | quote }}\n'
+                '{{ define "cookie" }}' + template + '{{ end }}\n')
+            rendered = subprocess.run(['helm', 'template', 'fixture', str(chart)],
+                text=True, capture_output=True, timeout=20)
+            self.assertEqual(rendered.returncode, 0, rendered.stderr)
+            encoded = yaml.safe_load(rendered.stdout)['data']['cookie']
+            self.assertRegex(encoded, r'^[A-Za-z0-9_-]+={0,2}$',
+                             'oauth2-proxy v7.15.5 uses RawURLEncoding, not standard Base64')
+            self.assertEqual(base64.urlsafe_b64decode(encoded), key,
+                             'Encoding correction must not rotate or change the persisted cookie key')
 
     def test_sql_blocks_are_json_wrapped_for_the_native_plugin_parser(self):
         for path in [APPS / 'radar/resources/postgres-access.yaml',

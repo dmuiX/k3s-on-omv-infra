@@ -88,6 +88,26 @@ existing policy body, service-account bindings, namespace, audience and KV data.
 Legacy issuer permissions remain a separately reviewed administrator cleanup,
 not a reason to grant broad delete access to the provider.
 
+Critical Mount/Backend resources additionally declare `crossplane.io/external-name`
+with the verified existing backend path (`kv`, `database`, `userpass`). Orphaning
+preserves the external engine; that external-name annotation tells the new
+management object to import it rather than attempting an enable/create request.
+Do not delete an existing engine to resolve a `path is already in use` response.
+
+### Runtime consumer checks
+
+OAuth2 Proxy 7.15.5 decodes cookie keys using URL-safe Base64
+([native decoder](https://github.com/oauth2-proxy/oauth2-proxy/blob/v7.15.5/pkg/encryption/utils.go)).
+The retained KV contract uses standard Base64. VSO changes only the alphabet in
+the delivered value, preserving all 32 key bytes and never rotating the KV entry.
+A native Go/Sprig template render tests a fixture containing both `+` and `/`.
+
+Radar's pinned native Argo CLI is 250176085 bytes. Its non-secret `/tools` copy
+uses disk-backed ephemeral storage; a memory-backed volume charged that copy to
+the 128Mi init-container cgroup and caused OOM kills. Temporary credentials under
+`/work` remain memory-backed. Normal Argo hook replacement retries failed
+short-lived Jobs; it must not delete PVCs, databases, backends or credential data.
+
 A representation-only Helm source change can leave a child Synced/Healthy while
 its last successful operation still records the old values-file source. Request
 a normal full native Argo sync of that child to record adoption; do not loosen

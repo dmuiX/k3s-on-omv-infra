@@ -70,7 +70,8 @@ spec:
             {{- if empty $value -}}
             {{- fail "missing required OpenBao key: cookie-secret" -}}
             {{- end -}}
-            {{- $value -}}
+            {{- /* Preserve the stored key bytes; oauth2-proxy requires URL-safe Base64. */ -}}
+            {{- $value | replace "+" "-" | replace "/" "_" -}}
 ---
 apiVersion: apps/v1
 kind: Deployment
