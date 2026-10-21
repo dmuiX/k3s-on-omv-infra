@@ -71,3 +71,24 @@ Do not treat this ownership change as an unattended rename. Legacy `postgresql`,
 5. Retire the legacy issuer's ServiceAccount, RoleBinding, Job and its narrowly named OpenBao policy/login role using an authorized administrator; account for any still-valid short-lived issuer tokens. Verify old ownership is gone before resuming automated reconciliation and final acceptance.
 
 This source reorganization itself does not perform that live cutover or update a live root policy.
+
+### Preserve external auth objects during ownership transfer
+
+Consumer `Policy` and `AuthBackendRole` resources use native Crossplane
+`deletionPolicy: Orphan`, consistent with the provider's deliberately absent
+OpenBao delete permission. The installed CRD exposes this supported lifecycle
+field. An owner/path migration must not destroy working login roles or ACLs.
+
+If a previous prune already marked an owned managed resource for deletion,
+verify its UID, external identity and provider reference, then change only its
+`spec.deletionPolicy` to `Orphan`. Let Crossplane complete its normal finalization;
+never patch away finalizers. Recreate/adopt the same external object through the
+consumer's Git manifest and require fresh Ready/Synced status. Preserve the
+existing policy body, service-account bindings, namespace, audience and KV data.
+Legacy issuer permissions remain a separately reviewed administrator cleanup,
+not a reason to grant broad delete access to the provider.
+
+A representation-only Helm source change can leave a child Synced/Healthy while
+its last successful operation still records the old values-file source. Request
+a normal full native Argo sync of that child to record adoption; do not loosen
+its current-source/operation acceptance checks or manually change health status.

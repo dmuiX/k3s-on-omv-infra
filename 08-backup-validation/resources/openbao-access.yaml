@@ -3,6 +3,7 @@ kind: Policy
 metadata:
   name: k8up-validation-vso-read
 spec:
+  deletionPolicy: Orphan
   forProvider:
     name: k8up-validation-vso-read
     policy: |
@@ -17,6 +18,7 @@ kind: AuthBackendRole
 metadata:
   name: k8up-validation-vso
 spec:
+  deletionPolicy: Orphan
   forProvider:
     backend: kubernetes
     roleName: k8up-validation-vso

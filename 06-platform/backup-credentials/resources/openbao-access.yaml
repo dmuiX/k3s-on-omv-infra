@@ -3,6 +3,7 @@ kind: Policy
 metadata:
   name: platform-r2-read
 spec:
+  deletionPolicy: Orphan
   forProvider:
     name: platform-r2-read
     policy: "path \"auth/token/renew-self\" { capabilities = [\"update\"] }\npath \"kv/data/platform/r2\" { capabilities = [\"read\"] }\npath \"kv/metadata/platform/r2\" { capabilities = [\"read\"] }\n"
@@ -14,6 +15,7 @@ kind: Policy
 metadata:
   name: smb-vso-read
 spec:
+  deletionPolicy: Orphan
   forProvider:
     name: smb-vso-read
     policy: "path \"auth/token/renew-self\" { capabilities = [\"update\"] }\npath \"kv/data/platform/smb\" { capabilities = [\"read\"] }\npath \"kv/metadata/platform/smb\" { capabilities = [\"read\"] }\n"
@@ -27,6 +29,7 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "0"
 spec:
+  deletionPolicy: Orphan
   forProvider:
     backend: kubernetes
     roleName: platform-r2-vso
@@ -47,6 +50,7 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "0"
 spec:
+  deletionPolicy: Orphan
   forProvider:
     backend: kubernetes
     roleName: smb-vso

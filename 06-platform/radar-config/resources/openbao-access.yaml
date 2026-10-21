@@ -3,6 +3,7 @@ kind: Policy
 metadata:
   name: radar-vso-read
 spec:
+  deletionPolicy: Orphan
   forProvider:
     name: radar-vso-read
     policy: "path \"auth/token/renew-self\" { capabilities = [\"update\"] }\npath \"database/static-creds/radar\" { capabilities = [\"read\"] }\npath \"kv/data/radar/auth\" { capabilities = [\"read\"] }\npath \"kv/metadata/radar/auth\" { capabilities = [\"read\"] }\npath \"kv/data/radar/argocd\" { capabilities = [\"read\"] }\npath \"kv/metadata/radar/argocd\" { capabilities = [\"read\"] }\n"
@@ -14,6 +15,7 @@ kind: AuthBackendRole
 metadata:
   name: radar-vso
 spec:
+  deletionPolicy: Orphan
   forProvider:
     backend: kubernetes
     roleName: radar-vso

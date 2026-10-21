@@ -3,6 +3,7 @@ kind: Policy
 metadata:
   name: longhorn-oidc-proxy-read
 spec:
+  deletionPolicy: Orphan
   forProvider:
     name: longhorn-oidc-proxy-read
     policy: "path \"auth/token/renew-self\" { capabilities = [\"update\"] }\npath \"kv/data/longhorn/oidc-proxy\" { capabilities = [\"read\"] }\npath \"kv/metadata/longhorn/oidc-proxy\" { capabilities = [\"read\"] }\n"
@@ -14,6 +15,7 @@ kind: AuthBackendRole
 metadata:
   name: longhorn-oidc-proxy
 spec:
+  deletionPolicy: Orphan
   forProvider:
     backend: kubernetes
     roleName: longhorn-oidc-proxy

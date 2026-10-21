@@ -3,6 +3,7 @@ kind: Policy
 metadata:
   name: grafana-vso-read
 spec:
+  deletionPolicy: Orphan
   forProvider:
     name: grafana-vso-read
     policy: "path \"auth/token/renew-self\" { capabilities = [\"update\"] }\npath \"database/static-creds/grafana\" { capabilities = [\"read\"] }\n"
@@ -14,6 +15,7 @@ kind: Policy
 metadata:
   name: alertmanager-vso-read
 spec:
+  deletionPolicy: Orphan
   forProvider:
     name: alertmanager-vso-read
     policy: "path \"auth/token/renew-self\" { capabilities = [\"update\"] }\npath \"kv/data/monitoring/alertmanager-config\" { capabilities = [\"read\"] }\npath \"kv/metadata/monitoring/alertmanager-config\" { capabilities = [\"read\"] }\n"
@@ -25,6 +27,7 @@ kind: AuthBackendRole
 metadata:
   name: grafana-vso
 spec:
+  deletionPolicy: Orphan
   forProvider:
     backend: kubernetes
     roleName: grafana-vso
@@ -43,6 +46,7 @@ kind: AuthBackendRole
 metadata:
   name: alertmanager-vso
 spec:
+  deletionPolicy: Orphan
   forProvider:
     backend: kubernetes
     roleName: alertmanager-vso
@@ -61,6 +65,7 @@ kind: AuthBackendRole
 metadata:
   name: prometheus-k8up-vso
 spec:
+  deletionPolicy: Orphan
   forProvider:
     backend: kubernetes
     roleName: prometheus-k8up-vso

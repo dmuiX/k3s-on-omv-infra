@@ -3,6 +3,7 @@ kind: Policy
 metadata:
   name: cert-manager-dns01-read
 spec:
+  deletionPolicy: Orphan
   forProvider:
     name: cert-manager-dns01-read
     policy: "path \"auth/token/renew-self\" { capabilities = [\"update\"] }\npath \"kv/data/cert-manager/cloudflare\" { capabilities = [\"read\"] }\npath \"kv/metadata/cert-manager/cloudflare\" { capabilities = [\"read\"] }\n"
@@ -14,6 +15,7 @@ kind: AuthBackendRole
 metadata:
   name: cert-manager-dns01
 spec:
+  deletionPolicy: Orphan
   forProvider:
     backend: kubernetes
     roleName: cert-manager-dns01

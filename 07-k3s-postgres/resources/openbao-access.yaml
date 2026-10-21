@@ -3,6 +3,7 @@ kind: Policy
 metadata:
   name: postgresql-vso-read
 spec:
+  deletionPolicy: Orphan
   forProvider:
     name: postgresql-vso-read
     policy: |
@@ -17,6 +18,7 @@ kind: AuthBackendRole
 metadata:
   name: postgresql-vso
 spec:
+  deletionPolicy: Orphan
   forProvider:
     backend: kubernetes
     roleName: postgresql-vso

@@ -3,6 +3,7 @@ kind: Policy
 metadata:
   name: openbao-snapshot
 spec:
+  deletionPolicy: Orphan
   forProvider:
     name: openbao-snapshot
     policy: |
@@ -16,6 +17,7 @@ kind: AuthBackendRole
 metadata:
   name: openbao-snapshot
 spec:
+  deletionPolicy: Orphan
   forProvider:
     backend: kubernetes
     roleName: openbao-snapshot
