@@ -36,7 +36,8 @@ class BootstrapOrderTest(unittest.TestCase):
         self.assertIn('.Values.auth.oidc.issuerURL', template)
         self.assertIn('.Values.auth.oidc.redirectURL', template)
         self.assertFalse((ROOT / '06-platform/radar-config').exists())
-        self.assertFalse((live / 'apps/radar').exists())
+        self.assertFalse((live / 'apps/radar/oidc.yaml').exists())
+        self.assertTrue((live / 'apps/radar/values.yml').is_file())
         consumers = list(yaml.safe_load_all((ROOT / '06-platform/longhorn-config/resources/oidc-proxy.yaml').read_text()))
         deployment = next(d for d in consumers if d['kind'] == 'Deployment')
         self.assertEqual(deployment['metadata']['annotations']['argocd.argoproj.io/sync-wave'], '20')
@@ -45,7 +46,7 @@ class BootstrapOrderTest(unittest.TestCase):
     def test_radar_oidc_uses_live_urls_before_database_and_credential_consumers(self):
         apps = ROOT.parent / 'k3s-on-omv-apps'
         chart = apps / 'radar/oidc'
-        live_values = ROOT.parent / 'k3s-on-omv-live/apps/radar-values.yml'
+        live_values = ROOT.parent / 'k3s-on-omv-live/apps/radar/values.yml'
         values = yaml.safe_load(live_values.read_text())
         command = ['helm', 'template', 'radar-oidc', str(chart), '--values', str(live_values)]
         result = subprocess.run(command, check=True, text=True, capture_output=True, timeout=30)
@@ -94,7 +95,7 @@ class BootstrapOrderTest(unittest.TestCase):
         policy_path = ROOT / '03-provider-vault/resources/activation-policy.yaml'
         policy = yaml.safe_load(policy_path.read_text())
         policy_allowlist = policy['spec']['activate']
-        self.assertEqual(policy['metadata']['name'], 'provider-vault-exact-16')
+        self.assertEqual(policy['metadata']['name'], 'provider-vault-allowlist')
         self.assertEqual(chart_allowlist, [])
         self.assertEqual(len(policy_allowlist), len(set(policy_allowlist)))
         self.assertNotIn('*', policy_allowlist)
@@ -153,7 +154,10 @@ class BootstrapOrderTest(unittest.TestCase):
         self.assertEqual([s.get('path') for s in core], ['06-platform/openbao-config/resources'])
         docs = [d for p in (ROOT / core[0]['path']).glob('*.yaml')
                 for d in yaml.safe_load_all(p.read_text()) if d]
-        self.assertEqual({d['kind'] for d in docs}, {'Mount', 'Backend'})
+        self.assertEqual({d['kind'] for d in docs}, {'Mount', 'Backend', 'OidcScope'})
+        profile = next(d for d in docs if d['kind'] == 'OidcScope')
+        self.assertEqual(profile['metadata']['name'], 'oidc-profile')
+        self.assertEqual(profile['spec']['forProvider']['name'], 'profile')
         app = apps['longhorn-config']
         sources = [s.get('path') for s in app['spec']['sources']]
         self.assertIn('06-platform/longhorn-config/resources', sources)

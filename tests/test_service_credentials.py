@@ -267,7 +267,7 @@ class ServiceCredentialOpenBao(unittest.TestCase):
         human = self.api('auth/userpass/login/operator', {'password': 'disposable-oidc-test-only'})['auth']['client_token']
         radar_render = subprocess.run([
             'helm', 'template', 'radar-oidc', str(APPS / 'radar/oidc'),
-            '--values', str(LIVE / 'apps/radar-values.yml')],
+            '--values', str(LIVE / 'apps/radar/values.yml')],
             check=True, capture_output=True, text=True, timeout=30).stdout
         sources = [radar_render, (LIVE / 'infra/longhorn/oidc.yaml').read_text()]
         for source in sources:

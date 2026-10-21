@@ -18,7 +18,7 @@ spec:
       valuesObject:
         replicas: 1
         # Do not create a default policy. The sole activation allowlist belongs
-        # to provider-vault-exact-16 in the provider Application.
+        # to provider-vault-allowlist in the provider Application.
         provider:
           defaultActivations: []
         resourcesCrossplane:

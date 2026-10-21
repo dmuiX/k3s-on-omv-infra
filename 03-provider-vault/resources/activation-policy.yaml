@@ -1,7 +1,7 @@
 apiVersion: apiextensions.crossplane.io/v1alpha1
 kind: ManagedResourceActivationPolicy
 metadata:
-  name: provider-vault-exact-16
+  name: provider-vault-allowlist
   annotations:
     # Activate the reviewed APIs before installing the provider package.
     argocd.argoproj.io/sync-wave: "-20"

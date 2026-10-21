@@ -105,7 +105,7 @@ class InlineHelmValuesTest(unittest.TestCase):
         # Apps are deliberately deferred; their private Radar overrides stay in Live.
         for repository in (INFRA, LIVE):
             for path in repository.glob('**/*values.y*ml'):
-                if repository == LIVE and path.relative_to(LIVE) == Path('apps/radar-values.yml'):
+                if repository == LIVE and path.relative_to(LIVE).match('apps/*/values.yml'):
                     continue
                 self.assertIn('tests', path.parts, str(path))
 

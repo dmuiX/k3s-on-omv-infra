@@ -13,11 +13,13 @@ OpenBao is the secret store, not the owner of every consumer's integration.
 | `radar` | Apps `radar` | Radar UI, OpenBao identity/client/provider, credential issuance, application database/role, RBAC and Secret consumers |
 | `argocd-config` | Infra `01-bootstrap/argocd-config` | Local Argo account definition and Argo application/project read permissions |
 | `platform-credentials` | Infra `06-platform/backup-credentials` | Shared platform R2/SMB access and Secret delivery |
-| `openbao-config` | Infra `06-platform/openbao-config` | General OpenBao mounts and userpass backend only |
+| `openbao-config` | Infra `06-platform/openbao-config` | General OpenBao mounts, userpass backend and the shared standard OIDC `profile` scope |
 
 Other consumer-specific OpenBao policies/auth roles live in their owner's `resources/openbao-access.yaml`: OpenBao snapshots, certificate DNS validation, monitoring and backup validation. OpenBao's own PeerAuthentication belongs to the core OpenBao Application. The general provider-vault `Mount` and `Backend` CRDs have Kubernetes scope `Cluster`; their manifests intentionally have no `metadata.namespace`, regardless of the Application's default destination namespace.
 
-Live keeps Longhorn identity/route settings under `infra/longhorn`, Radar's non-secret issuer/callback/route values in `apps/radar-values.yml`, and database retention settings under `infra/k3s-postgres`. Service DNS names, database resources, Kubernetes namespaces, KV paths, Secret names and PVC identities are unchanged. In particular, the manager secret remains at `kv/postgresql/openbao-manager`; renaming an Application is not a secret/data migration.
+Live keeps Longhorn identity/route settings under `infra/longhorn`, Radar's non-secret issuer/callback/route values in `apps/radar/values.yml`, and database retention settings under `infra/k3s-postgres`. Service DNS names, database resources, Kubernetes namespaces, KV paths, Secret names and PVC identities are unchanged. In particular, the manager secret remains at `kv/postgresql/openbao-manager`; renaming an Application is not a secret/data migration.
+
+Audiobookshelf's local chart owns its OIDC key, client, provider, administrator assignment and app-specific role scope. Its PostSync API configurator consumes the existing shared custody helper, without extra Kubernetes RBAC or OIDC provisioning in Ansible. Since ABS requests the standard `profile` scope, the platform owns that global OpenBao scope exactly once as `OidcScope/oidc-profile`; applications reference it instead of declaring conflicting external `profile` objects. Its template supplies only entity name/preferred_username, not administrator permissions or invented email claims. The provider trust-root ACL adds only the exact Audiobookshelf policy/role/OIDC paths and the shared profile path. The reviewed live trust-policy update and state migration remain separate approvals; the new Application's auto-sync stays disabled.
 
 ## Bootstrap ordering
 

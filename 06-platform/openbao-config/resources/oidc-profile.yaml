@@ -1,0 +1,12 @@
+# OIDC scope names are global within OpenBao. Own the standard profile scope
+# once in the platform, not once per application. ABS requests profile itself.
+apiVersion: identity.vault.upbound.io/v1alpha1
+kind: OidcScope
+metadata:
+  name: oidc-profile
+spec:
+  deletionPolicy: Orphan
+  forProvider:
+    name: profile
+    template: '{"preferred_username":{{identity.entity.name}},"name":{{identity.entity.name}}}'
+  providerConfigRef: {name: openbao}

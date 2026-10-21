@@ -48,7 +48,8 @@ module ContractHelpers
   end
 
   def yaml_files(root)
-    root.glob("**/*.{yml,yaml}").reject { |path| path.to_s.include?("/.git/") }
+    # Local Helm templates are validated after rendering by their chart suites.
+    root.glob("**/*.{yml,yaml}").reject { |path| path.to_s.include?("/.git/") || path.to_s.include?("/chart/templates/") }
   end
 
   def application(path)
@@ -114,14 +115,16 @@ class RepositoryContractTest < Minitest::Test
     assert_equal application_files(INFRA).map { |path| path.relative_path_from(INFRA).to_s }.sort,
       YAML.load_file(INFRA / "kustomization.yaml").fetch("resources").sort
     assert_equal "*/app.yml", apps_root.dig("spec", "source", "directory", "include")
-    assert_equal ["radar"], application_files(APPS).map { |path| application(path).dig("metadata", "name") }
+    assert_equal ["audiobookshelf", "radar"], application_files(APPS).map { |path| application(path).dig("metadata", "name") }
+    assert_equal false, application(APPS / "audiobookshelf/app.yml").dig("spec", "syncPolicy", "automated", "enabled")
     assert_empty LIVE.glob("**/app.yml")
     refute application_files(INFRA).any? { |path| application(path).dig("metadata", "name") == "radar" }
     refute (INFRA / "06-platform/radar-config").exist?
     radar = application(APPS / "radar/app.yml")
     assert radar.dig("spec", "sources").any? { |source| source["path"] == "radar/oidc" }
     assert radar.dig("spec", "sources").any? { |source| source["path"] == "radar/resources" }
-    refute (LIVE / "apps/radar").exist?
+    refute (LIVE / "apps/radar/oidc.yaml").exist?
+    assert (LIVE / "apps/radar/values.yml").file?
   end
 
   def test_argo_automation_self_heals_without_pruning
@@ -168,7 +171,7 @@ class RepositoryContractTest < Minitest::Test
       assert_equal expected_refs, refs.map { |index| sources[index]["ref"] }, path.to_s
       chart_index = sources.index { |source| source.key?("chart") }
       assert_equal 0, chart_index, path.to_s if chart_index
-      resource_indices = sources.each_index.select { |index| sources[index].key?("path") }
+      resource_indices = sources.each_index.select { |index| sources[index].key?("path") && !sources[index].key?("helm") }
       # Official chart-only Istio components need no companion raw resources.
       refute_empty resource_indices, path.to_s unless %w[istio-istiod istio-cni istio-ztunnel].include?(app.dig("metadata", "name"))
       assert resource_indices.all? { |index| refs.empty? || index >= refs.max }, path.to_s
@@ -278,8 +281,9 @@ class PlatformContractTest < Minitest::Test
   include ContractHelpers
 
   def test_provider_vault_activates_exactly_the_specified_sixteen_types
-    document = yaml_documents(INFRA / "03-provider-vault/resources/provider.yaml")
+    document = yaml_documents(INFRA / "03-provider-vault/resources/activation-policy.yaml")
       .find { |item| item["kind"] == "ManagedResourceActivationPolicy" }
+    assert_equal "provider-vault-allowlist", document.dig("metadata", "name")
     activated = document.dig("spec", "activate")
     assert_equal 16, activated.length
     assert_equal 16, activated.uniq.length
@@ -296,7 +300,9 @@ class PlatformContractTest < Minitest::Test
   def test_provider_vault_resource_waves_are_minus_twenty_minus_ten_zero
     documents = yaml_documents(INFRA / "03-provider-vault/resources/provider.yaml")
     waves = documents.to_h { |document| [document["kind"], document.dig("metadata", "annotations", "argocd.argoproj.io/sync-wave")] }
-    assert_equal "-20", waves["ManagedResourceActivationPolicy"]
+    policy = yaml_documents(INFRA / "03-provider-vault/resources/activation-policy.yaml").fetch(0)
+    assert_equal "-20", policy.dig("metadata", "annotations", "argocd.argoproj.io/sync-wave")
+    assert_equal "-20", waves["ServiceAccount"]
     assert_equal "-10", waves["DeploymentRuntimeConfig"]
     assert_equal "0", waves["Provider"]
   end
@@ -509,7 +515,7 @@ class PlatformContractTest < Minitest::Test
     assert_equal "HTTPRoute", private_value("kube-prometheus-stack", "grafana", "route", "main", "kind")
     refute (LIVE / "infra/kube-prometheus-stack/route.yaml").exist?
 
-    radar = YAML.load_file(LIVE / "apps/radar-values.yml")
+    radar = YAML.load_file(LIVE / "apps/radar/values.yml")
     assert_equal true, radar.dig("httpRoute", "enabled")
     assert_equal "gateway.networking.k8s.io/v1", radar.dig("httpRoute", "apiVersion")
     refute (LIVE / "apps/radar/route.yaml").exist?
