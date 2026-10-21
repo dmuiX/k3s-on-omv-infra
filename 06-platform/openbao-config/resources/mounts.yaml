@@ -3,6 +3,7 @@ kind: Mount
 metadata:
   name: kv
 spec:
+  deletionPolicy: Orphan
   forProvider:
     path: kv
     type: kv-v2
@@ -15,6 +16,7 @@ kind: Mount
 metadata:
   name: database
 spec:
+  deletionPolicy: Orphan
   forProvider:
     path: database
     type: database
@@ -27,6 +29,7 @@ kind: Backend
 metadata:
   name: userpass
 spec:
+  deletionPolicy: Orphan
   forProvider:
     path: userpass
     type: userpass

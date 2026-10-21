@@ -41,15 +41,15 @@ def module():
 
 
 class ServiceCredentialContracts(unittest.TestCase):
-    def test_auth_policies_survive_native_owner_migration_without_delete_permission(self):
+    def test_secret_engines_and_auth_objects_survive_native_owner_migration_without_delete_permission(self):
         checked = 0
         for directory in ('06-platform', '07-k3s-postgres', '08-backup-validation', '09-kube-prometheus-stack'):
             for path in (INFRA / directory).rglob('*.yaml'):
                 for resource in yaml.safe_load_all(path.read_text()):
-                    if not isinstance(resource, dict) or resource.get('kind') not in ('Policy', 'AuthBackendRole'):
+                    if not isinstance(resource, dict) or resource.get('kind') not in ('Policy', 'AuthBackendRole', 'Mount', 'Backend'):
                         continue
                     self.assertEqual(resource['spec'].get('deletionPolicy'), 'Orphan',
-                        f"{path}: {resource['metadata']['name']} must preserve its external auth object")
+                        f"{path}: {resource['metadata']['name']} must preserve its external secret/auth object")
                     checked += 1
         self.assertGreater(checked, 20, 'The lifecycle contract must cover the actual consumers')
 
