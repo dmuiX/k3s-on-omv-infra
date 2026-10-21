@@ -2,6 +2,8 @@ apiVersion: vault.vault.upbound.io/v1alpha1
 kind: Mount
 metadata:
   name: kv
+  annotations:
+    crossplane.io/external-name: kv
 spec:
   deletionPolicy: Orphan
   forProvider:
@@ -15,6 +17,8 @@ apiVersion: vault.vault.upbound.io/v1alpha1
 kind: Mount
 metadata:
   name: database
+  annotations:
+    crossplane.io/external-name: database
 spec:
   deletionPolicy: Orphan
   forProvider:
@@ -28,6 +32,8 @@ apiVersion: auth.vault.upbound.io/v1alpha1
 kind: Backend
 metadata:
   name: userpass
+  annotations:
+    crossplane.io/external-name: userpass
 spec:
   deletionPolicy: Orphan
   forProvider:

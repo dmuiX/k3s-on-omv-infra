@@ -50,6 +50,10 @@ class ServiceCredentialContracts(unittest.TestCase):
                         continue
                     self.assertEqual(resource['spec'].get('deletionPolicy'), 'Orphan',
                         f"{path}: {resource['metadata']['name']} must preserve its external secret/auth object")
+                    if resource['kind'] in ('Mount', 'Backend'):
+                        self.assertEqual(resource['metadata']['annotations'].get('crossplane.io/external-name'),
+                                         resource['spec']['forProvider']['path'],
+                                         'Adopt the existing engine instead of trying to create it again')
                     checked += 1
         self.assertGreater(checked, 20, 'The lifecycle contract must cover the actual consumers')
 
