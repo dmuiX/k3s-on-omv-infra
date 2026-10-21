@@ -1,6 +1,9 @@
 """Offline guards for the certificate-first GitOps graph and local references."""
 from pathlib import Path
 import re
+import shutil
+import subprocess
+import tempfile
 import unittest
 import yaml
 
@@ -21,18 +24,67 @@ class BootstrapOrderTest(unittest.TestCase):
                 with self.subTest(path=str(p.relative_to(ROOT))):
                     list(yaml.safe_load_all(p.read_text()))
 
-    def test_radar_identity_precedes_clients_and_attended_membership(self):
-        docs = list(yaml.safe_load_all((ROOT / '06-platform/radar-config/resources/identity.yaml').read_text()))
-        self.assertEqual({d['kind'] for d in docs}, {'Group', 'OidcKey', 'OidcScope'})
-        for doc in docs:
-            self.assertEqual(doc['metadata']['annotations']['argocd.argoproj.io/sync-wave'], '-1')
-            self.assertEqual(doc['spec']['deletionPolicy'], 'Orphan')
-        group = next(d for d in docs if d['kind'] == 'Group')
-        self.assertTrue(group['spec']['forProvider']['externalMemberEntityIds'])
-        self.assertFalse((ROOT.parent / 'k3s-on-omv-apps/radar/resources/oidc.yaml').exists())
+    def test_apps_owns_radar_identity_before_attended_membership(self):
+        apps = ROOT.parent / 'k3s-on-omv-apps'
+        live = ROOT.parent / 'k3s-on-omv-live'
+        template = (apps / 'radar/oidc/templates/oidc.yaml.tpl').read_text()
+        for kind in ('Group', 'OidcKey', 'OidcScope', 'OidcClient', 'OidcProvider'):
+            self.assertIn('kind: ' + kind, template)
+        self.assertIn('externalMemberEntityIds: true', template)
+        self.assertEqual(template.count('deletionPolicy: Orphan'), 5)
+        self.assertIn('.Values.auth.oidc.issuerURL', template)
+        self.assertIn('.Values.auth.oidc.redirectURL', template)
+        self.assertFalse((ROOT / '06-platform/radar-config').exists())
+        self.assertFalse((live / 'apps/radar').exists())
         consumers = list(yaml.safe_load_all((ROOT / '06-platform/longhorn-config/resources/oidc-proxy.yaml').read_text()))
         deployment = next(d for d in consumers if d['kind'] == 'Deployment')
         self.assertEqual(deployment['metadata']['annotations']['argocd.argoproj.io/sync-wave'], '20')
+
+    @unittest.skipUnless(shutil.which('helm'), 'Helm is required for OIDC rendering')
+    def test_radar_oidc_uses_live_urls_before_database_and_credential_consumers(self):
+        apps = ROOT.parent / 'k3s-on-omv-apps'
+        chart = apps / 'radar/oidc'
+        live_values = ROOT.parent / 'k3s-on-omv-live/apps/radar-values.yml'
+        values = yaml.safe_load(live_values.read_text())
+        command = ['helm', 'template', 'radar-oidc', str(chart), '--values', str(live_values)]
+        result = subprocess.run(command, check=True, text=True, capture_output=True, timeout=30)
+        documents = list(yaml.safe_load_all(result.stdout))
+        by_kind = {d['kind']: d for d in documents}
+        self.assertEqual(len(documents), 5)
+        self.assertEqual(by_kind['OidcClient']['spec']['forProvider']['redirectUris'],
+                         [values['auth']['oidc']['redirectURL']])
+        from urllib.parse import urlsplit
+        self.assertEqual(by_kind['OidcProvider']['spec']['forProvider']['issuerHost'],
+                         urlsplit(values['auth']['oidc']['issuerURL']).netloc)
+        self.assertEqual(by_kind['OidcScope']['spec']['forProvider']['template'],
+                         '{"username":{{identity.entity.name}},"groups":{{identity.entity.groups.names}}}')
+        for doc in documents:
+            self.assertEqual(doc['metadata']['annotations']['argocd.argoproj.io/sync-wave'], '-20')
+            self.assertEqual(doc['spec']['deletionPolicy'], 'Orphan')
+        job_docs = list(yaml.safe_load_all((apps / 'radar/resources/provision-credentials.yaml').read_text()))
+        for doc in job_docs:
+            wave = doc['metadata']['annotations']['argocd.argoproj.io/sync-wave']
+            self.assertEqual(wave, '-1' if doc['kind'] == 'Job' else '-2')
+        secret_docs = list(yaml.safe_load_all((apps / 'radar/resources/credentials.yaml').read_text()))
+        oidc = next(d for d in secret_docs if d['metadata']['name'] == 'radar-oidc')
+        self.assertEqual(oidc['spec']['mount'], 'identity')
+        self.assertEqual(oidc['spec']['requestHTTPMethod'], 'GET')
+        self.assertEqual(oidc['spec']['path'], 'oidc/client/radar')
+        self.assertEqual(oidc['spec']['refreshAfter'], '1h')
+        self.assertNotIn('allowStaticCreds', oidc['spec'])
+        self.assertNotIn('rolloutRestartTargets', oidc['spec'])
+        self.assertEqual(set(oidc['spec']['destination']['transformation']['templates']),
+                         {'client-id', 'client-secret'})
+        for key in ('issuerURL', 'redirectURL'):
+            with self.subTest(missing=key), tempfile.TemporaryDirectory() as tmp:
+                incomplete = yaml.safe_load(live_values.read_text())
+                incomplete['auth']['oidc'].pop(key)
+                path = Path(tmp) / 'values.yaml'
+                path.write_text(yaml.safe_dump(incomplete))
+                failure = subprocess.run(command[:-1] + [str(path)],
+                                         text=True, capture_output=True, timeout=30)
+                self.assertNotEqual(failure.returncode, 0)
+                self.assertIn(key + ' is required', failure.stderr)
 
     def test_consumer_ownership_and_stable_database_identity(self):
         apps = applications()
@@ -41,13 +93,15 @@ class BootstrapOrderTest(unittest.TestCase):
         docs = [d for p in (ROOT / core[0]['path']).glob('*.yaml')
                 for d in yaml.safe_load_all(p.read_text()) if d]
         self.assertEqual({d['kind'] for d in docs}, {'Mount', 'Backend'})
-        for name, folder, live_path in [('longhorn-config', 'longhorn-config', 'infra/longhorn'),
-                                         ('radar-config', 'radar-config', 'apps/radar')]:
-            app = apps[name]
-            sources = [s.get('path') for s in app['spec']['sources']]
-            self.assertIn('06-platform/' + folder + '/resources', sources)
-            self.assertIn(live_path, sources)
-            self.assertEqual(app['metadata']['annotations']['argocd.argoproj.io/sync-wave'], '6')
+        app = apps['longhorn-config']
+        sources = [s.get('path') for s in app['spec']['sources']]
+        self.assertIn('06-platform/longhorn-config/resources', sources)
+        self.assertIn('infra/longhorn', sources)
+        self.assertEqual(app['metadata']['annotations']['argocd.argoproj.io/sync-wave'], '6')
+        radar = yaml.safe_load((ROOT.parent / 'k3s-on-omv-apps/radar/app.yml').read_text())
+        radar_sources = [s.get('path') for s in radar['spec']['sources']]
+        self.assertIn('radar/oidc', radar_sources)
+        self.assertIn('radar/resources', radar_sources)
         self.assertNotIn('postgresql', apps)
         app = apps['k3s-postgres']
         self.assertEqual(app['metadata']['annotations']['argocd.argoproj.io/sync-wave'], '7')

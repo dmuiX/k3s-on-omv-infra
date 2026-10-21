@@ -22,7 +22,6 @@ resources:
 - 06-platform/openbao-backups/app.yml
 - 06-platform/openbao-config/app.yml
 - 06-platform/backup-credentials/app.yml
-- 06-platform/radar-config/app.yml
 - 07-k3s-postgres/app.yml
 - 08-backup-validation/app.yml
 - 09-kube-prometheus-stack/app.yml

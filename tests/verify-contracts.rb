@@ -29,7 +29,6 @@ EXPECTED_INFRA = {
   "provider-vault-connection" => 5,
   "openbao-config" => 6,
   "longhorn-config" => 6,
-  "radar-config" => 6,
   "platform-credentials" => 6,
   "openbao-backups" => 6,
   "letsencrypt-dns01-credentials" => 6,
@@ -88,11 +87,6 @@ module ContractHelpers
   end
 
   def referenced_repository(source)
-    value_files = source.dig("helm", "valueFiles") || []
-    return INFRA if value_files.any? { |value| value.start_with?("$infra/") }
-    return LIVE if value_files.any? { |value| value.start_with?("$live/") }
-    return APPS if value_files.any? { |value| value.start_with?("$apps/") }
-
     case source["repoURL"]
     when "https://github.com/dmuiX/k3s-on-omv-infra.git" then INFRA
     when "https://github.com/dmuiX/k3s-on-omv-live.git" then LIVE
@@ -123,8 +117,11 @@ class RepositoryContractTest < Minitest::Test
     assert_equal ["radar"], application_files(APPS).map { |path| application(path).dig("metadata", "name") }
     assert_empty LIVE.glob("**/app.yml")
     refute application_files(INFRA).any? { |path| application(path).dig("metadata", "name") == "radar" }
-    radar_prerequisites = application(INFRA / "06-platform/radar-config/app.yml")
-    refute radar_prerequisites.dig("spec", "sources").any? { |source| source.key?("chart") || source["repoURL"] == "https://github.com/dmuiX/k3s-on-omv-apps.git" }
+    refute (INFRA / "06-platform/radar-config").exist?
+    radar = application(APPS / "radar/app.yml")
+    assert radar.dig("spec", "sources").any? { |source| source["path"] == "radar/oidc" }
+    assert radar.dig("spec", "sources").any? { |source| source["path"] == "radar/resources" }
+    refute (LIVE / "apps/radar").exist?
   end
 
   def test_argo_automation_self_heals_without_pruning
@@ -396,10 +393,13 @@ class PlatformContractTest < Minitest::Test
   end
 
   def test_openbao_policy_boundaries_are_narrow
-    documents = application_files(INFRA).flat_map do |path|
+    documents = (application_files(INFRA) + application_files(APPS)).flat_map do |path|
       app = application(path)
-      (app.dig("spec", "sources") || []).select { |source| source["repoURL"] == "https://github.com/dmuiX/k3s-on-omv-infra.git" && source["path"] }.flat_map do |source|
-        yaml_files(INFRA / source["path"]).flat_map { |file| yaml_documents(file) }
+      (app.dig("spec", "sources") || []).map do |source|
+        repository = referenced_repository(source)
+        [repository, source["path"]] if repository && source["path"]
+      end.compact.flat_map do |repository, source_path|
+        yaml_files(repository / source_path).flat_map { |file| yaml_documents(file) }
       end
     end
     policies = documents.select { |document| document["kind"] == "Policy" }.to_h do |document|

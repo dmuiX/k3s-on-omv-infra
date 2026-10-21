@@ -6,7 +6,7 @@ Publishable SPEC v6.2 platform draft. `infra.yml` is the sole Infra root; Apps i
 
 `cloudnative-pg` installs the PostgreSQL operator; `k3s-postgres` owns the concrete database Cluster in the unchanged `cloudnative-pg` namespace. It uses `longhorn-local`, ClusterIP services, Ambient `STRICT`, and targeted NetworkPolicies. Barman is its only backup path. No extra app-client certificate is layered over Ambient transport. Default-deny is limited to the sensitive namespaces named by the specification.
 
-Service integrations belong to consumers: `longhorn-config` owns late Longhorn OIDC/proxy setup, `radar-config` owns Radar's pre-Apps identity/credential prerequisites, and `platform-credentials` owns shared R2/SMB delivery. `openbao-config` contains general mounts and the userpass backend only. Argo's local account/RBAC configuration stays in `argocd-config`; Radar owns issuance and consumption of its account token. See [ownership, credential safety and existing-cluster cutover](docs/service-credentials.md).
+Service integrations belong to consumers: `longhorn-config` owns late Longhorn OIDC/proxy setup, the Apps-owned `radar` Application owns all Radar identity and credential resources, and `platform-credentials` owns shared R2/SMB delivery. `openbao-config` contains general mounts and the userpass backend only. Argo's local account/RBAC configuration stays in `argocd-config`; Radar owns issuance and consumption of its account token. See [ownership, credential safety and existing-cluster cutover](docs/service-credentials.md).
 
 Backup/restore validation is in `08-backup-validation` at wave 8, after the wave-7 database cluster. Observability is in `09-kube-prometheus-stack` at wave 9. Application and namespace identities are unchanged; Apps activation still waits for the complete Infra acceptance.
 
@@ -18,7 +18,7 @@ Each public Helm Application declares its own overrides directly in `helm.values
 
 ## Directory responsibilities
 
-Numbered directories retain their existing deployment phases; `sync-wave` in each Application remains authoritative. `00-letsencrypt-dns01-issuer` owns the early issuers. `01-bootstrap/istio` contains the Istio installation, while `01-bootstrap/istio-gateway` owns its Gateway configuration. The late `06-platform/letsencrypt-dns01-credentials`, `longhorn-config`, `radar-config`, and `backup-credentials` directories describe their actual responsibilities. The Istio base namespace is stored with the Istio installation rather than Gateway resources.
+Numbered directories retain their existing deployment phases; `sync-wave` in each Application remains authoritative. `00-letsencrypt-dns01-issuer` owns the early issuers. `01-bootstrap/istio` contains the Istio installation, while `01-bootstrap/istio-gateway` owns its Gateway configuration. The late `06-platform/letsencrypt-dns01-credentials`, `longhorn-config`, and `backup-credentials` directories describe their actual responsibilities. The Istio base namespace is stored with the Istio installation rather than Gateway resources.
 
 These directory changes do not rename namespaces, Helm releases, Secret/KV paths, or database resources. Existing Argo identities `istio-core`, `istio-ambient`, and `platform-credentials` remain unchanged; the separately agreed issuer/credential Applications are named `letsencrypt-dns01-issuer` and `letsencrypt-dns01-credentials`.
 

@@ -25,10 +25,12 @@ import yaml
 INFRA = Path(__file__).resolve().parents[1]
 LIVE = INFRA.parent / 'k3s-on-omv-live'
 APPS = INFRA.parent / 'k3s-on-omv-apps'
-OWNERS = {'longhorn': '06-platform/longhorn-config', 'radar': '06-platform/radar-config',
-          'k3s-postgres': '07-k3s-postgres'}
-DOCUMENTS = {name: list(yaml.safe_load_all((INFRA / directory / 'resources/provision-credentials.yaml').read_text()))
-             for name, directory in OWNERS.items()}
+MANIFESTS = {
+    'longhorn': INFRA / '06-platform/longhorn-config/resources/provision-credentials.yaml',
+    'radar': APPS / 'radar/resources/provision-credentials.yaml',
+    'k3s-postgres': INFRA / '07-k3s-postgres/resources/provision-credentials.yaml',
+}
+DOCUMENTS = {name: list(yaml.safe_load_all(path.read_text())) for name, path in MANIFESTS.items()}
 MANIFEST = INFRA / 'adapters/credential-custody/resources.yaml'
 SCRIPT = next(d['data']['credential_helpers.py'] for d in yaml.safe_load_all(MANIFEST.read_text())
               if d['kind'] == 'ConfigMap')
@@ -64,7 +66,7 @@ class ServiceCredentialContracts(unittest.TestCase):
                 script = next(d['data']['provision.py'] for d in documents if d['kind'] == 'ConfigMap')
                 compile(script, '<' + name + '-provision>', 'exec')
                 job = next(d for d in documents if d['kind'] == 'Job')
-                wave = '-1' if name == 'k3s-postgres' else '1'
+                wave = '-1' if name in ('k3s-postgres', 'radar') else '1'
                 self.assertEqual(job['metadata']['annotations']['argocd.argoproj.io/sync-wave'], wave)
                 self.assertEqual(job['spec']['activeDeadlineSeconds'], 600)
                 pod = job['spec']['template']['spec']
@@ -263,10 +265,13 @@ class ServiceCredentialOpenBao(unittest.TestCase):
         # An entity-backed test token exercises authorization, not a root-token shortcut.
         self.api('auth/userpass/users/operator', {'password': 'disposable-oidc-test-only'})
         human = self.api('auth/userpass/login/operator', {'password': 'disposable-oidc-test-only'})['auth']['client_token']
-        files = [INFRA / '06-platform/radar-config/resources/identity.yaml',
-                 LIVE / 'infra/longhorn/oidc.yaml']
-        for path in files:
-            for resource in yaml.safe_load_all(path.read_text()):
+        radar_render = subprocess.run([
+            'helm', 'template', 'radar-oidc', str(APPS / 'radar/oidc'),
+            '--values', str(LIVE / 'apps/radar-values.yml')],
+            check=True, capture_output=True, text=True, timeout=30).stdout
+        sources = [radar_render, (LIVE / 'infra/longhorn/oidc.yaml').read_text()]
+        for source in sources:
+            for resource in yaml.safe_load_all(source):
                 if resource['kind'] not in ('OidcKey', 'OidcScope'):
                     continue
                 spec = resource['spec']['forProvider']
@@ -280,6 +285,21 @@ class ServiceCredentialOpenBao(unittest.TestCase):
                      'assignments': ['longhorn-admin'] if name == 'longhorn' else ['allow_all'],
                      'redirect_uris': [redirect]})
             client = self.api('identity/oidc/client/' + name)['data']
+            if name == 'radar':
+                policy = next(d['spec']['forProvider']['policy'] for d in yaml.safe_load_all(
+                    (APPS / 'radar/resources/openbao-access.yaml').read_text()) if d['kind'] == 'Policy')
+                self.api('sys/policies/acl/radar-vso-read', {'policy': policy})
+                reader = self.api('auth/token/create', {
+                    'policies': ['radar-vso-read'], 'no_default_policy': True})['auth']['client_token']
+                observed = self.api('identity/oidc/client/radar', token=reader)['data']
+                self.assertTrue(observed['client_id'] == client['client_id'])
+                self.assertTrue(observed['client_secret'] == client['client_secret'])
+                with self.assertRaises(self.m.APIError) as denied:
+                    self.api('identity/oidc/client/longhorn', token=reader)
+                self.assertEqual(denied.exception.status, 403)
+                with self.assertRaises(self.m.APIError) as denied:
+                    self.api('identity/oidc/client/radar', {'redirect_uris': [redirect]}, reader)
+                self.assertEqual(denied.exception.status, 403)
             self.api('identity/oidc/provider/' + name, {'allowed_client_ids': [client['client_id']],
                      'scopes_supported': [name]})
             verifier = secrets.token_urlsafe(48)
