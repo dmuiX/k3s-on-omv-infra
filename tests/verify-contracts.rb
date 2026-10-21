@@ -372,6 +372,10 @@ class PlatformContractTest < Minitest::Test
 
     postgresql = yaml_documents(INFRA / "07-k3s-postgres/resources/cluster.yaml").find { |document| document["kind"] == "Cluster" }
     assert_equal 3, postgresql.dig("spec", "instances")
+    assert_equal 15, postgresql.dig("spec", "smartShutdownTimeout")
+    # Do not shorten WAL flush/archiving or switchover safety deadlines.
+    refute postgresql.fetch("spec").key?("stopDelay")
+    refute postgresql.fetch("spec").key?("switchoverDelay")
     assert_equal "longhorn-local", postgresql.dig("spec", "storage", "storageClass")
     assert_equal "5Gi", postgresql.dig("spec", "storage", "size")
     assert_equal 1, postgresql.dig("spec", "postgresql", "synchronous", "number")
