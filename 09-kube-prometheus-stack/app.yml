@@ -47,7 +47,7 @@ spec:
                 memory: 2Gi
         alertmanager:
           alertmanagerSpec:
-            replicas: 2
+            replicas: 0
             nodeSelector:
               monitoring: 'true'
             podAntiAffinity: hard
