@@ -16,6 +16,8 @@ spec:
     chart: openbao
     targetRevision: 0.30.4
     helm:
+      valueFiles:
+      - $live/infra/helm-values/openbao.yml
       valuesObject:
         server:
           podManagementPolicy: Parallel
@@ -98,6 +100,9 @@ spec:
             readOnly: true
         ui:
           enabled: true
+  - repoURL: https://github.com/dmuiX/k3s-on-omv-live.git
+    targetRevision: main
+    ref: live
   - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
     targetRevision: main
     path: 04-openbao/resources

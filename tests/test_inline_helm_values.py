@@ -1,4 +1,4 @@
-"""Native Helm valuesObject and private Kustomize overlay contracts."""
+"""Native Helm defaults, private value files and legacy overlay contracts."""
 from pathlib import Path
 import os
 import shutil
@@ -23,18 +23,20 @@ class InlineHelmValuesTest(unittest.TestCase):
                     if not source.get('chart'):
                         continue
                     helm = source.get('helm', {})
-                    self.assertFalse(helm.get('valueFiles'), str(path))
+                    for value_file in helm.get('valueFiles', []):
+                        self.assertTrue(value_file.startswith('$live/infra/helm-values/'), str(path))
                     self.assertFalse(helm.get('values'), str(path))
                     if source['chart'] != 'prometheus-operator-crds':
                         self.assertIsInstance(helm.get('valuesObject'), dict, str(path))
                     count += 1
         self.assertGreater(count, 10)
 
-    def test_private_overlay_and_bootstrap_have_one_canonical_public_source(self):
+    def test_public_root_and_legacy_overlay_have_one_canonical_public_source(self):
         root = yaml.safe_load((INFRA / 'infra.yml').read_text())
-        self.assertEqual(root['spec']['source']['repoURL'], 'https://github.com/dmuiX/k3s-on-omv-live.git')
-        self.assertEqual(root['spec']['source']['path'], 'infra/applications')
-        self.assertNotIn('directory', root['spec']['source'])
+        self.assertEqual(root['spec']['source']['repoURL'], 'https://github.com/dmuiX/k3s-on-omv-infra.git')
+        self.assertEqual(root['spec']['source']['path'], '.')
+        self.assertEqual(root['spec']['source']['directory'], {
+            'recurse': True, 'include': '{*/app.yml,*/*/app.yml}'})
         base = yaml.safe_load((INFRA / 'kustomization.yaml').read_text())
         self.assertEqual(set(base['resources']), {str(p.relative_to(INFRA)) for p in INFRA.glob('**/app.yml')})
         overlay = yaml.safe_load((LIVE / 'infra/applications/kustomization.yaml').read_text())
@@ -74,7 +76,8 @@ class InlineHelmValuesTest(unittest.TestCase):
                 for key in keys:
                     value = value[key]
                 self.assertTrue(value)
-                self.assertNotIn('valueFiles', rendered['spec']['sources'][0]['helm'])
+                self.assertEqual(rendered['spec']['sources'][0]['helm']['valueFiles'],
+                    [f'$live/infra/helm-values/{name}.yml'])
                 for operation in operations:
                     self.assertTrue(operation['path'].startswith('/spec/sources/0/helm/valuesObject/'))
 
