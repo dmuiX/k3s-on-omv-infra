@@ -44,7 +44,7 @@ def values(name):
         for key in keys[:-1]:
             node = node.setdefault(key, {})
         node[keys[-1]] = operation['value']
-    private = yaml.safe_load((LIVE / f'infra/helm-values/{name}.yml').read_text())
+    private = yaml.safe_load((LIVE / f'infra/{name}/values.yml').read_text())
     # Argo CD gives valuesObject higher precedence than valueFiles.
     after = merge(private, source['helm']['valuesObject'])
     return app, source, before, after
@@ -64,15 +64,14 @@ class InfraRootValuesTest(unittest.TestCase):
                 refs = [s for s in app['spec']['sources'] if s.get('ref') == 'live']
                 self.assertEqual(len(refs), 1)
                 self.assertEqual(refs[0]['repoURL'], 'https://github.com/dmuiX/k3s-on-omv-live.git')
-                self.assertEqual(source['helm']['valueFiles'], [f'$live/infra/helm-values/{name}.yml'])
-                self.assertTrue((LIVE / f'infra/helm-values/{name}.yml').is_file())
-                # New values must be safe to publish before the Infra changes:
-                # no existing source directory may accidentally render them as resources.
-                for path in INFRA.glob('**/app.yml'):
-                    other = yaml.safe_load(path.read_text())
-                    for item in other['spec'].get('sources', []):
-                        if item.get('repoURL') == refs[0]['repoURL'] and item.get('path'):
-                            self.assertFalse(f'infra/helm-values/{name}.yml'.startswith(item['path'].rstrip('/') + '/'))
+                self.assertEqual(source['helm']['valueFiles'], [f'$live/infra/{name}/values.yml'])
+                private_file = LIVE / f'infra/{name}/values.yml'
+                self.assertTrue(private_file.is_file())
+                # Supported by the installed Argo CD 3.5.5 directory renderer:
+                # the same file remains usable as Helm input, but is never a
+                # raw Kubernetes manifest, including before root migration.
+                self.assertEqual(private_file.read_text().splitlines()[0],
+                                 '# +argocd:skip-file-rendering')
 
     def test_root_selects_all_children_but_not_itself_or_resources(self):
         source = yaml.safe_load((INFRA / 'infra.yml').read_text())['spec']['source']

@@ -16,7 +16,7 @@ spec:
     targetRevision: 92.10.1
     helm:
       valueFiles:
-      - $live/infra/helm-values/kube-prometheus-stack.yml
+      - $live/infra/kube-prometheus-stack/values.yml
       valuesObject:
         crds:
           enabled: false

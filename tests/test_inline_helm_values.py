@@ -24,7 +24,8 @@ class InlineHelmValuesTest(unittest.TestCase):
                         continue
                     helm = source.get('helm', {})
                     for value_file in helm.get('valueFiles', []):
-                        self.assertTrue(value_file.startswith('$live/infra/helm-values/'), str(path))
+                        self.assertTrue(value_file.startswith('$live/infra/'), str(path))
+                        self.assertTrue(value_file.endswith('/values.yml'), str(path))
                     self.assertFalse(helm.get('values'), str(path))
                     if source['chart'] != 'prometheus-operator-crds':
                         self.assertIsInstance(helm.get('valuesObject'), dict, str(path))
@@ -77,7 +78,7 @@ class InlineHelmValuesTest(unittest.TestCase):
                     value = value[key]
                 self.assertTrue(value)
                 self.assertEqual(rendered['spec']['sources'][0]['helm']['valueFiles'],
-                    [f'$live/infra/helm-values/{name}.yml'])
+                    [f'$live/infra/{name}/values.yml'])
                 for operation in operations:
                     self.assertTrue(operation['path'].startswith('/spec/sources/0/helm/valuesObject/'))
 
@@ -140,12 +141,18 @@ class InlineHelmValuesTest(unittest.TestCase):
         config = next(d for d in docs if d['kind'] == 'PodConfig')
         self.assertIs(config['spec']['template']['spec']['securityContext']['runAsNonRoot'], True)
 
-    def test_no_duplicate_infra_values_files_remain(self):
-        # Apps are deliberately deferred; their private Radar overrides stay in Live.
+    def test_public_defaults_are_inline_and_private_values_are_component_local(self):
+        private_components = {'argocd-config', 'kube-prometheus-stack', 'longhorn', 'openbao'}
         for repository in (INFRA, LIVE):
             for path in repository.glob('**/*values.y*ml'):
-                if repository == LIVE and path.relative_to(LIVE).match('apps/*/values.yml'):
-                    continue
+                if repository == LIVE:
+                    relative = path.relative_to(LIVE)
+                    if relative.match('apps/*/values.yml'):
+                        continue
+                    if str(relative) in {f'infra/{name}/values.yml' for name in private_components}:
+                        self.assertEqual(path.read_text().splitlines()[0],
+                                         '# +argocd:skip-file-rendering')
+                        continue
                 self.assertIn('tests', path.parts, str(path))
 
 

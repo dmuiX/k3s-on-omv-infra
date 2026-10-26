@@ -17,7 +17,7 @@ spec:
     targetRevision: 0.30.4
     helm:
       valueFiles:
-      - $live/infra/helm-values/openbao.yml
+      - $live/infra/openbao/values.yml
       valuesObject:
         server:
           podManagementPolicy: Parallel

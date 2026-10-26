@@ -16,7 +16,7 @@ spec:
     targetRevision: 10.10.3
     helm:
       valueFiles:
-      - $live/infra/helm-values/argocd-config.yml
+      - $live/infra/argocd-config/values.yml
       releaseName: argocd
       valuesObject:
         configs:

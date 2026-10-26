@@ -6,15 +6,18 @@ or workload manifests. Child Applications retain their chart versions, resource
 sources and sync settings.
 
 The four former private Application patches are now native Helm value files in
-the private Live repository at `infra/helm-values/<application>.yml`. A `ref: live`
+the private Live repository at `infra/<application>/values.yml`. A `ref: live`
 source resolves `$live` from that repository's root. Existing Live manifest sources
 remain; new reference-only sources do not generate resources.
 
 ## Publication and activation order
 
-1. Merge the private Live change adding the four value files first. They are
-   outside every existing Application resource directory, so publishing them
-   cannot cause Argo CD to mistake Helm values for Kubernetes manifests.
+1. Merge the private Live change adding the four value files first. Each starts
+   with Argo CD's supported `# +argocd:skip-file-rendering` directive. The installed
+   Argo CD 3.5.5 directory renderer skips marked files before manifest parsing,
+   while Helm can still read them normally. This keeps staged publication safe
+   even where values share a directory with existing raw manifests. Keep the
+   marker on every component values file; no additional wrappers are needed.
 2. Merge the Infra change. The old Live Kustomize wrapper remains available and
    still applies the same overrides. This permits a staged transition; new
    Application chart sources also consume the new files.
@@ -42,7 +45,8 @@ Alertmanager replica count or Grafana admin Secret ownership changes belong here
 
 `tests/test_infra_root_values.py` compares the old patch-applied effective values
 against Helm's new `valueFiles` then `valuesObject` precedence for all four apps.
-It verifies private paths, safe staged publication and root file selection. Set
+It verifies component-local private paths, required skip-rendering markers for
+safe staged publication, and root file selection. Set
 `HELM_CHART_CACHE` to a directory containing the exact chart archives to run the
 optional native Helm render check:
 
@@ -56,6 +60,9 @@ value precedence; chart versions argo-cd 10.10.3, Longhorn 1.13.0, OpenBao 0.30.
 and kube-prometheus-stack 92.10.1. No custom renderer or chart dependency is added.
 References: [external values](https://argo-cd.readthedocs.io/en/stable/user-guide/multiple_sources/#helm-value-files-from-external-git-repository)
 and [Helm precedence](https://argo-cd.readthedocs.io/en/stable/user-guide/helm/#helm-value-precedence).
+The native skip directive is documented under
+[skipping directory file rendering](https://argo-cd.readthedocs.io/en/stable/user-guide/directory/#skipping-file-rendering)
+and verified in Argo CD v3.5.5 `reposerver/repository/repository.go`.
 
 Existing chart limitation: OpenBao 0.30.4's `templates/server-httproute.yaml`
 hardcodes backendRefs without `group` or `weight` and offers no values field to
