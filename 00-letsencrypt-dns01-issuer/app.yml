@@ -11,13 +11,13 @@ spec:
     name: in-cluster
     namespace: istio-gateway
   sources:
-    - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
-      targetRevision: main
-      path: 00-letsencrypt-dns01-issuer/resources
     - repoURL: https://github.com/dmuiX/k3s-on-omv-live.git
       targetRevision: main
       path: infra/letsencrypt-dns01
   syncPolicy:
+    managedNamespaceMetadata:
+      labels:
+        pod-security.kubernetes.io/enforce: restricted
     automated:
       enabled: true
       prune: false

@@ -17,9 +17,30 @@ spec:
   - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
     targetRevision: main
     path: adapters/credential-custody
+  - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
+    targetRevision: main
+    path: charts/openbao-oidc
+    helm:
+      releaseName: longhorn-oidc
+      valueFiles:
+      - $live/infra/longhorn/oidc-values.yml
   - repoURL: https://github.com/dmuiX/k3s-on-omv-live.git
     targetRevision: main
-    path: infra/longhorn
+    ref: live
+  - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
+    targetRevision: main
+    path: charts/service-route
+    helm:
+      releaseName: longhorn-route
+      valueFiles:
+      - $live/infra/longhorn/route-values.yml
+  - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
+    targetRevision: main
+    path: charts/oidc-proxy
+    helm:
+      releaseName: longhorn-oidc-proxy
+      valueFiles:
+      - $live/infra/longhorn/proxy-values.yml
   syncPolicy:
     automated:
       enabled: true

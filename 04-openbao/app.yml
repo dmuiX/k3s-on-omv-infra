@@ -16,10 +16,107 @@ spec:
     chart: openbao
     targetRevision: 0.30.4
     helm:
-      valueFiles:
-      - $live/infra/openbao/values.yml
       valuesObject:
         server:
+          # Replaces allow-openbao-raft-and-clients with the chart policy openbao.
+          # Pruning is disabled: retain the old resource until reviewed retirement.
+          # The accepted native selector adds instance=openbao (not component=server).
+          networkPolicy:
+            enabled: true
+            ingress:
+            - from:
+              - podSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: openbao
+              ports:
+              - protocol: TCP
+                port: 8201
+            - from:
+              - podSelector: {}
+              ports:
+              - protocol: TCP
+                port: 8200
+            # Ambient preserves workload source IPs while tunneling over HBONE.
+            # https://istio.io/latest/docs/ambient/usage/networkpolicy/
+            - from:
+              - podSelector: {}
+              - namespaceSelector:
+                  matchExpressions:
+                  - key: kubernetes.io/metadata.name
+                    operator: In
+                    values:
+                    - cert-manager
+                    - crossplane-system
+                    - vault-secrets-operator
+                    - cloudnative-pg
+                    - kube-prometheus-stack
+                    - radar
+                    - audiobookshelf
+                    - longhorn
+                    - backup-validation
+                    - kube-system
+                    - istio-gateway
+              ports:
+              - protocol: TCP
+                port: 15008
+            - from:
+              - namespaceSelector:
+                  matchExpressions:
+                  - key: kubernetes.io/metadata.name
+                    operator: In
+                    values:
+                    - cert-manager
+                    - crossplane-system
+                    - vault-secrets-operator
+                    - cloudnative-pg
+                    - kube-prometheus-stack
+                    - radar
+                    - audiobookshelf
+                    - longhorn
+                    - backup-validation
+                    - kube-system
+                    - istio-gateway
+              ports:
+              - protocol: TCP
+                port: 8200
+            egress:
+            - to:
+              - namespaceSelector:
+                  matchLabels:
+                    kubernetes.io/metadata.name: cloudnative-pg
+                podSelector:
+                  matchLabels:
+                    cnpg.io/cluster: k3s-postgres
+              ports:
+              - protocol: TCP
+                port: 5432
+              - protocol: TCP
+                port: 15008
+            - to:
+              - podSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: openbao
+              ports:
+              - protocol: TCP
+                port: 8200
+              - protocol: TCP
+                port: 8201
+              - protocol: TCP
+                port: 15008
+            - to:
+              - namespaceSelector:
+                  matchLabels:
+                    kubernetes.io/metadata.name: kube-system
+              ports:
+              - protocol: UDP
+                port: 53
+              - protocol: TCP
+                port: 53
+              - protocol: TCP
+                port: 443
+            - ports:
+              - protocol: TCP
+                port: 6443
           podManagementPolicy: Parallel
           statefulSet:
             securityContext:
@@ -30,7 +127,7 @@ spec:
                   - ALL
           gateway:
             httpRoute:
-              enabled: true
+              enabled: false
               apiVersion: gateway.networking.k8s.io/v1
               activeService: true
               parentRefs:
@@ -44,11 +141,18 @@ spec:
           ha:
             enabled: true
             replicas: 3
+            disruptionBudget:
+              enabled: true
+              maxUnavailable: 1
             raft:
               enabled: true
               setNodeId: true
               config: |
                 ui = true
+                telemetry {
+                  prometheus_retention_time = "30s"
+                  disable_hostname = true
+                }
                 listener "tcp" {
                   address = "[::]:8200"
                   tls_disable = 1
@@ -98,15 +202,46 @@ spec:
           - name: seal
             mountPath: /openbao/seal
             readOnly: true
+        serverTelemetry:
+          serviceMonitor:
+            enabled: true
+            authorization:
+              type: Bearer
+              credentials:
+                name: openbao-metrics
+                key: token
         ui:
           enabled: true
-  - repoURL: https://github.com/dmuiX/k3s-on-omv-live.git
-    targetRevision: main
-    ref: live
   - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
     targetRevision: main
     path: 04-openbao/resources
+  - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
+    targetRevision: main
+    path: charts/service-route
+    helm:
+      releaseName: openbao-route
+      valueFiles:
+      - $live/infra/openbao/route-values.yml
+      valuesObject:
+        name: openbao
+        namespace: openbao
+        rules:
+        - backend:
+            name: openbao-active
+            port: 8200
+            weight: 1
+          matches:
+          - path:
+              type: PathPrefix
+              value: /
+  - repoURL: https://github.com/dmuiX/k3s-on-omv-live.git
+    targetRevision: main
+    ref: live
   syncPolicy:
+    managedNamespaceMetadata:
+      labels:
+        istio.io/dataplane-mode: ambient
+        pod-security.kubernetes.io/enforce: restricted
     automated:
       enabled: true
       prune: false

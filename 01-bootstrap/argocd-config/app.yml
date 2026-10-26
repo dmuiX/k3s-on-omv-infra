@@ -15,9 +15,9 @@ spec:
     chart: argo-cd
     targetRevision: 10.10.3
     helm:
+      releaseName: argocd
       valueFiles:
       - $live/infra/argocd-config/values.yml
-      releaseName: argocd
       valuesObject:
         configs:
           cm:
@@ -25,6 +25,7 @@ spec:
             accounts.radar.enabled: 'true'
             # Preserve Argo's default high-churn exclusions and avoid caching
             # provider APIs that the reviewed Crossplane allowlist cannot use.
+            # Reason: save RAM, not deactivating, but its more like not caching the APIs
             resource.exclusions: |
               - apiGroups: ['', discovery.k8s.io]
                 kinds: [Endpoints, EndpointSlice]
@@ -139,6 +140,10 @@ spec:
           params:
             server.insecure: 'false'
         controller:
+          metrics:
+            enabled: true
+            serviceMonitor:
+              enabled: true
           containerSecurityContext:
             runAsNonRoot: true
             allowPrivilegeEscalation: false
@@ -156,6 +161,10 @@ spec:
               cpu: 500m
               memory: 2Gi
         repoServer:
+          metrics:
+            enabled: true
+            serviceMonitor:
+              enabled: true
           containerSecurityContext:
             runAsNonRoot: true
             allowPrivilegeEscalation: false
@@ -173,6 +182,10 @@ spec:
               cpu: 500m
               memory: 512Mi
         server:
+          metrics:
+            enabled: true
+            serviceMonitor:
+              enabled: true
           containerSecurityContext:
             runAsNonRoot: true
             allowPrivilegeEscalation: false
@@ -190,6 +203,10 @@ spec:
               cpu: 250m
               memory: 256Mi
         applicationSet:
+          metrics:
+            enabled: true
+            serviceMonitor:
+              enabled: true
           containerSecurityContext:
             runAsNonRoot: true
             allowPrivilegeEscalation: false
@@ -200,6 +217,10 @@ spec:
               drop:
               - ALL
         notifications:
+          metrics:
+            enabled: true
+            serviceMonitor:
+              enabled: true
           containerSecurityContext:
             runAsNonRoot: true
             allowPrivilegeEscalation: false
@@ -233,11 +254,19 @@ spec:
     targetRevision: main
     path: infra/argocd-config
     ref: live
+    directory:
+      exclude: '*values.y*ml'
   syncPolicy:
+    managedNamespaceMetadata:
+      labels:
+        pod-security.kubernetes.io/enforce: restricted
+        pod-security.kubernetes.io/warn: restricted
+        pod-security.kubernetes.io/audit: restricted
     automated:
       enabled: true
       prune: false
       selfHeal: true
       allowEmpty: false
     syncOptions:
+    - CreateNamespace=true
     - ServerSideApply=true

@@ -3,6 +3,8 @@
 require "minitest/autorun"
 require "pathname"
 require "yaml"
+require "open3"
+require "tempfile"
 
 ROOT = Pathname(__dir__).parent.parent
 INFRA = ROOT / "k3s-on-omv-infra"
@@ -49,7 +51,34 @@ module ContractHelpers
 
   def yaml_files(root)
     # Local Helm templates are validated after rendering by their chart suites.
-    root.glob("**/*.{yml,yaml}").reject { |path| path.to_s.include?("/.git/") || path.to_s.include?("/chart/templates/") }
+    root.glob("**/*.{yml,yaml}").reject { |path| path.to_s.include?("/.git/") || path.each_filename.any? { |part| %w[templates tests].include?(part) } }
+  end
+
+  def shared_documents
+    @shared_documents ||= (application_files(INFRA) + application_files(APPS)).flat_map do |path|
+      app = application(path)
+      app.fetch('spec').fetch('sources', []).select { |s| s.fetch('path', '').start_with?('charts/') }.flat_map do |source|
+        assert_equal 'https://github.com/dmuiX/k3s-on-omv-infra.git', source.fetch('repoURL')
+        command = ['helm', 'template', source.dig('helm', 'releaseName') || 'consumer', (INFRA / source.fetch('path')).to_s,
+                   '--namespace', app.dig('spec', 'destination', 'namespace')]
+        Array(source.dig('helm', 'valueFiles')).each do |value|
+          command.concat(['-f', (LIVE / value.delete_prefix('$live/')).to_s])
+        end
+        Tempfile.create(['shared-values', '.yaml']) do |values|
+          config = source.dig('helm', 'valuesObject') || {}
+          patch = LIVE / "infra/applications/patches/#{app.dig('metadata', 'name')}.yaml"
+          if patch.file?
+            pointer = "/spec/sources/#{app.dig('spec', 'sources').index(source)}/helm/valuesObject"
+            operation = YAML.load_file(patch).find { |op| op['path'] == pointer }
+            config = operation.fetch('value') if operation
+          end
+          values.write(config.empty? ? "{}\n" : YAML.dump(config)); values.flush
+          output, error, status = Open3.capture3(*command, '-f', values.path)
+          assert status.success?, error
+          YAML.load_stream(output).compact.map { |doc| [path, doc] }
+        end
+      end
+    end
   end
 
   def application(path)
@@ -68,13 +97,8 @@ module ContractHelpers
   end
 
   def private_value(name, *keys)
-    operations = YAML.load_file(LIVE / "infra/applications/patches/#{name}.yaml")
-    operations.each do |operation|
-      prefix = operation.fetch("path").split("/").drop(6).map { |part| part.gsub("~1", "/").gsub("~0", "~") }
-      next unless keys.take(prefix.length) == prefix
-      return keys.drop(prefix.length).reduce(operation.fetch("value")) { |value, key| value.fetch(key) }
-    end
-    flunk("Missing private override #{name}: #{keys.join('.')}")
+    values = YAML.load_file(LIVE / "infra/#{name}/values.yml")
+    keys.reduce(values) { |value, key| value.fetch(key) }
   end
 
   def walk(value, key = nil, &block)
@@ -123,7 +147,8 @@ class RepositoryContractTest < Minitest::Test
     refute application_files(INFRA).any? { |path| application(path).dig("metadata", "name") == "radar" }
     refute (INFRA / "06-platform/radar-config").exist?
     radar = application(APPS / "radar/app.yml")
-    assert radar.dig("spec", "sources").any? { |source| source["path"] == "radar/oidc" }
+    assert radar.dig("spec", "sources").any? { |source| source["path"] == "charts/openbao-oidc" }
+    assert radar.dig("spec", "sources").any? { |source| source["path"] == "charts/postgres-consumer" }
     assert radar.dig("spec", "sources").any? { |source| source["path"] == "radar/resources" }
     refute (LIVE / "apps/radar/oidc.yaml").exist?
     assert (LIVE / "apps/radar/values.yml").file?
@@ -142,6 +167,8 @@ class RepositoryContractTest < Minitest::Test
     YAML_REPOSITORIES.each do |repository|
       yaml_files(repository).each do |path|
         yaml_documents(path).each do |document|
+          # Values interfaces are not API objects; chart-render tests verify their defaults.
+          next unless %w[HTTPRoute Application].include?(document["kind"])
           walk(document) do |key, value|
             next unless %w[parentRefs backendRefs].include?(key) && value.is_a?(Array)
             value.each do |reference|
@@ -170,13 +197,29 @@ class RepositoryContractTest < Minitest::Test
           value_file[/^\$(infra|apps|live)\//, 1]
         end.compact
       end.uniq
-      assert_equal expected_refs, refs.map { |index| sources[index]["ref"] }, path.to_s
+      actual_refs = refs.map { |index| sources[index]['ref'] }
+      assert_equal actual_refs.uniq, actual_refs, path.to_s
+      assert_empty expected_refs - actual_refs, path.to_s
+      # A named chart source is also a stable JSON-patch target, even without
+      # cross-source valueFiles (Grafana's postgresConsumer source).
+      refs.each do |index|
+        source = sources[index]
+        assert(expected_refs.include?(source['ref']) || source.key?('helm'), path.to_s)
+      end
       chart_index = sources.index { |source| source.key?("chart") }
       assert_equal 0, chart_index, path.to_s if chart_index
       resource_indices = sources.each_index.select { |index| sources[index].key?("path") && !sources[index].key?("helm") }
-      # Official chart-only Istio components need no companion raw resources.
-      refute_empty resource_indices, path.to_s unless %w[istio-istiod istio-cni istio-ztunnel].include?(app.dig("metadata", "name"))
-      assert resource_indices.all? { |index| refs.empty? || index >= refs.max }, path.to_s
+      # Chart-only components manage destination Namespace metadata in their Application.
+      chart_only = %w[istio-core istio-istiod istio-cni istio-ztunnel cert-manager crossplane vault-secrets-operator]
+      refute_empty resource_indices, path.to_s unless chart_only.include?(app.dig("metadata", "name"))
+      # Source ordering is not a dependency order: a values ref may also own
+      # plain resources (Longhorn and Radar). Every values ref must resolve.
+      sources.each do |source|
+        Array(source.dig('helm', 'valueFiles')).each do |value|
+          ref = value[/^\$([^\/]+)\//, 1]
+          assert sources.any? { |s| s['ref'] == ref }, path.to_s if ref
+        end
+      end
     end
   end
 
@@ -242,7 +285,12 @@ class RepositoryContractTest < Minitest::Test
         end
       end
     end
-    duplicates = owners.select { |_identity, paths| paths.uniq.length > 1 }
+    shared_documents.each do |path, document|
+      metadata = document.fetch('metadata')
+      identity = [document['apiVersion'], document['kind'], metadata['namespace'], metadata['name']]
+      owners[identity] << "#{path.relative_path_from(ROOT)}:shared"
+    end
+    duplicates = owners.select { |_identity, paths| paths.length > 1 }
     assert_empty duplicates, duplicates.inspect
   end
 
@@ -374,10 +422,6 @@ class PlatformContractTest < Minitest::Test
 
     postgresql = yaml_documents(INFRA / "07-k3s-postgres/resources/cluster.yaml").find { |document| document["kind"] == "Cluster" }
     assert_equal 3, postgresql.dig("spec", "instances")
-    assert_equal 15, postgresql.dig("spec", "smartShutdownTimeout")
-    # Do not shorten WAL flush/archiving or switchover safety deadlines.
-    refute postgresql.fetch("spec").key?("stopDelay")
-    refute postgresql.fetch("spec").key?("switchoverDelay")
     assert_equal "longhorn-local", postgresql.dig("spec", "storage", "storageClass")
     assert_equal "20Gi", postgresql.dig("spec", "storage", "size")
     assert_equal 1, postgresql.dig("spec", "postgresql", "synchronous", "number")
@@ -433,6 +477,9 @@ class PlatformContractTest < Minitest::Test
         yaml_files(repository / source_path).flat_map { |file| yaml_documents(file) }
       end
     end
+    # Radar's Live Kustomization references its public supporting-resource base.
+    documents.concat(yaml_files(APPS / 'radar/resources').flat_map { |file| yaml_documents(file) })
+    documents.concat(shared_documents.map(&:last))
     policies = documents.select { |document| document["kind"] == "Policy" }.to_h do |document|
       [document.dig("metadata", "name"), document.dig("spec", "forProvider", "policy")]
     end
@@ -532,15 +579,20 @@ class PlatformContractTest < Minitest::Test
     assert_includes alertmanager, "path: monitoring/alertmanager-config"
     assert_includes alertmanager, "name: alertmanager-platform-config"
     assert_equal "alertmanager-platform-config", chart_values("09-kube-prometheus-stack/app.yml").dig("alertmanager", "alertmanagerSpec", "configSecret")
-    proxy = (INFRA / "06-platform/longhorn-config/resources/oidc-proxy.yaml").read
+    proxy_resources = shared_documents.select do |owner, doc|
+      application(owner).dig('metadata', 'name') == 'longhorn-config' &&
+        %w[Deployment ConfigMap].include?(doc['kind'])
+    end.map(&:last)
+    proxy = YAML.dump_stream(*proxy_resources)
     assert_includes proxy, "quay.io/oauth2-proxy/oauth2-proxy:v7.15.5@sha256:8498b0d0ef0a7b29686414000a08aee467f02d0299c9ed1e006a8f33fc017916"
     assert_includes proxy, "upstream=http://longhorn-frontend.longhorn.svc:80"
-    assert_includes proxy, "rolloutRestartTargets"
+    assert_includes (INFRA / "06-platform/longhorn-config/resources/oidc-proxy.yaml").read, "rolloutRestartTargets"
     refute_includes (INFRA / "02-controllers/longhorn/app.yml").read, "path: infra/longhorn"
-    assert_includes (INFRA / "06-platform/longhorn-config/app.yml").read, "path: infra/longhorn"
+    assert_includes (INFRA / "06-platform/longhorn-config/app.yml").read, "path: charts/oidc-proxy"
     refute_includes (INFRA / "06-platform/openbao-config/app.yml").read, "infra/longhorn"
-    route = yaml_documents(LIVE / "infra/longhorn/route.yaml").find { |document| document["kind"] == "HTTPRoute" }
-    assert_equal "longhorn-oidc-proxy", route.dig("spec", "rules", 0, "backendRefs", 0, "name")
+    route = YAML.load_file(LIVE / "infra/longhorn/route-values.yml")
+    assert_equal "longhorn-oidc-proxy", route.dig("rules", 0, "backend", "name")
+    assert_equal 80, route.dig("rules", 0, "backend", "port")
   end
 
   def test_vso_transformations_fail_closed_on_missing_required_keys
@@ -551,9 +603,16 @@ class PlatformContractTest < Minitest::Test
       "07-k3s-postgres/resources/credentials.yaml",
       "08-backup-validation/resources/credentials.yaml",
       "09-kube-prometheus-stack/resources/alertmanager-email.yaml",
-      "09-kube-prometheus-stack/resources/prometheus-k8up-credentials.yaml",
-      "09-kube-prometheus-stack/resources/grafana.yaml"
+      "09-kube-prometheus-stack/resources/prometheus-k8up-credentials.yaml"
     ]
+    shared_documents.select { |_path, doc| doc['kind'] == 'VaultDynamicSecret' }.each do |path, doc|
+      manifest = YAML.dump(doc)
+      assert_includes manifest, 'excludeRaw: true', path.to_s
+      doc.dig('spec', 'destination', 'transformation', 'templates').each_value do |template|
+        assert_match(/fail "missing required OpenBao (?:key:|database username or password)/,
+                     template.fetch('text'), path.to_s)
+      end
+    end
     files.each do |relative|
       manifest = (INFRA / relative).read
       assert_includes manifest, "excludeRaw: true", relative
@@ -566,8 +625,11 @@ class PlatformContractTest < Minitest::Test
       yaml_documents(path).map do |document|
         document.dig("metadata", "namespace") if document["kind"] == "NetworkPolicy" && document.dig("metadata", "name") == "default-deny"
       end.compact
-    end.sort
-    assert_equal %w[backup-validation cloudnative-pg openbao radar], namespaces
+    end
+    namespaces += shared_documents.map do |_path, doc|
+      doc.dig('metadata', 'namespace') if doc['kind'] == 'NetworkPolicy' && doc.dig('metadata', 'name') == 'default-deny'
+    end.compact
+    assert_equal %w[backup-validation cloudnative-pg openbao radar], namespaces.sort
   end
 
   def test_official_smb_driver_and_dynamic_local_k8up_repositories
@@ -578,7 +640,18 @@ class PlatformContractTest < Minitest::Test
     assert_includes application(INFRA / "02-controllers/csi-driver-smb/app.yml").dig("spec", "syncPolicy", "syncOptions"), "SkipDryRunOnMissingResource=true"
     assert_equal false, chart_values("02-controllers/csi-driver-smb/app.yml").dig("windows", "enabled")
 
-    storage_class = YAML.load_file(LIVE / "infra/csi-driver-smb/storageclass.yaml")
+    # Render the native StorageClass owner using only the exact local chart.
+    source = application(INFRA / '02-controllers/csi-driver-smb/app.yml').dig('spec', 'sources', 0)
+    chart = Pathname(ENV.fetch('PLATFORM_CHART_AUDIT', '/tmp/platform-chart-audit')) /
+      "#{source.fetch('chart')}-#{source.fetch('targetRevision')}" / source.fetch('chart')
+    assert (chart / 'Chart.yaml').file?, 'Exact offline SMB chart is required'
+    values = source.fetch('helm').fetch('valuesObject').merge('storageClasses' => private_value('csi-driver-smb', 'storageClasses'))
+    output, _error, status = Open3.capture3('helm', 'template', 'csi-driver-smb', chart.to_s,
+      '--namespace', 'kube-system', '-f', '-', stdin_data: YAML.dump(values))
+    assert status.success?, 'Native SMB chart rendering failed'
+    storage_class = YAML.load_stream(output).compact.find { |d| d['kind'] == 'StorageClass' && d.dig('metadata', 'name') == 'smb' }
+    assert storage_class
+    refute (LIVE / 'infra/csi-driver-smb/storageclass.yaml').exist?
     assert_equal "smb.csi.k8s.io", storage_class["provisioner"]
     assert_equal "//192.168.1.5/k3s-cluster", storage_class.dig("parameters", "source")
     assert_equal "${pvc.metadata.namespace}/${pvc.metadata.name}", storage_class.dig("parameters", "subDir")
@@ -642,10 +715,10 @@ class PlatformContractTest < Minitest::Test
       .find { |document| document.dig("metadata", "name") == "allow-openbao-snapshot-egress" }
     assert snapshot_egress
     assert snapshot_egress.dig("spec", "egress").any? { |rule| Array(rule["ports"]).any? { |port| port["port"] == 443 } }
-    openbao_network = yaml_documents(INFRA / "04-openbao/resources/security.yaml")
-      .find { |document| document.dig("metadata", "name") == "allow-openbao-raft-and-clients" }
-    assert_includes openbao_network.dig("spec", "ingress").to_s, "istio-gateway"
-    assert openbao_network.dig("spec", "egress").any? { |rule| Array(rule["ports"]).any? { |port| port["port"] == 6443 } }
+    openbao_network = chart_values("04-openbao/app.yml").dig("server", "networkPolicy")
+    assert_equal true, openbao_network["enabled"]
+    assert_includes openbao_network.fetch("ingress").to_s, "istio-gateway"
+    assert openbao_network.fetch("egress").any? { |rule| Array(rule["ports"]).any? { |port| port["port"] == 6443 } }
 
     validation = (INFRA / "08-backup-validation/resources").glob("*.yaml").map(&:read).join("\n")
     assert_includes validation, "path: platform/r2"

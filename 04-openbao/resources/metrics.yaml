@@ -1,0 +1,92 @@
+# VSO publishes only its dedicated metrics login token, never a provider token.
+apiVersion: vault.vault.upbound.io/v1alpha1
+kind: Policy
+metadata:
+  name: openbao-metrics
+spec:
+  deletionPolicy: Orphan
+  forProvider:
+    name: openbao-metrics
+    policy: |
+      path "sys/metrics" { capabilities = ["read"] }
+      path "auth/token/lookup-self" { capabilities = ["read"] }
+      path "auth/token/renew-self" { capabilities = ["update"] }
+  providerConfigRef:
+    name: openbao
+---
+apiVersion: kubernetes.vault.upbound.io/v1alpha1
+kind: AuthBackendRole
+metadata:
+  name: openbao-metrics
+spec:
+  deletionPolicy: Orphan
+  forProvider:
+    backend: kubernetes
+    roleName: openbao-metrics
+    boundServiceAccountNames:
+      - openbao-metrics
+    boundServiceAccountNamespaces:
+      - openbao
+    tokenPolicies:
+      - openbao-metrics
+    tokenNoDefaultPolicy: true
+    tokenTtl: 3600
+    tokenMaxTtl: 86400
+  providerConfigRef:
+    name: openbao
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: openbao-metrics
+  namespace: openbao
+automountServiceAccountToken: false
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultConnection
+metadata:
+  name: openbao-metrics
+  namespace: openbao
+spec:
+  address: "http://openbao-active.openbao.svc.cluster.local:8200"
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultAuth
+metadata:
+  name: openbao-metrics
+  namespace: openbao
+spec:
+  method: kubernetes
+  mount: kubernetes
+  kubernetes:
+    role: openbao-metrics
+    serviceAccount: openbao-metrics
+    tokenExpirationSeconds: 600
+  vaultConnectionRef: openbao-metrics
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultDynamicSecret
+metadata:
+  name: openbao-metrics
+  namespace: openbao
+spec:
+  vaultAuthRef: openbao-metrics
+  mount: auth
+  path: token/lookup-self
+  requestHTTPMethod: GET
+  # The lookup response has no secret lease; VSO owns login renewal/re-login.
+  refreshAfter: 1m
+  destination:
+    create: true
+    name: openbao-metrics
+    type: Opaque
+    transformation:
+      excludeRaw: true
+      templates:
+        token:
+          text: |-
+            {{- $value := get .Secrets "id" -}}
+            {{- if empty $value -}}
+            {{- fail "missing required OpenBao self-lookup id" -}}
+            {{- end -}}
+            {{- $value -}}

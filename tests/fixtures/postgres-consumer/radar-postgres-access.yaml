@@ -1,0 +1,39 @@
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: radar
+  namespace: cloudnative-pg
+  annotations:
+    argocd.argoproj.io/sync-wave: "-5"
+spec:
+  name: radar
+  owner: radar
+  cluster:
+    name: k3s-postgres
+---
+apiVersion: database.vault.upbound.io/v1alpha1
+kind: SecretBackendStaticRole
+metadata:
+  name: radar
+  annotations:
+    argocd.argoproj.io/sync-wave: "-10"
+spec:
+  forProvider:
+    backend: database
+    name: radar
+    dbName: k3s-postgres
+    username: radar
+    rotationPeriod: 2592000
+    rotationStatements:
+      - >-
+        ["DO $role$ BEGIN
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'radar' AND (rolsuper OR rolreplication OR rolbypassrls)) THEN
+        RAISE EXCEPTION 'Refusing privileged Radar role'; END IF;
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = 'radar') THEN
+        ALTER ROLE radar WITH LOGIN NOCREATEDB NOCREATEROLE INHERIT CONNECTION LIMIT 25 PASSWORD '{{password}}';
+        ELSE
+        CREATE ROLE radar WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION INHERIT CONNECTION LIMIT 25 PASSWORD '{{password}}';
+        END IF;
+        END $role$;"]
+  providerConfigRef:
+    name: openbao

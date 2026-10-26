@@ -17,7 +17,11 @@ spec:
     helm:
       valuesObject:
         replicaCount: 2
-        leaderElection: true
+        k8up:
+          enableLeaderElection: true
+        metrics:
+          serviceMonitor:
+            enabled: true
         resources:
           requests:
             cpu: 50m
@@ -38,6 +42,10 @@ spec:
     targetRevision: main
     path: 02-controllers/k8up/resources
   syncPolicy:
+    managedNamespaceMetadata:
+      labels:
+        istio.io/dataplane-mode: ambient
+        pod-security.kubernetes.io/enforce: restricted
     automated:
       enabled: true
       prune: false

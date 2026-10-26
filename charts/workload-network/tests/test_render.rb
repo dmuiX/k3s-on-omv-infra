@@ -46,8 +46,7 @@ class WorkloadNetworkTest < Minitest::Test
     sources = app['spec']['sources'].select { |s| s['path'] == 'charts/workload-network' }
     assert_equal 1, sources.length
     assert_equal ['$live/apps/radar/network-values.yml'], sources.first['helm']['valueFiles']
-    resources = YAML.load_file(File.join(APPS, 'radar/resources/kustomization.yaml'))
-    refute_includes resources['resources'], 'network-policy.yaml'
+    assert app['spec']['sources'].any? { |s| s['path'] == 'radar/resources' && s['repoURL'].end_with?('/k3s-on-omv-apps.git') }
     refute File.exist?(File.join(APPS, 'radar/resources/network-policy.yaml'))
   end
 
@@ -75,6 +74,14 @@ class WorkloadNetworkTest < Minitest::Test
                                      '-n', 'audiobookshelf', '-f', File.join(LIVE, 'apps/audiobookshelf/values.yml'))
     assert status.success?, err
     baseline = documents(File.read(File.join(FIXTURES, 'audiobookshelf-baseline.yaml')))
+    # The baseline predates the already-merged Apps image-tag label fix.
+    # Permit that non-selector metadata label only; compare complete specs.
+    tag = YAML.load_file(File.join(LIVE, 'apps/audiobookshelf/values.yml')).dig('image', 'tag') ||
+          YAML.load_file(File.join(APPS, 'audiobookshelf/chart/values.yaml')).dig('image', 'tag')
+    baseline.each do |doc|
+      labels = doc.dig('metadata', 'labels')
+      labels['app.kubernetes.io/version'] = tag if labels&.key?('app.kubernetes.io/version')
+    end
     assert_equal indexed(baseline), indexed(documents(out))
     peers = baseline.find { |d| d['metadata']['name'] == 'audiobookshelf-allow' }['spec']['ingress'].first['from']
     assert_equal 2, peers.length # Gateway namespace OR same-namespace configurator.

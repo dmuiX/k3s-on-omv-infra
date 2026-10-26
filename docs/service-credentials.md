@@ -19,13 +19,13 @@ Other consumer-specific OpenBao policies/auth roles live in their owner's `resou
 
 Live keeps Longhorn identity/route settings under `infra/longhorn`, Radar's non-secret issuer/callback/route values in `apps/radar/values.yml`, and database retention settings under `infra/k3s-postgres`. Service DNS names, database resources, Kubernetes namespaces, KV paths, Secret names and PVC identities are unchanged. In particular, the manager secret remains at `kv/postgresql/openbao-manager`; renaming an Application is not a secret/data migration.
 
-Audiobookshelf's local chart owns its OIDC key, client, provider, administrator assignment and app-specific role scope. Its PostSync API configurator consumes the existing shared custody helper, without extra Kubernetes RBAC or OIDC provisioning in Ansible. Since ABS requests the standard `profile` scope, the platform owns that global OpenBao scope exactly once as `OidcScope/oidc-profile`; applications reference it instead of declaring conflicting external `profile` objects. Its template supplies only entity name/preferred_username, not administrator permissions or invented email claims. The provider trust-root ACL adds only the exact Audiobookshelf policy/role/OIDC paths and the shared profile path. The reviewed live trust-policy update and state migration remain separate approvals; the new Application's auto-sync stays disabled.
+Audiobookshelf's Application owns its OIDC key, client, provider, administrator assignment and app-specific role scope through the shared `openbao-oidc` chart source. Its PostSync API configurator consumes the existing shared custody helper, without extra Kubernetes RBAC or OIDC provisioning in Ansible. Since ABS requests the standard `profile` scope, the platform owns that global OpenBao scope exactly once as `OidcScope/oidc-profile`; applications reference it instead of declaring conflicting external `profile` objects. Its template supplies only entity name/preferred_username, not administrator permissions or invented email claims. The provider trust-root ACL adds only the exact Audiobookshelf policy/role/OIDC paths and the shared profile path. The reviewed live trust-policy update and state migration remain separate approvals; the new Application's auto-sync stays disabled.
 
 ## Bootstrap ordering
 
 `longhorn` must provide storage before OpenBao starts. Its later `longhorn-config` Application therefore runs in Infra wave 6, after OpenBao/VSO/provider trust, not in controller wave 2.
 
-After Crossplane provider trust is established, Bootstrap activates the Apps root so Radar's administrator group and generated OIDC client exist before attended group assignment. The shared read-only Git credential has already registered the Apps repository at that point. Complete Infra acceptance and final Radar health remain later gates. Radar's local OIDC Helm chart renders the Apps-owned identity resources using the issuer and callback URLs from Live; plain YAML is not used for cross-repository value interpolation. The Radar namespace is created before namespace-local credential helpers/jobs. Group membership remains externally managed by the attended ceremony.
+After Crossplane provider trust is established, Bootstrap activates the Apps root so Radar's administrator group and generated OIDC client exist before attended group assignment. The shared read-only Git credential has already registered the Apps repository at that point. Complete Infra acceptance and final Radar health remain later gates. The shared `openbao-oidc` chart renders Radar's Apps-owned identity resources using the issuer and callback URLs from Live; plain YAML is not used for cross-repository value interpolation. The Radar namespace is created before namespace-local credential helpers/jobs. Group membership remains externally managed by the attended ceremony.
 
 `k3s-postgres` remains in wave 7. Its narrowly scoped manager-credential producer runs before the VSO Secret consumers and Cluster. Backup/restore validation follows in wave 8 (`08-backup-validation`); observability follows in wave 9 (`09-kube-prometheus-stack`). The early Prometheus CRD installation remains in wave 1 so validation resources do not depend on the later monitoring stack. Full Infra acceptance still checks all consumer Applications through wave 9 after the attended external credentials have been supplied.
 
@@ -39,7 +39,7 @@ The pinned provider's [connection mapping](https://github.com/upbound/provider-v
 
 CloudNativePG's managed roles own the non-superuser `openbao_manager` login and consume the VSO-delivered basic-auth Secret. `CREATEROLE` permits creation/rotation of application roles it administers; the manager cannot create databases, replicate or bypass row security. Application databases/roles remain with Radar and Grafana, not with the operator installation.
 
-VSO delivers secrets but does not generate random values or Argo API tokens. Radar chart 1.17.0 and oauth2-proxy accept existing Secrets; Radar's empty-secret fallback is process-local, not durable custody. Three consumer-owned Sync-hook Jobs fill only these gaps:
+VSO delivers secrets but does not generate random values or Argo API tokens. Radar chart 1.17.0 and oauth2-proxy accept existing Secrets; Radar's empty-secret fallback is process-local, not durable custody. Consumer-owned Sync-hook Jobs fill only these gaps:
 
 | Job / namespace | Allowed OpenBao KV data |
 | --- | --- |
@@ -70,7 +70,7 @@ Native evidence: [Radar values](https://github.com/skyhook-io/radar/blob/v1.17.0
 Do not treat this ownership change as an unattended rename. Legacy `postgresql`, `tls-certificates` and `letsencrypt-dns01` Applications and the central issuer may still exist; automated pruning is disabled, so Git deletion does not remove them. Publishing the new paths without updating existing child sources can produce comparison/sync errors even while the parent is paused.
 
 1. Quiesce the Infra root and affected old Application synchronizations; retain their configuration for rollback. Stop the legacy `openbao/service-credentials` Job before enabling replacement issuers. Do not run old/new credential issuers concurrently.
-2. Publish the public Infra Application base, then Live and Bootstrap. Live `infra/applications/kustomization.yaml` follows the public base on protected `main`; the root's source is the private Live overlay. A public-only change may require a hard refresh of the Infra root because Argo caches remote bases independently of Live. Bootstrap validates ownership/source paths, applies the new root, and resumes a previously paused owned root. Update the existing `openbao-config` specification so it no longer manages consumer resources.
+2. Follow the staged direct-root migration in `infra-root-migration.md`: publish private values and shared charts before consumer references, align Bootstrap, and explicitly accept the public Infra root source. Retain the legacy Live wrapper until that cutover is accepted; it is not the target architecture. Bootstrap validates ownership/source paths before applying its owned root. Update the existing `openbao-config` specification so it no longer manages consumer resources.
 3. Transfer unchanged resources to the new consumer Applications, confirming each tracking owner and source revision. Transfer the former `radar-config` resources to the Apps-owned `radar` Application without changing their external OpenBao identities. Create `k3s-postgres` with its original Cluster/Secret/backup identities. Disable the old `postgresql` and `radar-config` reconcilers during adoption.
 4. Only after verified adoption, remove the old `radar-config`, `postgresql`, `tls-certificates` and `letsencrypt-dns01` Applications **non-cascading**, for example `argocd app delete radar-config --cascade=false`. Never delete the Cluster, namespace, PVCs, database roles or KV entries as part of the rename. Never force-remove finalizers to get a green status.
 5. Retire the legacy issuer's ServiceAccount, RoleBinding, Job and its narrowly named OpenBao policy/login role using an authorized administrator; account for any still-valid short-lived issuer tokens. Verify old ownership is gone before resuming automated reconciliation and final acceptance.
@@ -119,3 +119,79 @@ A representation-only Helm source change can leave a child Synced/Healthy while
 its last successful operation still records the old values-file source. Request
 a normal full native Argo sync of that child to record adoption; do not loosen
 its current-source/operation acceptance checks or manually change health status.
+
+### OpenBao authenticated metrics: native VSO login lifecycle
+
+OpenBao chart 0.30.4 enables authenticated scraping through its native
+`serverTelemetry.serviceMonitor.authorization`: Bearer credentials reference
+Secret `openbao-metrics`, key `token`, in the monitor's namespace `openbao`.
+The existing 30-second retention, disabled hostname labels, three-replica Raft
+configuration and single native PDB (`maxUnavailable: 1`) remain unchanged.
+No listener unauthenticated-access flag is enabled.
+
+`04-openbao/resources/metrics.yaml` gives the dedicated `openbao-metrics`
+ServiceAccount in `openbao` its own Kubernetes login role. Its sole token policy
+allows `read` on `sys/metrics`, `read` on `auth/token/lookup-self`, and `update`
+on `auth/token/renew-self`; the default policy is excluded. Login TTL is one hour,
+with a 24-hour maximum (also subject to mount/system limits). Do not attach
+additional identity/group policies to this dedicated identity. Exposure of this
+specific login token to Prometheus is intentional: it grants metrics and only
+its own lookup/renewal, not KV access, token creation, sudo or other-token access.
+
+VSO's VaultAuth/VaultConnection own authentication, renewal and re-login.
+A VaultDynamicSecret performs GET `auth/token/lookup-self`, using that same login,
+and transforms only `.Secrets.id` into Secret key `token` (`excludeRaw: true`,
+fail closed on missing ID). This endpoint reads the caller's token; it does not
+create a child token or a secret lease. `refreshAfter: 1m` schedules rereads when
+there is no lease TTL. There is no provider Token resource/CRD activation,
+connection-secret export, KV copy, extra issuer Job or custom renewal script.
+
+**Bootstrap prerequisite:** apply the updated Bootstrap policy file
+`ansible/roles/openbao_setup/files/crossplane-provider-vault.hcl` before these
+managed resources reconcile. Its only new permissions are `create/read/update`
+on the exact paths `sys/policies/acl/openbao-metrics` and
+`auth/kubernetes/role/openbao-metrics`. No additional provider token-lifecycle
+permissions are needed. This repository-only change has not been applied live.
+
+Pinned native evidence:
+
+- [provider-vault v4.0.5 role schema](https://github.com/upbound/provider-vault/blob/v4.0.5/apis/cluster/kubernetes/v1alpha1/zz_authbackendrole_types.go)
+  exposes `tokenNoDefaultPolicy`, `tokenTtl` and `tokenMaxTtl` (seconds).
+- [OpenBao token API: self lookup](https://openbao.org/docs/api/auth/token/#lookup-a-token-self)
+  documents GET and a response containing `data.id` for the current client token.
+  [v2.7.1 implementation](https://github.com/openbao/openbao/blob/v2.7.1/internal/vault/token_store.go)
+  `handleLookupSelf` passes `req.ClientToken` to lookup, which returns
+  `id: out.ID`; accessor lookup, by contrast, redacts the ID.
+- [VSO v1.6.0 response](https://github.com/hashicorp/vault-secrets-operator/blob/v1.6.0/vault/responses.go)
+  `defaultResponse.Data()` returns `r.secret.Data`, making lookup's `id` available
+  as `.Secrets.id`, not `.Secrets.data.id` or `.Secrets.client_token`.
+- [VSO v1.6.0 dynamic controller](https://github.com/hashicorp/vault-secrets-operator/blob/v1.6.0/controllers/vaultdynamicsecret_controller.go)
+  `doVault` joins mount/path and supports GET; `getRotationDuration` uses
+  `refreshAfter` when the response has no lease duration. Client callbacks also
+  request reconciliation of associated dynamic secrets.
+- [VSO v1.6.0 client](https://github.com/hashicorp/vault-secrets-operator/blob/v1.6.0/vault/client.go)
+  `Login` starts a LifetimeWatcher for renewable auth tokens. Watcher completion
+  marks the client invalid, and
+  [client factory](https://github.com/hashicorp/vault-secrets-operator/blob/v1.6.0/vault/client_factory.go)
+  removes invalid clients and obtains a new logged-in client. This is the native
+  auth lifecycle, separate from dynamic-secret lease renewal. Its
+  [pinned Vault API v1.23.0 dependency](https://github.com/hashicorp/vault-secrets-operator/blob/v1.6.0/go.mod)
+  uses [LifetimeWatcher token renewal](https://github.com/hashicorp/vault/blob/api/v1.23.0/api/lifetime_watcher.go)
+  via `RenewTokenAsSelf`, whose
+  [implementation](https://github.com/hashicorp/vault/blob/api/v1.23.0/api/auth_token.go)
+  calls only `auth/token/renew-self`, not another-token renewal.
+- [OpenBao v2.7.1 HTTP authentication](https://github.com/openbao/openbao/blob/v2.7.1/internal/http/handler.go)
+  accepts Bearer authentication; the
+  [chart 0.30.4 archive](https://github.com/openbao/openbao-helm/releases/download/openbao-0.30.4/openbao-0.30.4.tgz)
+  contains `templates/prometheus-servicemonitor.yaml`, which renders the
+  authorization Secret reference without reading its value.
+
+At maximum TTL or after authentication recreation, the old Secret value may be
+invalid until VSO re-logs in and republishes it. One-minute refresh bounds the
+normal reconciliation interval (with controller jitter); reconciliation,
+Prometheus Secret propagation and scrape timing can cause a bounded scrape gap
+under healthy operation. Controller/OpenBao outages can extend it. This is not a
+zero-gap guarantee: renewal, re-login and scrape recovery have been source-checked
+and tested offline only, not validated against a running cluster. Runtime
+acceptance must observe successful renewal and max-TTL re-login/recovery without
+printing tokens or enabling credential-bearing debug logs.

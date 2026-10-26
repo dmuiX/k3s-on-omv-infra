@@ -156,24 +156,15 @@ class OpenbaoOIDCTest < Minitest::Test
     assert_equal YAML.load_file(File.join(LIVE, 'apps/audiobookshelf/values.yml')).dig('oidc', 'issuerURL'),
                  YAML.load_file(File.join(LIVE, 'apps/audiobookshelf/values.yml')).dig('openbaoOIDC', 'provider', 'issuerURL')
 
-    # Replace only the remote Radar base with a copy of the current checkout;
-    # this proves the unpushed multi-repo changes without network access.
-    Dir.mktmpdir('oidc-overlay-') do |dir|
-      FileUtils.cp_r(File.join(APPS, 'radar/resources'), File.join(dir, 'base'))
-      overlay = YAML.load_file(File.join(LIVE, 'apps/radar/kustomization.yaml'))
-      assert_equal 1, overlay.fetch('resources').length
-      overlay['resources'] = ['base']
-      File.write(File.join(dir, 'kustomization.yaml'), YAML.dump(overlay))
-      out, err, status = Open3.capture3('kubectl', 'kustomize', dir)
-      assert status.success?, err
-      radar = documents(out)
-      refute radar.any? { |d| oidc?(d) }
-      indexed(radar + render(File.join(LIVE, CONSUMERS.fetch('radar'))))
-    end
-    out, err, status = Open3.capture3('kubectl', 'kustomize', File.join(LIVE, 'infra/longhorn'))
-    assert status.success?, err
-    longhorn = documents(out)
-    assert_equal %w[ConfigMap], longhorn.map { |d| d['kind'] }
+    # The remaining plain Radar resources are now a direct public directory
+    # source, not a private Kustomize wrapper.
+    radar = Dir.glob(File.join(APPS, 'radar/resources/*.yaml')).sort.flat_map { |path| documents(File.read(path)) }
+    refute radar.any? { |d| oidc?(d) }
+    indexed(radar + render(File.join(LIVE, CONSUMERS.fetch('radar'))))
+    longhorn = render(File.join(LIVE, 'infra/longhorn/proxy-values.yml'),
+                      chart: File.join(INFRA, 'charts/oidc-proxy'),
+                      name: 'longhorn-oidc-proxy', namespace: 'longhorn')
+    assert_equal %w[ConfigMap Deployment Service], longhorn.map { |d| d['kind'] }.sort
     # The shared service-route chart now owns the unchanged Longhorn proxy route.
     refute longhorn.any? { |d| oidc?(d) }
     indexed(longhorn + render(File.join(LIVE, CONSUMERS.fetch('longhorn'))))
