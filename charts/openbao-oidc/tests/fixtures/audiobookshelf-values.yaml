@@ -1,0 +1,46 @@
+---
+openbaoOIDC:
+  providerConfigName: openbao
+  deletionPolicy: Orphan
+  assignments:
+  - name: audiobookshelf-users
+    syncWave: "-30"
+    groupRefs:
+    - radar-admin
+  client:
+    name: audiobookshelf
+    syncWave: "-20"
+    key: audiobookshelf
+    assignments:
+    - audiobookshelf-users
+    redirectUris:
+    - https://audiobookshelf.example.invalid:9443/auth/openid/callback
+    - https://audiobookshelf.example.invalid:9443/auth/openid/mobile-redirect
+    - https://audiobookshelf.example.invalid:9443/audiobookshelf/auth/openid/callback
+    - https://audiobookshelf.example.invalid:9443/audiobookshelf/auth/openid/mobile-redirect
+    idTokenTtl: 3600
+    accessTokenTtl: 3600
+    connectionSecret:
+      name: audiobookshelf-oidc-connection
+      namespace: audiobookshelf
+  key:
+    name: audiobookshelf
+    syncWave: "-30"
+    algorithm: RS256
+    allowedClientIds:
+    - "*"
+    rotationPeriod: 86400
+    verificationTtl: 172800
+  provider:
+    name: audiobookshelf
+    syncWave: "-15"
+    issuerURL: https://issuer.example.invalid:9443/v1/identity/oidc/provider/audiobookshelf
+    clientRefs:
+    - audiobookshelf
+    scopeRefs:
+    - oidc-profile
+    - audiobookshelf
+  scopes:
+  - name: audiobookshelf
+    syncWave: "-30"
+    template: '{"audiobookshelf":["admin"]}'

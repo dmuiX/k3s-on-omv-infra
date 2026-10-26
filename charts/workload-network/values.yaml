@@ -1,0 +1,6 @@
+# No implicit allow or isolation policy. Each consumer supplies exact identities,
+# selectors and policyTypes; private consumer settings belong in Live.
+workloadNetwork:
+  namespace: ""
+  defaultDeny: null
+  policies: []

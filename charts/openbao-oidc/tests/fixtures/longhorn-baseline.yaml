@@ -1,0 +1,81 @@
+---
+apiVersion: identity.vault.upbound.io/v1alpha1
+kind: OidcAssignment
+metadata:
+  name: longhorn-admin
+spec:
+  deletionPolicy: Orphan
+  forProvider:
+    name: longhorn-admin
+    groupIdsRefs:
+    - name: radar-admin
+  providerConfigRef:
+    name: openbao
+---
+apiVersion: identity.vault.upbound.io/v1alpha1
+kind: OidcKey
+metadata:
+  name: longhorn
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  deletionPolicy: Orphan
+  forProvider:
+    name: longhorn
+    algorithm: RS256
+    allowedClientIds:
+    - "*"
+    rotationPeriod: 86400
+    verificationTtl: 172800
+  providerConfigRef:
+    name: openbao
+---
+apiVersion: identity.vault.upbound.io/v1alpha1
+kind: OidcScope
+metadata:
+  name: longhorn
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  deletionPolicy: Orphan
+  forProvider:
+    name: longhorn
+    template: '{"username":{{identity.entity.name}},"groups":{{identity.entity.groups.names}}}'
+  providerConfigRef:
+    name: openbao
+---
+apiVersion: identity.vault.upbound.io/v1alpha1
+kind: OidcClient
+metadata:
+  name: longhorn
+spec:
+  deletionPolicy: Orphan
+  forProvider:
+    name: longhorn
+    clientType: confidential
+    key: longhorn
+    assignments:
+    - longhorn-admin
+    redirectUris:
+    - https://longhorn.example.invalid:9443/oauth2/callback
+    idTokenTtl: 3600
+    accessTokenTtl: 3600
+  providerConfigRef:
+    name: openbao
+---
+apiVersion: identity.vault.upbound.io/v1alpha1
+kind: OidcProvider
+metadata:
+  name: longhorn
+spec:
+  deletionPolicy: Orphan
+  forProvider:
+    name: longhorn
+    issuerHost: issuer.example.invalid:9443
+    httpsEnabled: true
+    allowedClientIdsRefs:
+    - name: longhorn
+    scopesSupportedRefs:
+    - name: longhorn
+  providerConfigRef:
+    name: openbao

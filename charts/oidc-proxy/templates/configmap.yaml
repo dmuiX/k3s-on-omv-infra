@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ .Values.name }}-inputs
+  namespace: {{ .Values.namespace }}
+data:
+  issuer-url: {{ required "issuerURL is required" .Values.issuerURL | quote }}
+  redirect-url: {{ required "redirectURL is required" .Values.redirectURL | quote }}

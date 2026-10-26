@@ -1,0 +1,62 @@
+{{- $network := .Values.workloadNetwork -}}
+{{- $names := dict -}}
+{{- with $network.defaultDeny }}
+{{- $_ := set $names .name true }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .name }}
+  namespace: {{ $network.namespace }}
+spec:
+  podSelector: {{ .podSelector | toJson }}
+  policyTypes: {{ .policyTypes | toJson }}
+{{- end }}
+{{- range $network.policies }}
+{{- if hasKey $names .name }}{{ fail "workloadNetwork policy names must be unique" }}{{ end }}
+{{- $_ := set $names .name true }}
+{{- $ingress := .extraIngress | default list }}
+{{- range $ingress }}
+{{- if hasKey . "to" }}{{ fail "extraIngress uses from, not to" }}{{ end }}
+{{- end }}
+{{- range .extraEgress }}
+{{- if hasKey . "from" }}{{ fail "extraEgress uses to, not from" }}{{ end }}
+{{- end }}
+{{- $egress := list }}
+{{- if .gatewayIngress }}
+{{- if not (has "Ingress" .policyTypes) }}{{ fail "gatewayIngress requires Ingress policyTypes" }}{{ end }}
+{{- $ports := list }}
+{{- range .gatewayIngress.ports }}{{ $ports = append $ports (dict "protocol" "TCP" "port" .) }}{{ end }}
+{{- $peer := dict "namespaceSelector" (dict "matchLabels" (dict "kubernetes.io/metadata.name" .gatewayIngress.namespace)) }}
+{{- $ingress = prepend $ingress (dict "from" (list $peer) "ports" $ports) }}
+{{- end }}
+{{- if .dns }}
+{{- $peer := dict "namespaceSelector" (dict "matchLabels" (dict "kubernetes.io/metadata.name" "kube-system")) }}
+{{- $egress = append $egress (dict "to" (list $peer) "ports" (list (dict "protocol" "UDP" "port" 53) (dict "protocol" "TCP" "port" 53))) }}
+{{- end }}
+{{- if .openbao }}
+{{/* Namespace AND pod selector in ONE peer, never two OR peers. */}}
+{{- $peer := dict "namespaceSelector" (dict "matchLabels" (dict "kubernetes.io/metadata.name" "openbao")) "podSelector" (dict "matchLabels" (dict "app.kubernetes.io/name" "openbao")) }}
+{{- $egress = append $egress (dict "to" (list $peer) "ports" (list (dict "protocol" "TCP" "port" 8200) (dict "protocol" "TCP" "port" 15008))) }}
+{{- end }}
+{{- $egress = concat $egress (.extraEgress | default list) }}
+{{- if and $ingress (not (has "Ingress" .policyTypes)) }}{{ fail "extraIngress requires Ingress policyTypes" }}{{ end }}
+{{- if and $egress (not (has "Egress" .policyTypes)) }}{{ fail "egress allowances require Egress policyTypes" }}{{ end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .name }}
+  namespace: {{ $network.namespace }}
+spec:
+  podSelector: {{ .podSelector | toJson }}
+  policyTypes: {{ .policyTypes | toJson }}
+  {{- if $ingress }}
+  ingress:
+    {{- toYaml $ingress | nindent 4 }}
+  {{- end }}
+  {{- if $egress }}
+  egress:
+    {{- toYaml $egress | nindent 4 }}
+  {{- end }}
+{{- end }}
