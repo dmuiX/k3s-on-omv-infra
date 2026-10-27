@@ -21,6 +21,12 @@ Live keeps Longhorn identity/route settings under `infra/longhorn`, Radar's non-
 
 Audiobookshelf's Application owns its OIDC key, client, provider, administrator assignment and app-specific role scope through the shared `openbao-oidc` chart source. Its PostSync API configurator consumes the existing shared custody helper, without extra Kubernetes RBAC or OIDC provisioning in Ansible. Since ABS requests the standard `profile` scope, the platform owns that global OpenBao scope exactly once as `OidcScope/oidc-profile`; applications reference it instead of declaring conflicting external `profile` objects. Its template supplies only entity name/preferred_username, not administrator permissions or invented email claims. The provider trust-root ACL adds only the exact Audiobookshelf policy/role/OIDC paths and the shared profile path. The reviewed live trust-policy update and state migration remain separate approvals; the new Application's auto-sync stays disabled.
 
+## Required VSO values
+
+VSO consumers share the early operator-owned `required-openbao-value` source
+template. See [required-value semantics and rollout ordering](vso-required-values.md).
+This changes neither namespace-local authentication nor credential ownership.
+
 ## Bootstrap ordering
 
 `longhorn` must provide storage before OpenBao starts. Its later `longhorn-config` Application therefore runs in Infra wave 6, after OpenBao/VSO/provider trust, not in controller wave 2.

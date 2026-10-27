@@ -5,14 +5,6 @@ metadata:
   namespace: kube-prometheus-stack
 ---
 apiVersion: secrets.hashicorp.com/v1beta1
-kind: VaultConnection
-metadata:
-  name: openbao
-  namespace: kube-prometheus-stack
-spec:
-  address: "http://openbao-active.openbao.svc.cluster.local:8200"
----
-apiVersion: secrets.hashicorp.com/v1beta1
 kind: VaultAuth
 metadata:
   name: grafana-vso
@@ -20,7 +12,7 @@ metadata:
 spec:
   method: kubernetes
   mount: kubernetes
-  vaultConnectionRef: openbao
+  vaultConnectionRef: vault-secrets-operator/default
   kubernetes:
     role: grafana-vso
     serviceAccount: grafana-vso
