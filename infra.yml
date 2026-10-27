@@ -11,10 +11,12 @@ spec:
     name: in-cluster
     namespace: argocd
   source:
-    repoURL: https://github.com/dmuiX/k3s-on-omv-live.git
+    repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
     targetRevision: main
-    path: infra/applications
-    kustomize: {}
+    path: .
+    directory:
+      recurse: true
+      include: '{*/app.yml,*/*/app.yml}'
   syncPolicy: 
     automated: 
       enabled: true

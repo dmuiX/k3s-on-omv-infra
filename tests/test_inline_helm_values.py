@@ -1,4 +1,4 @@
-"""Native Helm valuesObject and private Kustomize overlay contracts."""
+"""Native Helm defaults, private value files and legacy overlay contracts."""
 from pathlib import Path
 import os
 import shutil
@@ -23,18 +23,21 @@ class InlineHelmValuesTest(unittest.TestCase):
                     if not source.get('chart'):
                         continue
                     helm = source.get('helm', {})
-                    self.assertFalse(helm.get('valueFiles'), str(path))
+                    for value_file in helm.get('valueFiles', []):
+                        self.assertTrue(value_file.startswith('$live/infra/'), str(path))
+                        self.assertTrue(value_file.endswith('/values.yml'), str(path))
                     self.assertFalse(helm.get('values'), str(path))
                     if source['chart'] != 'prometheus-operator-crds':
                         self.assertIsInstance(helm.get('valuesObject'), dict, str(path))
                     count += 1
         self.assertGreater(count, 10)
 
-    def test_private_overlay_and_bootstrap_have_one_canonical_public_source(self):
+    def test_public_root_and_legacy_overlay_have_one_canonical_public_source(self):
         root = yaml.safe_load((INFRA / 'infra.yml').read_text())
-        self.assertEqual(root['spec']['source']['repoURL'], 'https://github.com/dmuiX/k3s-on-omv-live.git')
-        self.assertEqual(root['spec']['source']['path'], 'infra/applications')
-        self.assertNotIn('directory', root['spec']['source'])
+        self.assertEqual(root['spec']['source']['repoURL'], 'https://github.com/dmuiX/k3s-on-omv-infra.git')
+        self.assertEqual(root['spec']['source']['path'], '.')
+        self.assertEqual(root['spec']['source']['directory'], {
+            'recurse': True, 'include': '{*/app.yml,*/*/app.yml}'})
         base = yaml.safe_load((INFRA / 'kustomization.yaml').read_text())
         self.assertEqual(set(base['resources']), {str(p.relative_to(INFRA)) for p in INFRA.glob('**/app.yml')})
         overlay = yaml.safe_load((LIVE / 'infra/applications/kustomization.yaml').read_text())
@@ -74,7 +77,8 @@ class InlineHelmValuesTest(unittest.TestCase):
                 for key in keys:
                     value = value[key]
                 self.assertTrue(value)
-                self.assertNotIn('valueFiles', rendered['spec']['sources'][0]['helm'])
+                self.assertEqual(rendered['spec']['sources'][0]['helm']['valueFiles'],
+                    [f'$live/infra/{name}/values.yml'])
                 for operation in operations:
                     self.assertTrue(operation['path'].startswith('/spec/sources/0/helm/valuesObject/'))
 
@@ -137,12 +141,18 @@ class InlineHelmValuesTest(unittest.TestCase):
         config = next(d for d in docs if d['kind'] == 'PodConfig')
         self.assertIs(config['spec']['template']['spec']['securityContext']['runAsNonRoot'], True)
 
-    def test_no_duplicate_infra_values_files_remain(self):
-        # Apps are deliberately deferred; their private Radar overrides stay in Live.
+    def test_public_defaults_are_inline_and_private_values_are_component_local(self):
+        private_components = {'argocd-config', 'kube-prometheus-stack', 'longhorn', 'openbao'}
         for repository in (INFRA, LIVE):
             for path in repository.glob('**/*values.y*ml'):
-                if repository == LIVE and path.relative_to(LIVE).match('apps/*/values.yml'):
-                    continue
+                if repository == LIVE:
+                    relative = path.relative_to(LIVE)
+                    if relative.match('apps/*/values.yml'):
+                        continue
+                    if str(relative) in {f'infra/{name}/values.yml' for name in private_components}:
+                        self.assertEqual(path.read_text().splitlines()[0],
+                                         '# +argocd:skip-file-rendering')
+                        continue
                 self.assertIn('tests', path.parts, str(path))
 
 

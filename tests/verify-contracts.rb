@@ -110,8 +110,10 @@ class RepositoryContractTest < Minitest::Test
   def test_roots_select_only_their_children
     infra_root = application(INFRA / "infra.yml")
     apps_root = application(APPS / "apps.yml")
-    assert_equal "https://github.com/dmuiX/k3s-on-omv-live.git", infra_root.dig("spec", "source", "repoURL")
-    assert_equal "infra/applications", infra_root.dig("spec", "source", "path")
+    assert_equal "https://github.com/dmuiX/k3s-on-omv-infra.git", infra_root.dig("spec", "source", "repoURL")
+    assert_equal ".", infra_root.dig("spec", "source", "path")
+    assert_equal({"recurse" => true, "include" => "{*/app.yml,*/*/app.yml}"},
+      infra_root.dig("spec", "source", "directory"))
     assert_equal application_files(INFRA).map { |path| path.relative_path_from(INFRA).to_s }.sort,
       YAML.load_file(INFRA / "kustomization.yaml").fetch("resources").sort
     assert_equal "*/app.yml", apps_root.dig("spec", "source", "directory", "include")
@@ -377,7 +379,7 @@ class PlatformContractTest < Minitest::Test
     refute postgresql.fetch("spec").key?("stopDelay")
     refute postgresql.fetch("spec").key?("switchoverDelay")
     assert_equal "longhorn-local", postgresql.dig("spec", "storage", "storageClass")
-    assert_equal "5Gi", postgresql.dig("spec", "storage", "size")
+    assert_equal "20Gi", postgresql.dig("spec", "storage", "size")
     assert_equal 1, postgresql.dig("spec", "postgresql", "synchronous", "number")
     assert_equal true, postgresql.dig("spec", "postgresql", "synchronous", "failoverQuorum")
     refute postgresql.key?("certificates")
@@ -386,7 +388,7 @@ class PlatformContractTest < Minitest::Test
 
     monitoring = chart_values("09-kube-prometheus-stack/app.yml")
     assert_equal 2, monitoring.dig("prometheus", "prometheusSpec", "replicas")
-    assert_equal 2, monitoring.dig("alertmanager", "alertmanagerSpec", "replicas")
+    assert_equal 0, monitoring.dig("alertmanager", "alertmanagerSpec", "replicas")
     assert_equal 2, monitoring.dig("grafana", "replicas")
   end
 
