@@ -26,6 +26,7 @@ INFRA = Path(__file__).resolve().parents[1]
 LIVE = INFRA.parent / 'k3s-on-omv-live'
 APPS = INFRA.parent / 'k3s-on-omv-apps'
 MANIFESTS = {
+    'grafana': INFRA / '09-kube-prometheus-stack/resources/provision-credentials.yaml',
     'longhorn': INFRA / '06-platform/longhorn-config/resources/provision-credentials.yaml',
     'radar': APPS / 'radar/resources/provision-credentials.yaml',
     'k3s-postgres': INFRA / '07-k3s-postgres/resources/provision-credentials.yaml',
@@ -272,7 +273,7 @@ class ServiceCredentialOpenBao(unittest.TestCase):
 
     def test_consumer_credentials_cannot_cross_service_boundaries(self):
         paths = {'longhorn': 'longhorn/oidc-proxy', 'radar': 'radar/auth',
-                 'k3s-postgres': 'postgresql/openbao-manager'}
+                 'k3s-postgres': 'postgresql/openbao-manager', 'grafana': 'monitoring/grafana-admin'}
         for name, token in self.job_tokens.items():
             for owner, path in paths.items():
                 if name == owner:
@@ -365,7 +366,7 @@ class ServiceCredentialOpenBao(unittest.TestCase):
 
     def test_service_entrypoints_reuse_real_native_credentials(self):
         paths = {'longhorn': 'longhorn/oidc-proxy', 'k3s-postgres': 'postgresql/openbao-manager',
-                 }
+                 'grafana': 'monitoring/grafana-admin'}
         for name, path in paths.items():
             script = next(d['data']['provision.py'] for d in DOCUMENTS[name] if d['kind'] == 'ConfigMap')
             entrypoint = types.ModuleType(name + '_provision')
