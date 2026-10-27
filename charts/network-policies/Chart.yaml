@@ -1,5 +1,5 @@
 apiVersion: v2
-name: workload-network
+name: network-policies
 description: Explicit default deny and demonstrated workload network allowances
 version: 0.1.0
 type: application

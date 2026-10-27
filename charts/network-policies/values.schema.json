@@ -1,9 +1,9 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "type": "object",
-  "required": ["workloadNetwork"],
+  "required": ["networkPolicies"],
   "properties": {
-    "workloadNetwork": {
+    "networkPolicies": {
       "type": "object", "additionalProperties": false,
       "required": ["namespace", "policies"],
       "properties": {
@@ -27,6 +27,7 @@
             "required": ["name", "podSelector", "policyTypes"],
             "properties": {
               "name": {"type": "string", "minLength": 1},
+              "annotations": {"type": "object", "additionalProperties": {"type": "string"}},
               "podSelector": {"allOf": [{"$ref": "#/definitions/selector"}], "minProperties": 1},
               "policyTypes": {"$ref": "#/definitions/policyTypes"},
               "dns": {"type": "boolean"},

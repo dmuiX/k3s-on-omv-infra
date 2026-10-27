@@ -6,14 +6,6 @@ metadata:
 automountServiceAccountToken: false
 ---
 apiVersion: secrets.hashicorp.com/v1beta1
-kind: VaultConnection
-metadata:
-  name: openbao-longhorn
-  namespace: longhorn
-spec:
-  address: "http://openbao-active.openbao.svc.cluster.local:8200"
----
-apiVersion: secrets.hashicorp.com/v1beta1
 kind: VaultAuth
 metadata:
   name: longhorn-oidc-proxy
@@ -25,7 +17,7 @@ spec:
     role: longhorn-oidc-proxy
     serviceAccount: longhorn-oidc-proxy
     tokenExpirationSeconds: 600
-  vaultConnectionRef: openbao-longhorn
+  vaultConnectionRef: vault-secrets-operator/default
 ---
 apiVersion: secrets.hashicorp.com/v1beta1
 kind: VaultStaticSecret
@@ -49,26 +41,21 @@ spec:
     type: Opaque
     transformation:
       excludeRaw: true
+      transformationRefs:
+        - name: required-openbao-value
+          namespace: vault-secrets-operator
       templates:
         client-id:
           text: |-
-            {{- $value := get .Secrets "client-id" -}}
-            {{- if empty $value -}}
-            {{- fail "missing required OpenBao key: client-id" -}}
-            {{- end -}}
-            {{- $value -}}
+            {{- template "requiredValue" (dict "key" "client-id" "value" (get .Secrets "client-id")) -}}
         client-secret:
           text: |-
-            {{- $value := get .Secrets "client-secret" -}}
-            {{- if empty $value -}}
-            {{- fail "missing required OpenBao key: client-secret" -}}
-            {{- end -}}
-            {{- $value -}}
+            {{- template "requiredValue" (dict "key" "client-secret" "value" (get .Secrets "client-secret")) -}}
         cookie-secret:
           text: |-
             {{- $value := get .Secrets "cookie-secret" -}}
             {{- if empty $value -}}
-            {{- fail "missing required OpenBao key: cookie-secret" -}}
+            {{- template "requiredValue" (dict "key" "cookie-secret" "value" $value) -}}
             {{- end -}}
             {{- /* Preserve the stored key bytes; oauth2-proxy requires URL-safe Base64. */ -}}
             {{- $value | replace "+" "-" | replace "/" "_" -}}

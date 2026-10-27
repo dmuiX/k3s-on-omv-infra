@@ -1,0 +1,24 @@
+# HBONE ingress is shared with API clients: NetworkPolicy alone cannot protect 9101.
+# L4 DENY also matches a missing principal (plaintext), without affecting 8200/8201.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: openbao-metrics
+  namespace: openbao
+  annotations:
+    argocd.argoproj.io/sync-wave: "-30"
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: openbao
+      app.kubernetes.io/instance: openbao
+      component: server
+  action: DENY
+  rules:
+    - from:
+        - source:
+            notPrincipals:
+              - cluster.local/ns/kube-prometheus-stack/sa/kube-prometheus-stack-prometheus
+      to:
+        - operation:
+            ports: ["9101"]

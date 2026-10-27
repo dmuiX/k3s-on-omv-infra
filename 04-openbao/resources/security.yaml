@@ -22,14 +22,8 @@ spec:
     - Ingress
     - Egress
   ingress:
-    # Host-network API servers call the webhook directly on its target port.
+    # API-server webhook peers are deployment-specific and owned by Live.
     - from:
-        - ipBlock:
-            cidr: 192.168.1.2/32
-        - ipBlock:
-            cidr: 192.168.1.5/32
-        - ipBlock:
-            cidr: 192.168.1.7/32
         # Istio Ambient rewrites kubelet health-probe source addresses.
         # https://istio.io/latest/docs/ambient/usage/networkpolicy/
         - ipBlock:
@@ -47,23 +41,7 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
-    # Cover the API service before DNAT and the three API endpoints after DNAT.
-    - to:
-        - ipBlock:
-            cidr: 10.43.0.1/32
-      ports:
-        - protocol: TCP
-          port: 443
-    - to:
-        - ipBlock:
-            cidr: 192.168.1.2/32
-        - ipBlock:
-            cidr: 192.168.1.5/32
-        - ipBlock:
-            cidr: 192.168.1.7/32
-      ports:
-        - protocol: TCP
-          port: 6443
+    # API Service/endpoints are allowed by the Live injector policy.
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -95,6 +73,4 @@ spec:
           port: 8200
         - protocol: TCP
           port: 15008
-    - ports:
-        - protocol: TCP
-          port: 443
+    # Deployment-specific external HTTPS is allowed by a separate Live policy.

@@ -74,6 +74,10 @@ spec:
                     requests:
                       storage: 1Gi
         grafana:
+          admin:
+            existingSecret: grafana-admin
+            userKey: admin-user
+            passwordKey: admin-password
           replicas: 2
           # Hard anti-affinity leaves no third monitoring node for a surge pod.
           deploymentStrategy:
@@ -162,6 +166,9 @@ spec:
   - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
     targetRevision: main
     path: 09-kube-prometheus-stack/resources
+  - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
+    targetRevision: main
+    path: adapters/credential-custody
   - repoURL: https://github.com/dmuiX/k3s-on-omv-live.git
     targetRevision: main
     path: infra/kube-prometheus-stack

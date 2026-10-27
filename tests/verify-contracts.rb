@@ -610,17 +610,43 @@ class PlatformContractTest < Minitest::Test
       "09-kube-prometheus-stack/resources/prometheus-k8up-credentials.yaml"
     ]
     shared_documents.select { |_path, doc| doc['kind'] == 'VaultDynamicSecret' }.each do |path, doc|
-      manifest = YAML.dump(doc)
-      assert_includes manifest, 'excludeRaw: true', path.to_s
-      doc.dig('spec', 'destination', 'transformation', 'templates').each_value do |template|
-        assert_match(/fail "missing required OpenBao (?:key:|database username or password)/,
-                     template.fetch('text'), path.to_s)
+      transformation = doc.fetch('spec').fetch('destination').fetch('transformation')
+      assert_equal true, transformation.fetch('excludeRaw'), path.to_s
+      # Apps #6 adoption is validated separately from the independent Apps #7
+      # helper migration. Its pre-migration OIDC consumers keep inline guards.
+      legacy_apps_oidc = path.to_s.start_with?(APPS.to_s + '/') &&
+        %w[radar-oidc audiobookshelf-oidc].include?(doc.dig('metadata', 'name')) &&
+        !transformation.key?('transformationRefs')
+      if legacy_apps_oidc
+        transformation.fetch('templates').each_value do |template|
+          assert_match(/fail "missing required OpenBao key:/, template.fetch('text'), path.to_s)
+        end
+        next
+      end
+      assert_equal [{ 'name' => 'required-openbao-value', 'namespace' => 'vault-secrets-operator' }],
+                   transformation.fetch('transformationRefs'), path.to_s
+      transformation.fetch('templates').each_value do |template|
+        text = template.fetch('text')
+        assert_includes text, 'template "requiredValue"', path.to_s
+        %w[username password].each do |key|
+          next unless text.include?(%(get .Secrets "#{key}"))
+          assert_includes text, "template \"requiredValue\" (dict \"key\" \"#{key}\"", path.to_s
+        end
+        refute_includes text, 'fail ', path.to_s
       end
     end
     files.each do |relative|
-      manifest = (INFRA / relative).read
-      assert_includes manifest, "excludeRaw: true", relative
-      assert_includes manifest, "fail \"missing required OpenBao key:", relative
+      secrets = yaml_documents(INFRA / relative).select { |doc| doc['kind'] == 'VaultStaticSecret' }
+      refute_empty secrets, relative
+      secrets.each do |doc|
+        transformation = doc.fetch('spec').fetch('destination').fetch('transformation')
+        assert_equal true, transformation.fetch('excludeRaw'), relative
+        assert_equal [{ 'name' => 'required-openbao-value', 'namespace' => 'vault-secrets-operator' }],
+                     transformation.fetch('transformationRefs'), relative
+        text = transformation.fetch('templates').values.map { |template| template.fetch('text') }.join("\n")
+        assert_includes text, 'template "requiredValue"', relative
+        refute_includes text, 'fail ', relative
+      end
     end
   end
 

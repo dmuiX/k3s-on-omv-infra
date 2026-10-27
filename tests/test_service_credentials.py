@@ -26,6 +26,7 @@ INFRA = Path(__file__).resolve().parents[1]
 LIVE = INFRA.parent / 'k3s-on-omv-live'
 APPS = INFRA.parent / 'k3s-on-omv-apps'
 MANIFESTS = {
+    'grafana': INFRA / '09-kube-prometheus-stack/resources/provision-credentials.yaml',
     'longhorn': INFRA / '06-platform/longhorn-config/resources/provision-credentials.yaml',
     'radar': APPS / 'radar/resources/provision-credentials.yaml',
     'k3s-postgres': INFRA / '07-k3s-postgres/resources/provision-credentials.yaml',
@@ -43,7 +44,43 @@ def module():
     return result
 
 
+def oidc_fixture_documents():
+    """Resolve deployed shared chart sources, rendering only existing synthetic fixtures."""
+    result = {}
+    for name, app_path in (('radar', APPS / 'radar/app.yml'),
+                           ('longhorn', INFRA / '06-platform/longhorn-config/app.yml')):
+        app = yaml.safe_load(app_path.read_text())
+        source, = [s for s in app['spec']['sources'] if s.get('path') == 'charts/openbao-oidc']
+        if source['repoURL'] != 'https://github.com/dmuiX/k3s-on-omv-infra.git':
+            raise AssertionError('OIDC source must resolve to the Infra shared chart')
+        chart = INFRA / source['path']
+        fixture = chart / 'tests/fixtures' / (name + '-values.yaml')
+        if not (chart / 'Chart.yaml').is_file() or not fixture.is_file():
+            raise AssertionError('Shared OIDC chart and synthetic fixture must exist')
+        rendered = subprocess.run(['helm', 'template', name + '-oidc', str(chart),
+                                   '--values', str(fixture)],
+                                  check=True, capture_output=True, text=True, timeout=30)
+        result[name] = [d for d in yaml.safe_load_all(rendered.stdout) if d]
+    return result
+
+
 class ServiceCredentialContracts(unittest.TestCase):
+    @unittest.skipUnless(shutil.which('helm'), 'Helm is required for synthetic OIDC rendering')
+    def test_optional_oidc_integration_sources_resolve_to_shared_chart_fixtures(self):
+        for name, documents in oidc_fixture_documents().items():
+            with self.subTest(consumer=name):
+                key, = [d for d in documents if d['kind'] == 'OidcKey']
+                scope, = [d for d in documents if d['kind'] == 'OidcScope']
+                client, = [d for d in documents if d['kind'] == 'OidcClient']
+                self.assertEqual(key['spec']['forProvider']['name'], name)
+                self.assertEqual(scope['spec']['forProvider']['name'], name)
+                self.assertEqual(scope['spec']['forProvider']['template'],
+                    '{"username":{{identity.entity.name}},"groups":{{identity.entity.groups.names}}}')
+                spec = client['spec']['forProvider']
+                self.assertEqual(spec['key'], name)
+                self.assertEqual(spec['assignments'], ['longhorn-admin'] if name == 'longhorn' else ['allow_all'])
+                self.assertTrue(all('.example.invalid' in uri for uri in spec['redirectUris']))
+
     def test_audiobookshelf_custody_can_reach_openbao_api_and_ambient(self):
         app = yaml.safe_load((INFRA / '04-openbao/app.yml').read_text())
         policy = app['spec']['sources'][0]['helm']['valuesObject']['server']['networkPolicy']
@@ -130,7 +167,12 @@ class ServiceCredentialContracts(unittest.TestCase):
     def test_native_cookie_template_preserves_key_bytes_in_oauth2_proxy_url_encoding(self):
         resources = yaml.safe_load_all((INFRA / '06-platform/longhorn-config/resources/oidc-proxy.yaml').read_text())
         secret = next(r for r in resources if r['kind'] == 'VaultStaticSecret')
-        template = secret['spec']['destination']['transformation']['templates']['cookie-secret']['text']
+        transformation = secret['spec']['destination']['transformation']
+        self.assertEqual(transformation['transformationRefs'], [{
+            'name': 'required-openbao-value', 'namespace': 'vault-secrets-operator'}])
+        template = transformation['templates']['cookie-secret']['text']
+        helper = yaml.safe_load((INFRA / '02-controllers/vault-secrets-operator/resources/required-values.yaml').read_text())
+        source = '\n'.join(t['text'] for t in helper['spec']['sourceTemplates'])
         key = bytes([251, 255]) * 16
         original = base64.b64encode(key).decode()
         self.assertRegex(original, r'[+/]', 'Fixture must exercise the actual alphabet incompatibility')
@@ -141,7 +183,7 @@ class ServiceCredentialContracts(unittest.TestCase):
             (chart / 'templates/cookie.yaml').write_text(
                 'apiVersion: v1\nkind: ConfigMap\nmetadata:\n  name: fixture\ndata:\n  cookie: '
                 '{{ include "cookie" (dict "Secrets" .Values.fixture) | quote }}\n'
-                '{{ define "cookie" }}' + template + '{{ end }}\n')
+                + source + '\n{{ define "cookie" }}' + template + '{{ end }}\n')
             rendered = subprocess.run(['helm', 'template', 'fixture', str(chart)],
                 text=True, capture_output=True, timeout=20)
             self.assertEqual(rendered.returncode, 0, rendered.stderr)
@@ -272,7 +314,7 @@ class ServiceCredentialOpenBao(unittest.TestCase):
 
     def test_consumer_credentials_cannot_cross_service_boundaries(self):
         paths = {'longhorn': 'longhorn/oidc-proxy', 'radar': 'radar/auth',
-                 'k3s-postgres': 'postgresql/openbao-manager'}
+                 'k3s-postgres': 'postgresql/openbao-manager', 'grafana': 'monitoring/grafana-admin'}
         for name, token in self.job_tokens.items():
             for owner, path in paths.items():
                 if name == owner:
@@ -297,13 +339,8 @@ class ServiceCredentialOpenBao(unittest.TestCase):
         # An entity-backed test token exercises authorization, not a root-token shortcut.
         self.api('auth/userpass/users/operator', {'password': 'disposable-oidc-test-only'})
         human = self.api('auth/userpass/login/operator', {'password': 'disposable-oidc-test-only'})['auth']['client_token']
-        radar_render = subprocess.run([
-            'helm', 'template', 'radar-oidc', str(APPS / 'radar/oidc'),
-            '--values', str(LIVE / 'apps/radar/values.yml')],
-            check=True, capture_output=True, text=True, timeout=30).stdout
-        sources = [radar_render, (LIVE / 'infra/longhorn/oidc.yaml').read_text()]
-        for source in sources:
-            for resource in yaml.safe_load_all(source):
+        for documents in oidc_fixture_documents().values():
+            for resource in documents:
                 if resource['kind'] not in ('OidcKey', 'OidcScope'):
                     continue
                 spec = resource['spec']['forProvider']
@@ -365,7 +402,7 @@ class ServiceCredentialOpenBao(unittest.TestCase):
 
     def test_service_entrypoints_reuse_real_native_credentials(self):
         paths = {'longhorn': 'longhorn/oidc-proxy', 'k3s-postgres': 'postgresql/openbao-manager',
-                 }
+                 'grafana': 'monitoring/grafana-admin'}
         for name, path in paths.items():
             script = next(d['data']['provision.py'] for d in DOCUMENTS[name] if d['kind'] == 'ConfigMap')
             entrypoint = types.ModuleType(name + '_provision')
