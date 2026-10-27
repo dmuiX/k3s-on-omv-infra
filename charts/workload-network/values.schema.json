@@ -1,0 +1,76 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["workloadNetwork"],
+  "properties": {
+    "workloadNetwork": {
+      "type": "object", "additionalProperties": false,
+      "required": ["namespace", "policies"],
+      "properties": {
+        "namespace": {"type": "string", "minLength": 1},
+        "defaultDeny": {
+          "oneOf": [
+            {"type": "null"},
+            {"type": "object", "additionalProperties": false,
+             "required": ["name", "podSelector", "policyTypes"],
+             "properties": {
+               "name": {"type": "string", "minLength": 1},
+               "podSelector": {"$ref": "#/definitions/selector"},
+               "policyTypes": {"$ref": "#/definitions/policyTypes"}
+             }}
+          ]
+        },
+        "policies": {
+          "type": "array",
+          "items": {
+            "type": "object", "additionalProperties": false,
+            "required": ["name", "podSelector", "policyTypes"],
+            "properties": {
+              "name": {"type": "string", "minLength": 1},
+              "podSelector": {"allOf": [{"$ref": "#/definitions/selector"}], "minProperties": 1},
+              "policyTypes": {"$ref": "#/definitions/policyTypes"},
+              "dns": {"type": "boolean"},
+              "openbao": {"type": "boolean"},
+              "gatewayIngress": {
+                "type": "object", "additionalProperties": false,
+                "required": ["namespace", "ports"],
+                "properties": {
+                  "namespace": {"type": "string", "minLength": 1},
+                  "ports": {"type": "array", "minItems": 1, "uniqueItems": true,
+                    "items": {"type": "integer", "minimum": 1, "maximum": 65535}}
+                }
+              },
+              "extraIngress": {"type": "array", "items": {"$ref": "#/definitions/rule"}},
+              "extraEgress": {"type": "array", "items": {"$ref": "#/definitions/rule"}}
+            }
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "selector": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "matchLabels": {"type": "object", "minProperties": 1, "additionalProperties": {"type": "string"}},
+        "matchExpressions": {"type": "array", "minItems": 1, "items": {"type": "object", "required": ["key", "operator"]}}
+      }
+    },
+    "policyTypes": {"type": "array", "minItems": 1, "uniqueItems": true,
+      "items": {"enum": ["Ingress", "Egress"]}},
+    "rule": {
+      "type": "object", "additionalProperties": false, "required": ["ports"],
+      "properties": {
+        "from": {"type": "array", "minItems": 1, "items": {"type": "object", "minProperties": 1}},
+        "to": {"type": "array", "minItems": 1, "items": {"type": "object", "minProperties": 1}},
+        "ports": {"type": "array", "minItems": 1,
+          "items": {"type": "object", "additionalProperties": false, "required": ["protocol", "port"],
+            "properties": {
+              "protocol": {"enum": ["TCP", "UDP", "SCTP"]},
+              "port": {"oneOf": [{"type": "integer", "minimum": 1, "maximum": 65535}, {"type": "string", "minLength": 1}]},
+              "endPort": {"type": "integer", "minimum": 1, "maximum": 65535}
+            }}}
+      }
+    }
+  }
+}

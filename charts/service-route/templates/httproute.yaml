@@ -1,0 +1,39 @@
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ .Values.name | quote }}
+  namespace: {{ .Values.namespace | quote }}
+spec:
+  parentRefs:
+  {{- range .Values.parentRefs }}
+  - group: gateway.networking.k8s.io
+    kind: Gateway
+    name: {{ .name | quote }}
+    namespace: {{ .namespace | quote }}
+    {{- with .sectionName }}
+    sectionName: {{ . | quote }}
+    {{- end }}
+  {{- end }}
+  hostnames:
+    {{- toYaml .Values.hostnames | nindent 4 }}
+  rules:
+  {{- range .Values.rules }}
+  - backendRefs:
+    - group: ""
+      kind: Service
+      name: {{ .backend.name | quote }}
+      port: {{ .backend.port }}
+      weight: {{ .backend.weight }}
+    {{- with .matches }}
+    matches:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with .filters }}
+    filters:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with .timeouts }}
+    timeouts:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+  {{- end }}

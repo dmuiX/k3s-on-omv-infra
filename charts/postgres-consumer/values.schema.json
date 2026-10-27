@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "properties": {
+    "postgresConsumer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled"],
+      "properties": {
+        "enabled": {"type": "boolean"},
+        "name": {"type": "string"},
+        "databaseName": {"type": "string"},
+        "username": {"type": "string"},
+        "roleDisplayName": {"type": "string"},
+        "databaseNamespace": {"type": "string"},
+        "clusterName": {"type": "string"},
+        "providerConfigRef": {"type": "string"},
+        "backend": {"type": "string", "pattern": "^[a-zA-Z0-9/_-]+$"},
+        "rotationPeriod": {"type": "integer", "minimum": 1},
+        "connectionLimit": {"type": "integer", "minimum": 1},
+        "databaseSyncWave": {"type": "string", "pattern": "^-?[0-9]+$"},
+        "roleSyncWave": {"type": "string", "pattern": "^-?[0-9]+$"},
+        "vaultAuthRef": {"type": "string"},
+        "secretName": {"type": "string"},
+        "deploymentName": {"type": "string"},
+        "credentialFormat": {"enum": ["split", "dsn"]},
+        "host": {"type": "string"},
+        "port": {"type": "integer", "minimum": 1, "maximum": 65535},
+        "sslMode": {"enum": ["disable", "allow", "prefer", "require", "verify-ca", "verify-full"]}
+      },
+      "if": {"properties": {"enabled": {"const": true}}, "required": ["enabled"]},
+      "then": {
+        "required": ["name", "databaseName", "username", "roleDisplayName", "databaseNamespace", "clusterName", "providerConfigRef", "vaultAuthRef", "secretName", "deploymentName"],
+        "properties": {
+          "name": {"$ref": "#/definitions/dnsName"},
+          "databaseName": {"type": "string", "pattern": "^[a-z_][a-z0-9_]*$", "maxLength": 63},
+          "username": {"type": "string", "pattern": "^[a-z_][a-z0-9_]*$", "maxLength": 63},
+          "roleDisplayName": {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9 -]*$"},
+          "databaseNamespace": {"$ref": "#/definitions/dnsName"},
+          "clusterName": {"$ref": "#/definitions/dnsName"},
+          "providerConfigRef": {"$ref": "#/definitions/dnsName"},
+          "vaultAuthRef": {"$ref": "#/definitions/dnsName"},
+          "secretName": {"$ref": "#/definitions/dnsName"},
+          "deploymentName": {"$ref": "#/definitions/dnsName"}
+        },
+        "if": {"properties": {"credentialFormat": {"const": "dsn"}}},
+        "then": {"required": ["host"], "properties": {"host": {"type": "string", "pattern": "^[a-zA-Z0-9][a-zA-Z0-9.-]*$"}}}
+      }
+    }
+  },
+  "definitions": {
+    "dnsName": {"type": "string", "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$", "maxLength": 63}
+  }
+}

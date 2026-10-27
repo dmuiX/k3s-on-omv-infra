@@ -1,0 +1,62 @@
+workloadNetwork:
+  namespace: radar
+  defaultDeny:
+    name: default-deny
+    podSelector: {}
+    policyTypes: [Ingress, Egress]
+  policies:
+    - name: allow-radar
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: radar
+      policyTypes: [Ingress, Egress]
+      dns: true
+      gatewayIngress:
+        namespace: istio-gateway
+        ports: [9280, 15008]
+      extraEgress:
+        - to:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: kube-prometheus-stack
+          ports:
+            - {protocol: TCP, port: 9090}
+            - {protocol: TCP, port: 15008}
+        - to:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: cloudnative-pg
+          ports:
+            - {protocol: TCP, port: 5432}
+            - {protocol: TCP, port: 15008}
+        # Radar deliberately selects the namespace, not OpenBao pods only.
+        - to:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: openbao
+          ports:
+            - {protocol: TCP, port: 8200}
+            - {protocol: TCP, port: 15008}
+        - to:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: istio-gateway
+          ports:
+            - {protocol: TCP, port: 9443}
+            - {protocol: TCP, port: 15008}
+        - to:
+            - namespaceSelector:
+                matchLabels:
+                  kubernetes.io/metadata.name: argocd
+          ports:
+            - {protocol: TCP, port: 80}
+            - {protocol: TCP, port: 443}
+            - {protocol: TCP, port: 8080}
+            - {protocol: TCP, port: 15008}
+        # API access may resolve to node endpoints after Service DNAT.
+        - ports:
+            - {protocol: TCP, port: 443}
+            - {protocol: TCP, port: 6443}
+        # Preserve the separate public HTTPS Helm repository capability.
+        - ports:
+            - {protocol: TCP, port: 443}

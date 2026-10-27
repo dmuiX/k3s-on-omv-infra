@@ -1,0 +1,22 @@
+# Explicit identity; never derived from the Helm release name.
+name: example
+namespace: default
+parentRefs:
+- group: gateway.networking.k8s.io
+  kind: Gateway
+  name: gateway
+  namespace: gateway
+  sectionName: https
+hostnames:
+- service.example.invalid
+rules:
+- backend:
+    name: example
+    port: 80
+    weight: 1
+  matches:
+  - path:
+      type: PathPrefix
+      value: /
+  filters: []
+  timeouts: {}

@@ -1,0 +1,5 @@
+apiVersion: v2
+name: openbao-oidc
+description: Dedicated OpenBao OIDC identities; workload secret delivery stays consumer-owned.
+type: application
+version: 0.1.0

@@ -1,0 +1,90 @@
+---
+apiVersion: identity.vault.upbound.io/v1alpha1
+kind: Group
+metadata:
+  annotations:
+    argocd.argoproj.io/sync-wave: "-20"
+  name: radar-admin
+spec:
+  deletionPolicy: Orphan
+  forProvider:
+    externalMemberEntityIds: true
+    name: radar:admin
+    type: internal
+  providerConfigRef:
+    name: openbao
+---
+apiVersion: identity.vault.upbound.io/v1alpha1
+kind: OidcClient
+metadata:
+  annotations:
+    argocd.argoproj.io/sync-wave: "-20"
+  name: radar
+spec:
+  deletionPolicy: Orphan
+  forProvider:
+    accessTokenTtl: 3600
+    assignments:
+    - allow_all
+    clientType: confidential
+    idTokenTtl: 3600
+    key: radar
+    name: radar
+    redirectUris:
+    - https://radar.example.invalid:9443/auth/callback
+  providerConfigRef:
+    name: openbao
+  writeConnectionSecretToRef:
+    name: radar-oidc-client
+    namespace: radar
+---
+apiVersion: identity.vault.upbound.io/v1alpha1
+kind: OidcKey
+metadata:
+  annotations:
+    argocd.argoproj.io/sync-wave: "-20"
+  name: radar
+spec:
+  deletionPolicy: Orphan
+  forProvider:
+    algorithm: RS256
+    allowedClientIds:
+    - "*"
+    name: radar
+    rotationPeriod: 86400
+    verificationTtl: 172800
+  providerConfigRef:
+    name: openbao
+---
+apiVersion: identity.vault.upbound.io/v1alpha1
+kind: OidcProvider
+metadata:
+  annotations:
+    argocd.argoproj.io/sync-wave: "-20"
+  name: radar
+spec:
+  deletionPolicy: Orphan
+  forProvider:
+    allowedClientIdsRefs:
+    - name: radar
+    httpsEnabled: true
+    issuerHost: issuer.example.invalid:9443
+    name: radar
+    scopesSupportedRefs:
+    - name: radar
+  providerConfigRef:
+    name: openbao
+---
+apiVersion: identity.vault.upbound.io/v1alpha1
+kind: OidcScope
+metadata:
+  annotations:
+    argocd.argoproj.io/sync-wave: "-20"
+  name: radar
+spec:
+  deletionPolicy: Orphan
+  forProvider:
+    name: radar
+    template: '{"username":{{identity.entity.name}},"groups":{{identity.entity.groups.names}}}'
+  providerConfigRef:
+    name: openbao

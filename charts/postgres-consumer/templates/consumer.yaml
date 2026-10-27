@@ -1,0 +1,87 @@
+{{- $p := .Values.postgresConsumer -}}
+{{- if $p.enabled }}
+apiVersion: postgresql.cnpg.io/v1
+kind: Database
+metadata:
+  name: {{ $p.name | quote }}
+  namespace: {{ $p.databaseNamespace | quote }}
+  annotations:
+    argocd.argoproj.io/sync-wave: {{ $p.databaseSyncWave | quote }}
+spec:
+  name: {{ $p.databaseName | quote }}
+  owner: {{ $p.username | quote }}
+  cluster:
+    name: {{ $p.clusterName | quote }}
+---
+apiVersion: database.vault.upbound.io/v1alpha1
+kind: SecretBackendStaticRole
+metadata:
+  name: {{ $p.name | quote }}
+  annotations:
+    argocd.argoproj.io/sync-wave: {{ $p.roleSyncWave | quote }}
+spec:
+  forProvider:
+    backend: {{ $p.backend | quote }}
+    name: {{ $p.name | quote }}
+    dbName: {{ $p.clusterName | quote }}
+    username: {{ $p.username | quote }}
+    rotationPeriod: {{ $p.rotationPeriod }}
+    rotationStatements:
+      - >-
+        ["DO $role$ BEGIN
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = '{{ $p.username }}' AND (rolsuper OR rolreplication OR rolbypassrls)) THEN
+        RAISE EXCEPTION 'Refusing privileged {{ $p.roleDisplayName }} role'; END IF;
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = '{{ $p.username }}') THEN
+        ALTER ROLE {{ $p.username }} WITH LOGIN NOCREATEDB NOCREATEROLE INHERIT CONNECTION LIMIT {{ $p.connectionLimit }} PASSWORD '{{`{{password}}`}}';
+        ELSE
+        CREATE ROLE {{ $p.username }} WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION INHERIT CONNECTION LIMIT {{ $p.connectionLimit }} PASSWORD '{{`{{password}}`}}';
+        END IF;
+        END $role$;"]
+  providerConfigRef:
+    name: {{ $p.providerConfigRef | quote }}
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultDynamicSecret
+metadata:
+  name: {{ $p.secretName | quote }}
+  namespace: {{ .Release.Namespace | quote }}
+spec:
+  vaultAuthRef: {{ $p.vaultAuthRef | quote }}
+  mount: {{ $p.backend | quote }}
+  path: {{ printf "static-creds/%s" $p.name | quote }}
+  allowStaticCreds: true
+  rolloutRestartTargets:
+    - kind: Deployment
+      name: {{ $p.deploymentName | quote }}
+  destination:
+    create: true
+    name: {{ $p.secretName | quote }}
+    transformation:
+      excludeRaw: true
+      templates:
+{{- if eq $p.credentialFormat "dsn" }}
+        dsn:
+          text: |-
+            {{`{{- $username := get .Secrets "username" -}}`}}
+            {{`{{- $password := get .Secrets "password" -}}`}}
+            {{`{{- if or (empty $username) (empty $password) -}}`}}
+            {{`{{- fail "missing required OpenBao database username or password" -}}`}}
+            {{`{{- end -}}`}}
+            postgresql://{{`{{ $username | urlquery }}`}}:{{`{{ $password | urlquery }}`}}@{{ $p.host }}:{{ $p.port }}/{{ $p.databaseName }}?sslmode={{ $p.sslMode }}
+{{- else }}
+        username:
+          text: |-
+            {{`{{- $value := get .Secrets "username" -}}`}}
+            {{`{{- if empty $value -}}`}}
+            {{`{{- fail "missing required OpenBao key: username" -}}`}}
+            {{`{{- end -}}`}}
+            {{`{{- $value -}}`}}
+        password:
+          text: |-
+            {{`{{- $value := get .Secrets "password" -}}`}}
+            {{`{{- if empty $value -}}`}}
+            {{`{{- fail "missing required OpenBao key: password" -}}`}}
+            {{`{{- end -}}`}}
+            {{`{{- $value -}}`}}
+{{- end }}
+{{- end }}

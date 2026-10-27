@@ -1,0 +1,5 @@
+name: longhorn-oidc-proxy
+namespace: longhorn
+# Required deployment-specific URLs, supplied by the Live repository.
+issuerURL: ""
+redirectURL: ""
