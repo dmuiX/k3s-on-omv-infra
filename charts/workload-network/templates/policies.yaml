@@ -48,6 +48,10 @@ kind: NetworkPolicy
 metadata:
   name: {{ .name }}
   namespace: {{ $network.namespace }}
+  {{- with .annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
   podSelector: {{ .podSelector | toJson }}
   policyTypes: {{ .policyTypes | toJson }}

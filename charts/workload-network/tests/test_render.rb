@@ -41,7 +41,26 @@ class WorkloadNetworkTest < Minitest::Test
     baseline = documents(File.read(File.join(FIXTURES, 'radar-baseline.yaml')))
     assert_equal indexed(baseline), indexed(render(fixture('radar-values.yaml')))
     actual = YAML.load_file(File.join(LIVE, 'apps/radar/network-values.yml'))
-    assert_equal indexed(baseline), indexed(render(actual))
+    # Keep the captured migration baseline immutable; model only this topic's delta.
+    api_rules = [
+      {'to' => [{'ipBlock' => {'cidr' => '10.43.0.1/32'}}],
+       'ports' => [{'protocol' => 'TCP', 'port' => 443}]},
+      {'to' => %w[192.168.1.2/32 192.168.1.5/32 192.168.1.7/32].map { |ip| {'ipBlock' => {'cidr' => ip}} },
+       'ports' => [{'protocol' => 'TCP', 'port' => 6443}]}
+    ]
+    expected = Marshal.load(Marshal.dump(baseline))
+    radar = expected.find { |d| d['metadata']['name'] == 'allow-radar' }
+    assert_equal({'ports' => [{'protocol' => 'TCP', 'port' => 443},
+                             {'protocol' => 'TCP', 'port' => 6443}]}, radar['spec']['egress'][-2])
+    radar['spec']['egress'][-2, 1] = api_rules
+    expected << {
+      'apiVersion' => 'networking.k8s.io/v1', 'kind' => 'NetworkPolicy',
+      'metadata' => {'name' => 'allow-radar-credentials-api', 'namespace' => 'radar',
+                     'annotations' => {'argocd.argoproj.io/sync-wave' => '-2'}},
+      'spec' => {'podSelector' => {'matchLabels' => {'app.kubernetes.io/name' => 'radar-credentials'}},
+                 'policyTypes' => ['Egress'], 'egress' => api_rules}
+    }
+    assert_equal indexed(expected), indexed(render(actual))
     app = YAML.load_file(File.join(APPS, 'radar/app.yml'))
     sources = app['spec']['sources'].select { |s| s['path'] == 'charts/workload-network' }
     assert_equal 1, sources.length

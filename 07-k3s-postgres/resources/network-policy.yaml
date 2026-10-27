@@ -107,9 +107,5 @@ spec:
           port: 53
         - protocol: TCP
           port: 53
-    # K3s may enforce API Service traffic after DNAT to server port 6443.
-    - ports:
-        - protocol: TCP
-          port: 443
-        - protocol: TCP
-          port: 6443
+    # API egress is granted separately by Live's allow-postgresql-api policy,
+    # using the cluster's exact API Service and control-plane endpoint IPs.

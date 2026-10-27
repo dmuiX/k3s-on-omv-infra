@@ -27,6 +27,7 @@
             "required": ["name", "podSelector", "policyTypes"],
             "properties": {
               "name": {"type": "string", "minLength": 1},
+              "annotations": {"type": "object", "additionalProperties": {"type": "string"}},
               "podSelector": {"allOf": [{"$ref": "#/definitions/selector"}], "minProperties": 1},
               "policyTypes": {"$ref": "#/definitions/policyTypes"},
               "dns": {"type": "boolean"},

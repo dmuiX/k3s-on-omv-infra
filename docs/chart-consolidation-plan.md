@@ -297,7 +297,7 @@ Do not set every available `networkPolicy.enabled` or monitor flag to true in on
 
 Approved after reviewing the selector distinction: the native policy is now enabled with exact previous ingress/egress arrays. It adds `app.kubernetes.io/instance: openbao` to the old name-only selector; tests prove declared server pods carry both labels. This is equivalence for the intended workload, not a claim that selector populations are identical.
 
-The policy identity changes from `allow-openbao-raft-and-clients` to `openbao`. The old live policy will remain under prune=false and requires a separately approved retirement after target-pod/connectivity verification. Keeping it indefinitely would retain its broader target selection. Namespace-wide default deny, injector/snapshot policies, API access and Ambient/HBONE allowances remain unchanged. Native default rule lists were not adopted.
+The policy identity changes from `allow-openbao-raft-and-clients` to `openbao`. The old live policy will remain under prune=false and requires a separately approved retirement after target-pod/connectivity verification. Keeping it indefinitely would retain its broader target selection. Namespace-wide default deny and Ambient/HBONE allowances remain unchanged. The subsequent [API ownership candidate](api-network-ownership.md) removes only the native server's broad TCP 6443 rule, moves injector API tuples to Live, and preserves snapshot HTTPS as a separate broad Live exception. These additive allowances are not R2-only enforcement. Native default rule lists were not adopted.
 
 ### 5.2 Monitoring configuration targets
 
