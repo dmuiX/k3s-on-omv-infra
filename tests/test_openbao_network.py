@@ -1,7 +1,9 @@
 """Offline native OpenBao NetworkPolicy migration contracts, chart 0.30.4.
 
 Baseline captured from security.yaml before migration, not from chart values.
-The approved target selector adds instance=openbao, NOT component=server.
+The approved chart selector adds instance=openbao, NOT component=server.
+Only the historical ports-only TCP 6443 rule is removed: the additive Live
+server API policy supplies exact Service 443 / endpoint 6443 tuples instead.
 The old policy remains in the cluster with prune=false until reviewed retirement;
 these tests render locally only and do not deploy or retire anything.
 """
@@ -72,12 +74,16 @@ spec:
             {protocol: TCP, port: 443}]
   - ports: [{protocol: TCP, port: 6443}]
 ''')
-# Raw document hashes include comments and whitespace, so unrelated policies
-# must survive byte-for-byte rather than just remaining semantically similar.
+# Explicit approved delta; preserve the historical BASELINE and every other rule.
+REMOVED_SERVER_API_RULE = {'ports': [{'protocol': 'TCP', 'port': 6443}]}
+CHART_EGRESS = copy.deepcopy(BASELINE['spec']['egress'])
+CHART_EGRESS.remove(REMOVED_SERVER_API_RULE)
+
+# The default deny must survive byte-for-byte. Injector/server API tuples and snapshot
+# HTTPS moved to additive Live policies; test_remaining_api_network checks their
+# exact selectors, union of permissions, and source ownership separately.
 UNCHANGED = {
     'default-deny': '6d2250940dd9e9476fae56040e13864114fa38348b816c7bcc460e0a643fc545',
-    'allow-openbao-agent-injector': 'fda4525ff1ed923916dd2710a25d0647d1701e30601dc1499a80f319ca3706c0',
-    'allow-openbao-snapshot-egress': '551ca38f55d4787cbe8efc655e2502873e43ce69de01834e796bb9f678b7a182',
 }
 
 
@@ -97,12 +103,13 @@ class OpenBaoNetworkTests(unittest.TestCase):
         self.assertEqual(native.digest(BASELINE),
                          'b6116d71f04d53ee4ee75183dca3ba455b3736f6fc7da6e10b6dc091bc037489')
 
-    def test_values_preserve_every_ingress_and_egress_rule(self):
+    def test_values_preserve_all_rules_except_migrated_broad_server_api(self):
+        self.assertEqual(BASELINE['spec']['egress'].count(REMOVED_SERVER_API_RULE), 1)
         policy = self.values['server']['networkPolicy']
         self.assertEqual(policy, {
             'enabled': True,
             'ingress': BASELINE['spec']['ingress'],
-            'egress': BASELINE['spec']['egress'],
+            'egress': CHART_EGRESS,
         })
 
     def check_rendered_policy(self, app, docs):
@@ -122,10 +129,12 @@ class OpenBaoNetworkTests(unittest.TestCase):
         self.assertNotIn('component', selector['matchLabels'])
         expected = copy.deepcopy(BASELINE['spec'])
         expected['podSelector'] = selector
+        expected['egress'] = CHART_EGRESS
         actual = copy.deepcopy(policy['spec'])
         self.assertNotIn('policyTypes', actual, 'Pinned template relies on Kubernetes defaults')
         actual['policyTypes'] = effective_policy_types(actual)
-        self.assertEqual(actual, expected, 'No peer, port or rule may be widened or removed')
+        self.assertEqual(actual, expected,
+                         'Only the ports-only TCP 6443 rule may move to the exact Live API policy')
         statefulset, = native.kind(docs, 'StatefulSet')
         labels = statefulset['spec']['template']['metadata']['labels']
         for key, value in selector['matchLabels'].items():
@@ -139,16 +148,29 @@ class OpenBaoNetworkTests(unittest.TestCase):
     def test_exact_cached_chart_render_and_workload_targeting(self):
         self.check_rendered_policy(self.app, self.docs)
 
-    def test_actual_live_overlay_preserves_network_contract(self):
-        native.NativeChartMigrations.setUpClass()
-        app = native.NativeChartMigrations.apps['openbao']
-        self.check_rendered_policy(app, native.render(app))
+    def test_chart_has_no_unrestricted_api_egress(self):
+        policy, = native.kind(self.docs, 'NetworkPolicy')
+        for spec in (self.values['server']['networkPolicy'], policy['spec']):
+            for rule in spec['egress']:
+                # Every retained chart rule must constrain its destinations,
+                # including the existing kube-system TCP 443 permission.
+                self.assertTrue(rule.get('to'), 'Chart must not grant unrestricted API egress')
 
-    def test_only_old_server_policy_removed_from_security_file(self):
+    def test_live_values_are_only_used_by_route_chart(self):
+        route, = [s for s in self.app['spec']['sources']
+                  if s.get('path') == 'charts/service-route']
+        self.assertEqual(route['helm']['valueFiles'], ['$live/infra/openbao/route-values.yml'])
+        # The server network policy has no private Helm overlay; Live plain
+        # policies are additive and must not change the native chart contract.
+        self.assertNotIn('valueFiles', self.app['spec']['sources'][0]['helm'])
+
+    def test_security_policy_identities_are_stable(self):
         documents = (ROOT / '04-openbao/resources/security.yaml').read_text().split('---\n')
         hashes = {yaml.safe_load(text)['metadata']['name']:
                   hashlib.sha256(text.encode()).hexdigest() for text in documents}
-        self.assertEqual(hashes, UNCHANGED)
+        self.assertEqual(set(hashes), {
+            'default-deny', 'allow-openbao-agent-injector', 'allow-openbao-snapshot-egress'})
+        self.assertEqual({name: hashes[name] for name in UNCHANGED}, UNCHANGED)
         self.assertFalse(self.app['spec']['syncPolicy']['automated']['prune'],
                          'Renamed old resource must await reviewed retirement')
 
