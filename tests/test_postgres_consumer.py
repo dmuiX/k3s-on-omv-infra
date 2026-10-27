@@ -127,9 +127,21 @@ class PostgresConsumerTests(unittest.TestCase):
         self.assertEqual(source["helm"]["valueFiles"],
                          ["$live/infra/kube-prometheus-stack/postgres-values.yml"])
         remaining = documents(ROOT / "09-kube-prometheus-stack/resources/grafana.yaml")
+        # Custody and reader ACL details are covered by test_grafana_admin;
+        # retain exact inventory and the existing database auth contract here.
+        custody = {("VaultStaticSecret", "grafana-admin"),
+                   ("Policy", "grafana-vso-read"), ("AuthBackendRole", "grafana-vso")}
+        self.assertEqual({(d["kind"], d["metadata"]["name"]) for d in remaining
+                          if d["kind"] in {kind for kind, _ in custody}}, custody)
+        self.assertFalse(any(d["kind"] == "ServiceAccount" for d in remaining))
+        actual = [d for d in remaining if (d["kind"], d["metadata"]["name"]) not in custody]
         original = documents(FIXTURES / "grafana.yaml")
-        self.assertEqual(keyed(remaining), keyed([d for d in original
-                         if d not in baseline("grafana") and d["kind"] != "Namespace"]))
+        expected = [d for d in original if d not in baseline("grafana")
+                    and d["kind"] not in ("Namespace", "ServiceAccount")]
+        for doc in expected:
+            if doc["kind"] == "VaultAuth":
+                doc["spec"]["kubernetes"]["serviceAccount"] = "kube-prometheus-stack-grafana"
+        self.assertEqual(keyed(actual), keyed(expected))
 
     @unittest.skipUnless(APPS.is_dir(), "Apps checkout not available")
     def test_radar_source_and_no_duplicate_database_resources(self):

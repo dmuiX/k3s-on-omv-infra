@@ -46,6 +46,9 @@ VSO delivers secrets but does not generate random values or Argo API tokens. Rad
 | `longhorn-credentials` / `longhorn` | `longhorn/oidc-proxy`: native client credentials plus random 32-byte cookie key |
 | `k3s-postgres-credentials` / `cloudnative-pg` | `postgresql/openbao-manager`: fixed username plus random password |
 | `radar-credentials` / `radar` | `radar/auth`: session key; `radar/argocd`: issued account token |
+| `grafana-admin-provisioner` / `kube-prometheus-stack` | `monitoring/grafana-admin`: fixed admin login plus random password |
+
+Grafana consumes the separate VSO-owned `grafana-admin` Secret through the native chart's `admin.existingSecret`, including reload sidecars. These are bootstrap credentials, not a declarative reset of the password persisted in PostgreSQL. See [Grafana administrator cutover](grafana-admin.md) for provider-policy prerequisites, the attended one-time stdin CLI reset, safe operator access and rollback. No live reset is performed by the Sync hook.
 
 Each Job has a separate ServiceAccount, audience-bound login role, create-only policy and NetworkPolicy. Longhorn/database producers have no Argo permissions or Argo CLI. The central multi-service Job has been removed. A small `adapters/credential-custody` ConfigMap provides identical HTTP/CAS/ownership handling in each consumer namespace; it contains no consumer paths, identity decisions, Argo implementation or combined issuer permissions.
 

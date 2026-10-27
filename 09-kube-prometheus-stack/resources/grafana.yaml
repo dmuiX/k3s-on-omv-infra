@@ -1,9 +1,3 @@
-apiVersion: v1
-kind: ServiceAccount
-metadata:
-  name: grafana-vso
-  namespace: kube-prometheus-stack
----
 apiVersion: secrets.hashicorp.com/v1beta1
 kind: VaultConnection
 metadata:
@@ -23,4 +17,58 @@ spec:
   vaultConnectionRef: openbao
   kubernetes:
     role: grafana-vso
-    serviceAccount: grafana-vso
+    serviceAccount: kube-prometheus-stack-grafana
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata:
+  name: grafana-admin
+  namespace: kube-prometheus-stack
+spec:
+  vaultAuthRef: grafana-vso
+  mount: kv
+  type: kv-v2
+  path: monitoring/grafana-admin
+  refreshAfter: 1m
+  destination:
+    create: true
+    name: grafana-admin
+    transformation:
+      excludeRaw: true
+      includes:
+      - ^admin-user$
+      - ^admin-password$
+---
+apiVersion: vault.vault.upbound.io/v1alpha1
+kind: Policy
+metadata:
+  name: grafana-vso-read
+spec:
+  deletionPolicy: Orphan
+  forProvider:
+    name: grafana-vso-read
+    policy: |
+      path "auth/token/renew-self" { capabilities = ["update"] }
+      path "database/static-creds/grafana" { capabilities = ["read"] }
+      path "kv/data/monitoring/grafana-admin" { capabilities = ["read"] }
+  providerConfigRef:
+    name: openbao
+---
+apiVersion: kubernetes.vault.upbound.io/v1alpha1
+kind: AuthBackendRole
+metadata:
+  name: grafana-vso
+spec:
+  deletionPolicy: Orphan
+  forProvider:
+    backend: kubernetes
+    roleName: grafana-vso
+    boundServiceAccountNames:
+      - kube-prometheus-stack-grafana
+    boundServiceAccountNamespaces:
+      - kube-prometheus-stack
+    tokenPolicies:
+      - grafana-vso-read
+    tokenTtl: 3600
+  providerConfigRef:
+    name: openbao
