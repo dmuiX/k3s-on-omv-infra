@@ -39,6 +39,8 @@ The pinned provider's [connection mapping](https://github.com/upbound/provider-v
 
 CloudNativePG's managed roles own the non-superuser `openbao_manager` login and consume the VSO-delivered basic-auth Secret. `CREATEROLE` permits creation/rotation of application roles it administers; the manager cannot create databases, replicate or bypass row security. Application databases/roles remain with Radar and Grafana, not with the operator installation.
 
+PostgreSQL backup and restore-validation R2 Secrets contain one copy of each credential: `access-key-id`, `secret-access-key`, `region`, and `S3_ENDPOINT`. Their CronJobs explicitly map these keys to `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, and `S3_ENDPOINT` through `secretKeyRef`; AWS-named credential aliases are not stored in these Secrets.
+
 VSO delivers secrets but does not generate random values or Argo API tokens. Radar chart 1.17.0 and oauth2-proxy accept existing Secrets; Radar's empty-secret fallback is process-local, not durable custody. Consumer-owned Sync-hook Jobs fill only these gaps:
 
 | Job / namespace | Allowed OpenBao KV data |

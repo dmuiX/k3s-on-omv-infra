@@ -14,6 +14,29 @@ SPEC.loader.exec_module(MODULE)
 
 
 class RetentionManifestTest(unittest.TestCase):
+    def test_validation_uses_explicit_r2_secret_references(self):
+        root = PATH.parents[2] / "08-backup-validation/resources"
+        documents = list(yaml.safe_load_all((root / "credentials.yaml").read_text()))
+        secret = next(doc for doc in documents
+                      if doc["metadata"]["name"] == "postgresql-validation-r2")
+        keys = set(secret["spec"]["destination"]["transformation"]["templates"])
+        self.assertEqual(keys, {"access-key-id", "secret-access-key", "region", "S3_ENDPOINT"})
+        documents = list(yaml.safe_load_all((root / "validation.yaml").read_text()))
+        job = next(doc for doc in documents
+                   if doc["metadata"]["name"] == "postgresql-restore-validation")
+        container = job["spec"]["jobTemplate"]["spec"]["template"]["spec"]["containers"][0]
+        self.assertNotIn("envFrom", container)
+        refs = {env["name"]: env["valueFrom"]["secretKeyRef"]
+                for env in container["env"] if "valueFrom" in env}
+        self.assertEqual(refs, {
+            name: {"name": "postgresql-validation-r2", "key": key}
+            for name, key in {
+                "AWS_ACCESS_KEY_ID": "access-key-id",
+                "AWS_SECRET_ACCESS_KEY": "secret-access-key",
+                "AWS_REGION": "region", "S3_ENDPOINT": "S3_ENDPOINT",
+            }.items()
+        })
+
     def test_r2_credentials_are_mapped_without_duplicate_secret_keys(self):
         root = PATH.parents[2]
         credentials = list(yaml.safe_load_all(

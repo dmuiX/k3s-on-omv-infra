@@ -163,10 +163,27 @@ spec:
                 - /venv/bin/python3
               args:
                 - /validator/postgresql_pitr.py
-              envFrom:
-                - secretRef:
-                    name: postgresql-validation-r2
               env:
+                - name: AWS_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: postgresql-validation-r2
+                      key: access-key-id
+                - name: AWS_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: postgresql-validation-r2
+                      key: secret-access-key
+                - name: AWS_REGION
+                  valueFrom:
+                    secretKeyRef:
+                      name: postgresql-validation-r2
+                      key: region
+                - name: S3_ENDPOINT
+                  valueFrom:
+                    secretKeyRef:
+                      name: postgresql-validation-r2
+                      key: S3_ENDPOINT
                 - name: S3_BUCKET
                   value: cloudnativepg-backups
                 - name: BARMAN_SERVER_NAME
