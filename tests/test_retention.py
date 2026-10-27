@@ -14,6 +14,23 @@ SPEC.loader.exec_module(MODULE)
 
 
 class RetentionManifestTest(unittest.TestCase):
+    def test_postgresql_connection_is_declared_once(self):
+        resources = PATH.parents[2] / "07-k3s-postgres/resources"
+        identities = {}
+        for path in resources.glob("*.yaml"):
+            for doc in yaml.safe_load_all(path.read_text()):
+                if not doc:
+                    continue
+                metadata = doc["metadata"]
+                identity = (doc["apiVersion"], doc["kind"],
+                            metadata.get("namespace", ""), metadata["name"])
+                self.assertNotIn(identity, identities,
+                                 f"Duplicate resource in {path} and {identities.get(identity)}")
+                identities[identity] = path.name
+        self.assertEqual(identities[("database.vault.upbound.io/v1alpha1",
+                                     "SecretBackendConnection", "", "postgresql")],
+                         "openbao-database-connection.yaml")
+
     def test_validation_uses_explicit_r2_secret_references(self):
         root = PATH.parents[2] / "08-backup-validation/resources"
         documents = list(yaml.safe_load_all((root / "credentials.yaml").read_text()))
