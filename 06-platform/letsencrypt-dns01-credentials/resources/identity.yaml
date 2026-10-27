@@ -5,21 +5,12 @@ metadata:
   namespace: cert-manager
 ---
 apiVersion: secrets.hashicorp.com/v1beta1
-kind: VaultConnection
-metadata:
-  name: openbao
-  namespace: cert-manager
-spec:
-  address: "http://openbao-active.openbao.svc.cluster.local:8200"
-  skipTLSVerify: false
----
-apiVersion: secrets.hashicorp.com/v1beta1
 kind: VaultAuth
 metadata:
   name: cert-manager-dns01
   namespace: cert-manager
 spec:
-  vaultConnectionRef: openbao
+  vaultConnectionRef: vault-secrets-operator/default
   method: kubernetes
   mount: kubernetes
   kubernetes:
@@ -42,4 +33,12 @@ spec:
     name: cloudflare-dns01
     # Bootstrap creates this before cert-manager; VSO updates it after OpenBao.
     create: false
+    transformation:
+      excludeRaw: true
+      transformationRefs:
+        - name: required-openbao-value
+          namespace: vault-secrets-operator
+      templates:
+        api-token:
+          text: '{{ template "requiredValue" (dict "key" "api-token" "value" (get .Secrets "api-token")) }}'
   refreshAfter: 1h

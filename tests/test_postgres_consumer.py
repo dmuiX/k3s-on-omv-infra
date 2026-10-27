@@ -1,4 +1,5 @@
 """Offline PostgreSQL consumer chart contracts (Python + PyYAML + Helm only)."""
+import copy
 import json
 from pathlib import Path
 import subprocess
@@ -66,6 +67,54 @@ def render(config, namespace="radar", check=True):
     return result
 
 
+def shared_required_baseline(docs):
+    """Normalize only required-value syntax; engine tests cover its semantics."""
+    docs = copy.deepcopy(docs)
+    for doc in docs:
+        if doc['kind'] not in ('VaultStaticSecret', 'VaultDynamicSecret'):
+            continue
+        transform = doc['spec']['destination'].get('transformation', {})
+        changed = False
+        for template in transform.get('templates', {}).values():
+            text = template['text']
+            for key in ('username', 'password', 'client_id', 'client_secret', 'auth-secret', 'token'):
+                old = ('{{- $value := get .Secrets "' + key + '" -}}\n'
+                       '{{- if empty $value -}}\n'
+                       '{{- fail "missing required OpenBao key: ' + key + '" -}}\n'
+                       '{{- end -}}\n{{- $value -}}')
+                if text == old:
+                    text = ('{{ template "requiredValue" (dict "key" "' + key
+                            + '" "value" (get .Secrets "' + key + '")) }}')
+            guard = ('{{- if or (empty $username) (empty $password) -}}\n'
+                     '{{- fail "missing required OpenBao database username or password" -}}\n'
+                     '{{- end -}}\n')
+            if guard in text:
+                text = text.replace(guard, '')
+                for key in ('username', 'password'):
+                    text = text.replace('{{ $' + key + ' | urlquery }}',
+                        '{{ template "requiredValue" (dict "key" "' + key
+                        + '" "value" (and $' + key + ' ($' + key + ' | urlquery))) }}')
+            if text != template['text']:
+                changed = True
+                template['text'] = text
+        if changed:
+            transform['transformationRefs'] = [{'name': 'required-openbao-value',
+                                               'namespace': 'vault-secrets-operator'}]
+    return docs
+
+
+def shared_connection(docs):
+    """Only connection ownership changes; preserve the historical identity baseline."""
+    result = []
+    for doc in copy.deepcopy(docs):
+        if doc['kind'] == 'VaultConnection':
+            continue
+        if doc['kind'] == 'VaultAuth':
+            doc['spec']['vaultConnectionRef'] = 'vault-secrets-operator/default'
+        result.append(doc)
+    return result
+
+
 def keyed(docs):
     return {(doc["apiVersion"], doc["kind"], doc["metadata"].get("namespace", ""),
              doc["metadata"]["name"]): doc for doc in docs}
@@ -76,7 +125,7 @@ class PostgresConsumerTests(unittest.TestCase):
         for consumer, namespace in (("radar", "radar"), ("grafana", "kube-prometheus-stack")):
             with self.subTest(consumer=consumer):
                 actual = list(yaml.safe_load_all(render(values(consumer), namespace).stdout))
-                self.assertEqual(keyed(actual), keyed(baseline(consumer)))
+                self.assertEqual(keyed(actual), keyed(shared_required_baseline(baseline(consumer))))
                 self.assertEqual(len(actual), 3)
 
     def test_disabled_default_has_no_resources(self):
@@ -106,7 +155,10 @@ class PostgresConsumerTests(unittest.TestCase):
             self.assertEqual(set(templates), {"dsn"} if consumer == "radar" else {"username", "password"})
             for template in templates.values():
                 self.assertIn("get .Secrets", template["text"])
-                self.assertIn("fail", template["text"])
+                self.assertIn('template "requiredValue"', template['text'])
+            self.assertEqual(docs[2]['spec']['destination']['transformation']['transformationRefs'],
+                             [{'name': 'required-openbao-value',
+                               'namespace': 'vault-secrets-operator'}])
             self.assertNotIn("kind: Secret\n", rendered)
 
     @unittest.skipUnless(LIVE.is_dir(), "Live checkout not available")
@@ -117,7 +169,7 @@ class PostgresConsumerTests(unittest.TestCase):
                 ("grafana", grafana, "kube-prometheus-stack")):
             with self.subTest(consumer=consumer):
                 actual = list(yaml.safe_load_all(render(config, namespace).stdout))
-                self.assertEqual(keyed(actual), keyed(baseline(consumer)))
+                self.assertEqual(keyed(actual), keyed(shared_required_baseline(baseline(consumer))))
 
     def test_grafana_source_and_remaining_auth(self):
         app = yaml.safe_load((ROOT / "09-kube-prometheus-stack/app.yml").read_text())

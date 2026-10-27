@@ -91,9 +91,37 @@ class OIDCProxy(unittest.TestCase):
         path = INFRA / '06-platform/longhorn-config/resources/oidc-proxy.yaml'
         docs = [d for d in yaml.safe_load_all(path.read_text()) if d]
         self.assertEqual([d['kind'] for d in docs],
-                         ['ServiceAccount', 'VaultConnection', 'VaultAuth', 'VaultStaticSecret'])
-        # Compare original prefix byte-for-byte, including VSO templates.
-        self.assertEqual(hashlib.sha256(path.read_bytes()).hexdigest(), BASELINE['credentialsTextDigest'])
+                         ['ServiceAccount', 'VaultAuth', 'VaultStaticSecret'])
+        # Normalize only helper syntax and transport against the original baseline.
+        text = path.read_text()
+        auth_header = 'apiVersion: secrets.hashicorp.com/v1beta1\nkind: VaultAuth\n'
+        connection = ('apiVersion: secrets.hashicorp.com/v1beta1\n'
+                      'kind: VaultConnection\nmetadata:\n'
+                      '  name: openbao-longhorn\n  namespace: longhorn\n'
+                      'spec:\n  address: "http://openbao-active.openbao.svc.cluster.local:8200"\n---\n')
+        self.assertEqual(text.count(auth_header), 1)
+        text = text.replace(auth_header, connection + auth_header, 1)
+        qualified = 'vaultConnectionRef: vault-secrets-operator/default'
+        self.assertEqual(text.count(qualified), 1)
+        text = text.replace(qualified, 'vaultConnectionRef: openbao-longhorn', 1)
+        reference = ('      transformationRefs:\n'
+                     '        - name: required-openbao-value\n'
+                     '          namespace: vault-secrets-operator\n')
+        self.assertEqual(text.count(reference), 1)
+        text = text.replace(reference, '', 1)
+        for key in ('client-id', 'client-secret'):
+            shared = '{{- template "requiredValue" (dict "key" "' + key + '" "value" (get .Secrets "' + key + '")) -}}'
+            original = ('{{- $value := get .Secrets "' + key + '" -}}\n'
+                        '            {{- if empty $value -}}\n'
+                        '            {{- fail "missing required OpenBao key: ' + key + '" -}}\n'
+                        '            {{- end -}}\n'
+                        '            {{- $value -}}')
+            self.assertEqual(text.count(shared), 1)
+            text = text.replace(shared, original, 1)
+        shared = '{{- template "requiredValue" (dict "key" "cookie-secret" "value" $value) -}}'
+        self.assertEqual(text.count(shared), 1)
+        text = text.replace(shared, '{{- fail "missing required OpenBao key: cookie-secret" -}}', 1)
+        self.assertEqual(hashlib.sha256(text.encode()).hexdigest(), BASELINE['credentialsTextDigest'])
 
 
 if __name__ == '__main__':
