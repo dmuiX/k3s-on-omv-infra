@@ -77,8 +77,14 @@ until acceptance; after retirement, restoring that account requires approval.
   `postgresql-size-retention` and `backup-validation`; these are not duplicate
   reader accounts. The proxy and snapshot workloads already reuse their reader
   identities.
-- Keep `longhorn-credentials`, `k3s-postgres-credentials` and `grafana-credentials`
-  separate from the read-only consumers because they create credentials.
+- Keep `longhorn-proxy-provisioner`, `k3s-postgres-manager-provisioner` and
+  `grafana-admin-provisioner` separate from the read-only consumers because they
+  create credentials. Their complete producer bundles, login audiences and exact
+  management grants use those canonical names (Infra #66/#77, Bootstrap #64).
+  Radar likewise uses `radar-auth-provisioner` (Apps #5); shared Live API-policy
+  selectors follow that name in Live #11. Existing KV paths and Secret names stay
+  unchanged. If older identities exist, use an attended Orphan/tracking handoff
+  before withdrawing old management grants; do not rotate or recreate credentials.
 
 ### Complete follow-up on the five additional VSO readers
 
