@@ -14,7 +14,7 @@ def documents(path):
 
 
 class CredentialResourceOwnership(unittest.TestCase):
-    def test_moves_preserve_objects_and_producers_keep_external_identities(self):
+    def test_moves_preserve_objects_and_producer_names_are_consistent(self):
         # Canonical hashes of the complete objects on the pre-move main branch.
         for path, expected in (
             ('06-platform/backup-credentials/resources/k8up-repository-access.yaml',
@@ -49,12 +49,16 @@ class CredentialResourceOwnership(unittest.TestCase):
             self.assertEqual((job['metadata']['name'], account['metadata']['name'],
                               pod['serviceAccountName']), (name, name, name))
             self.assertEqual(role['spec']['forProvider']['boundServiceAccountNames'], [name])
-            self.assertEqual(role['spec']['forProvider']['roleName'], old)
-            self.assertEqual(role['spec']['forProvider']['audience'], 'vault://' + old)
-            self.assertEqual(role['spec']['forProvider']['tokenPolicies'], [old])
+            self.assertEqual({d['metadata']['name'] for d in docs}, {name})
+            self.assertEqual(role['spec']['forProvider']['roleName'], name)
+            self.assertEqual(role['spec']['forProvider']['audience'], 'vault://' + name)
+            self.assertEqual(role['spec']['forProvider']['tokenPolicies'], [name])
+            self.assertNotIn(old, json.dumps(docs))
+            self.assertIn('login("' + name + '")', next(d['data']['provision.py']
+                          for d in docs if d['kind'] == 'ConfigMap'))
             audiences = [s['serviceAccountToken']['audience'] for v in pod['volumes']
                          for s in v.get('projected', {}).get('sources', []) if 'serviceAccountToken' in s]
-            self.assertEqual(audiences, ['vault://' + old])
+            self.assertEqual(audiences, ['vault://' + name])
             network, = [d for d in docs if d['kind'] == 'NetworkPolicy']
             labels = job['spec']['template']['metadata']['labels']
             self.assertTrue(all(labels.get(k) == v for k, v in

@@ -63,10 +63,13 @@ Reader identities and VSO delivery remain separate from that producer.
 - `07-k3s-postgres/resources/credentials.yaml` owns VSO authentication/delivery.
   `openbao-database-connection.yaml` separately owns the database-engine connection;
   its Kubernetes/external identity, selectors and provider reference are unchanged.
-- Provisioner Job/ServiceAccount names describe their purpose. OpenBao role and
-  policy names, audiences, script login names, KV paths, ConfigMaps and matching
-  network selectors intentionally retain their existing identities. Names alone
-  do not justify rotating credentials or broadening access.
+- Each producer uses its canonical name consistently across Jobs, accounts,
+  policies, auth roles, audiences, ConfigMaps, script login/volume references and
+  network selectors. Longhorn uses `longhorn-proxy-provisioner`; PostgreSQL uses
+  `k3s-postgres-manager-provisioner`; corresponding Grafana/Radar names live in
+  their existing PRs. Bootstrap #64 updates the exact management grants; its
+  attended approval must precede reconciliation. KV paths, destination Secrets,
+  ACL capabilities and credential data stay unchanged.
 - Grafana's corresponding layout/name changes belong to Infra #66; shared VSO
   connection ownership belongs to #70; Radar's rename belongs to Apps #5. This
   change does not duplicate those implementation scopes or depend on their merge.
@@ -79,7 +82,14 @@ or bulk-prune. Verify exactly one desired owner and both backup-role references
 before resuming reconciliation. Moving the database connection within its existing
 Application does not transfer ownership and must not recreate its object.
 
-Before syncing renamed producers, stop or await old active producer Jobs. With
+Before syncing renamed producers, stop or await old active producer Jobs. If old
+writer identities were deployed, pause affected reconcilers and retire old
+Crossplane Policy/Role objects through normal Orphan finalization while existing
+management grants remain available; do not strip finalizers. Apply the separately
+approved canonical management grants before creating the new producer resources.
+After successful authentication/custody reuse, separately retire obsolete external
+roles/policies, old Kubernetes helper resources and any old RBAC. Old tokens need
+expiry/revocation review; no credential data is deleted by this name migration. With
 pruning disabled, old Job/ServiceAccount objects may remain: retire them only
 after new hooks authenticate successfully and reuse existing custody. Account
 for outstanding old tokens; changing a role binding does not revoke them. Retain
