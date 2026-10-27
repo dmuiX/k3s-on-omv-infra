@@ -3,8 +3,9 @@
 ## Ownership and limitations
 
 `kube-prometheus-stack` owns the create-once `grafana-admin-provisioner` Sync
-hook and ServiceAccount. The external OpenBao role/policy and token audience
-remain `grafana-credentials` for compatibility; they are not a second Job.
+hook and ServiceAccount. Its Policy, AuthBackendRole, ConfigMap, NetworkPolicy,
+labels, script login, volume references and `vault://grafana-admin-provisioner`
+audience all use the same producer name.
 It uses the existing shared custody helper, audience-bound Kubernetes login,
 CAS-0 writes and a read/create-only ACL for `kv/data/monitoring/grafana-admin`.
 The fixed login is `admin`; the password is generated in memory. Repeated syncs
@@ -43,7 +44,15 @@ If the previous Job/ServiceAccount name was deployed, stop or await any active
 old producer before an approved renamed-hook sync. Pruning is disabled: old
 Jobs/accounts can remain after rename and require separate retirement. Keep
 existing policies, roles, KV history and Secrets; never recreate credentials to
-clean up names. The new account remains distinct from the normal Grafana reader.
+clean up names. The new account remains distinct from the normal Grafana reader. Bootstrap #64
+must authorize the canonical management paths before producer reconciliation.
+If a partial earlier draft was deployed, inventory its old producer resources
+and outstanding tokens, pause competing reconcilers, and retire old Crossplane
+Policy/Role objects through their normal Orphan lifecycle while their existing
+management grants still work. Do not force finalizers or delete KV history.
+Changing management grants does not revoke old login tokens. After the canonical
+producer is accepted, separately authorize retirement of obsolete external
+policies/roles, Kubernetes helpers and old RBAC, preserving all credential data.
 
 Native capabilities checked before implementation:
 
@@ -78,8 +87,8 @@ review and approve its exact versioned ACL changes before execution.
    Crossplane provider policy from Bootstrap's
    `ansible/roles/openbao_setup/files/crossplane-provider-vault.hcl`, preserving
    its other entries. The only additions are create/read/update on
-   `sys/policies/acl/grafana-credentials` and
-   `auth/kubernetes/role/grafana-credentials`; no KV value permission is added to
+   `sys/policies/acl/grafana-admin-provisioner` and
+   `auth/kubernetes/role/grafana-admin-provisioner`; no KV value permission is added to
    the provider. Verify its current token can manage these two exact objects.
 2. Confirm a current PostgreSQL backup and the intended cluster/context. Check
    that the existing admin login is `admin` and its numeric user ID is 1 through

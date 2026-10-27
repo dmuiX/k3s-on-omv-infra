@@ -76,7 +76,7 @@ class GrafanaAdmin(unittest.TestCase):
         self.assertNotEqual(account, 'grafana-admin-provisioner')
         policy, = [d for d in DOCUMENTS['grafana'] if d['kind'] == 'NetworkPolicy']
         self.assertEqual(policy['spec']['podSelector']['matchLabels'],
-                         {'app.kubernetes.io/name': 'grafana-credentials'})
+                         {'app.kubernetes.io/name': 'grafana-admin-provisioner'})
 
     def test_delivery_permissions_and_bootstrap_are_narrow(self):
         documents = list(yaml.safe_load_all((INFRA / '09-kube-prometheus-stack/resources/grafana.yaml').read_text()))
@@ -107,10 +107,27 @@ class GrafanaAdmin(unittest.TestCase):
         self.assertEqual(account['metadata']['name'], job['metadata']['name'])
         self.assertEqual(job['spec']['template']['spec']['serviceAccountName'], account['metadata']['name'])
         self.assertEqual(role['spec']['forProvider']['boundServiceAccountNames'], [account['metadata']['name']])
-        self.assertEqual(role['spec']['forProvider']['audience'], 'vault://grafana-credentials')
+        self.assertEqual(role['spec']['forProvider']['audience'], 'vault://grafana-admin-provisioner')
+        self.assertEqual({d['metadata']['name'] for d in DOCUMENTS['grafana']}, {'grafana-admin-provisioner'})
+        self.assertEqual(producer['spec']['forProvider']['name'], 'grafana-admin-provisioner')
+        self.assertEqual(role['spec']['forProvider']['roleName'], 'grafana-admin-provisioner')
+        self.assertEqual(role['spec']['forProvider']['tokenPolicies'], ['grafana-admin-provisioner'])
+        self.assertIn('login("grafana-admin-provisioner")', next(d['data']['provision.py']
+                      for d in DOCUMENTS['grafana'] if d['kind'] == 'ConfigMap'))
+        network = next(d for d in DOCUMENTS['grafana'] if d['kind'] == 'NetworkPolicy')
+        self.assertEqual(network['spec']['podSelector']['matchLabels'],
+                         {'app.kubernetes.io/name': 'grafana-admin-provisioner'})
+        self.assertEqual(job['spec']['template']['metadata']['labels']['app.kubernetes.io/name'],
+                         'grafana-admin-provisioner')
+        pod = job['spec']['template']['spec']
+        self.assertEqual([v['configMap']['name'] for v in pod['volumes'] if 'configMap' in v],
+                         ['grafana-admin-provisioner', 'credential-custody'])
+        self.assertEqual([s['serviceAccountToken']['audience'] for v in pod['volumes']
+                          for s in v.get('projected', {}).get('sources', []) if 'serviceAccountToken' in s],
+                         ['vault://grafana-admin-provisioner'])
         self.assertEqual(role['spec']['forProvider']['boundServiceAccountNamespaces'], ['kube-prometheus-stack'])
         policy = (INFRA.parent / 'k3s-on-omv-bootstrap/ansible/roles/openbao_setup/files/crossplane-provider-vault.hcl').read_text()
-        for path in ('sys/policies/acl/grafana-credentials', 'auth/kubernetes/role/grafana-credentials'):
+        for path in ('sys/policies/acl/grafana-admin-provisioner', 'auth/kubernetes/role/grafana-admin-provisioner'):
             self.assertIn(f'path "{path}" {{ capabilities = ["create", "read", "update"] }}', policy)
         self.assertNotIn('kv/data/monitoring/grafana-admin', policy,
                          'Provider must not gain access to the credential value')
