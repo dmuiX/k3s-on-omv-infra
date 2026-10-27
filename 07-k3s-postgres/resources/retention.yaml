@@ -42,11 +42,29 @@ spec:
                   drop:
                     - ALL
               envFrom:
-                - secretRef:
-                    name: postgresql-r2-credentials
                 - configMapRef:
                     name: postgresql-retention-target
               env:
+                - name: AWS_ACCESS_KEY_ID
+                  valueFrom:
+                    secretKeyRef:
+                      name: postgresql-r2-credentials
+                      key: access-key-id
+                - name: AWS_SECRET_ACCESS_KEY
+                  valueFrom:
+                    secretKeyRef:
+                      name: postgresql-r2-credentials
+                      key: secret-access-key
+                - name: AWS_REGION
+                  valueFrom:
+                    secretKeyRef:
+                      name: postgresql-r2-credentials
+                      key: region
+                - name: S3_ENDPOINT
+                  valueFrom:
+                    secretKeyRef:
+                      name: postgresql-r2-credentials
+                      key: S3_ENDPOINT
                 - name: PYTHONDONTWRITEBYTECODE
                   value: "1"
               volumeMounts:

@@ -4,11 +4,41 @@ from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 import sys
 
+import yaml
+
 PATH = Path(__file__).parents[1] / "adapters/postgresql-size-retention/retention.py"
 SPEC = spec_from_file_location("retention", PATH)
 MODULE = module_from_spec(SPEC)
 sys.modules[SPEC.name] = MODULE
 SPEC.loader.exec_module(MODULE)
+
+
+class RetentionManifestTest(unittest.TestCase):
+    def test_r2_credentials_are_mapped_without_duplicate_secret_keys(self):
+        root = PATH.parents[2]
+        credentials = list(yaml.safe_load_all(
+            (root / "07-k3s-postgres/resources/credentials.yaml").read_text()))
+        secret = next(doc for doc in credentials
+                      if doc["metadata"]["name"] == "postgresql-r2-credentials")
+        templates = secret["spec"]["destination"]["transformation"]["templates"]
+        self.assertEqual(set(templates),
+                         {"access-key-id", "secret-access-key", "region", "S3_ENDPOINT"})
+        documents = list(yaml.safe_load_all(
+            (root / "07-k3s-postgres/resources/retention.yaml").read_text()))
+        job = next(doc for doc in documents if doc["kind"] == "CronJob")
+        container = job["spec"]["jobTemplate"]["spec"]["template"]["spec"]["containers"][0]
+        self.assertFalse(any("secretRef" in source for source in container["envFrom"]))
+        refs = {env["name"]: env["valueFrom"]["secretKeyRef"]
+                for env in container["env"] if "valueFrom" in env}
+        self.assertEqual(refs, {
+            name: {"name": "postgresql-r2-credentials", "key": key}
+            for name, key in {
+                "AWS_ACCESS_KEY_ID": "access-key-id",
+                "AWS_SECRET_ACCESS_KEY": "secret-access-key",
+                "AWS_REGION": "region",
+                "S3_ENDPOINT": "S3_ENDPOINT",
+            }.items()
+        })
 
 
 class RetentionTest(unittest.TestCase):
