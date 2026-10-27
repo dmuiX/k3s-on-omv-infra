@@ -12,7 +12,7 @@ OpenBao is the secret store, not the owner of every consumer's integration.
 | `longhorn-config` | Infra `06-platform/longhorn-config` | Longhorn's OIDC identities, proxy, credentials and route |
 | `radar` | Apps `radar` | Radar UI, OpenBao identity/client/provider, credential issuance, application database/role, RBAC and Secret consumers |
 | `argocd-config` | Infra `01-bootstrap/argocd-config` | Local Argo account definition and Argo application/project read permissions |
-| `platform-credentials` | Infra `06-platform/backup-credentials` | Shared platform R2/SMB access and Secret delivery |
+| `platform-credentials` | Infra `06-platform/backup-credentials` | Shared platform R2/SMB access, shared K8up repository reader policy and Secret delivery |
 | `openbao-config` | Infra `06-platform/openbao-config` | General OpenBao mounts, userpass backend and the shared standard OIDC `profile` scope |
 
 Other consumer-specific OpenBao policies/auth roles live in their owner's `resources/openbao-access.yaml`: OpenBao snapshots, certificate DNS validation, monitoring and backup validation. OpenBao's own PeerAuthentication belongs to the core OpenBao Application. The general provider-vault `Mount` and `Backend` CRDs have Kubernetes scope `Cluster`; their manifests intentionally have no `metadata.namespace`, regardless of the Application's default destination namespace.
@@ -45,18 +45,67 @@ The pinned provider's [connection mapping](https://github.com/upbound/provider-v
 
 CloudNativePG's managed roles own the non-superuser `openbao_manager` login and consume the VSO-delivered basic-auth Secret. `CREATEROLE` permits creation/rotation of application roles it administers; the manager cannot create databases, replicate or bypass row security. Application databases/roles remain with Radar and Grafana, not with the operator installation.
 
+PostgreSQL backup and restore-validation R2 Secrets contain one copy of each credential: `access-key-id`, `secret-access-key`, `region`, and `S3_ENDPOINT`. Their CronJobs explicitly map these keys to `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, and `S3_ENDPOINT` through `secretKeyRef`; AWS-named credential aliases are not stored in these Secrets.
+
 VSO delivers secrets but does not generate random values or Argo API tokens. Radar chart 1.17.0 and oauth2-proxy accept existing Secrets; Radar's empty-secret fallback is process-local, not durable custody. Consumer-owned Sync-hook Jobs fill only these gaps:
 
 | Job / namespace | Allowed OpenBao KV data |
 | --- | --- |
-| `longhorn-credentials` / `longhorn` | `longhorn/oidc-proxy`: native client credentials plus random 32-byte cookie key |
-| `k3s-postgres-credentials` / `cloudnative-pg` | `postgresql/openbao-manager`: fixed username plus random password |
-| `radar-credentials` / `radar` | `radar/auth`: session key; `radar/argocd`: issued account token |
+| `longhorn-proxy-provisioner` / `longhorn` | `longhorn/oidc-proxy`: native client credentials plus random 32-byte cookie key |
+| `k3s-postgres-manager-provisioner` / `cloudnative-pg` | `postgresql/openbao-manager`: fixed username plus random password |
+| `radar-auth-provisioner` / `radar` (Apps #5) | `radar/auth`: session key; `radar/argocd`: issued account token |
 | `grafana-admin-provisioner` / `kube-prometheus-stack` | `monitoring/grafana-admin`: fixed admin login plus random password |
 
 Grafana consumes the separate VSO-owned `grafana-admin` Secret through the native chart's `admin.existingSecret`, including reload sidecars. These are bootstrap credentials, not a declarative reset of the password persisted in PostgreSQL. See [Grafana administrator cutover](grafana-admin.md) for provider-policy prerequisites, the attended one-time stdin CLI reset, safe operator access and rollback. No live reset is performed by the Sync hook.
 
 Each Job has a separate ServiceAccount, audience-bound login role, create-only policy and NetworkPolicy. Longhorn/database producers have no Argo permissions or Argo CLI. The central multi-service Job has been removed. A small `adapters/credential-custody` ConfigMap provides identical HTTP/CAS/ownership handling in each consumer namespace; it contains no consumer paths, identity decisions, Argo implementation or combined issuer permissions.
+
+## Credential resource boundaries
+
+Group resources by responsibility, not Kubernetes kind. A provisioner bundle can
+contain its Job, ServiceAccount, audience-bound login role, create-only ACL,
+script ConfigMap and NetworkPolicy: together these implement one producer.
+Reader identities and VSO delivery remain separate from that producer.
+
+- `06-platform/backup-credentials/resources/k8up-repository-access.yaml` owns the shared
+  repository reader Policy used by validation and Prometheus backup roles. Its
+  external name remains `k8up-validation-vso-read` to preserve provider grants and
+  consumers. It belongs to platform credentials (wave 6), not validation (wave 8).
+- `07-k3s-postgres/resources/credentials.yaml` owns VSO authentication/delivery.
+  `openbao-database-connection.yaml` separately owns the database-engine connection;
+  its Kubernetes/external identity, selectors and provider reference are unchanged.
+- Each producer uses its canonical name consistently across Jobs, accounts,
+  policies, auth roles, audiences, ConfigMaps, script login/volume references and
+  network selectors. Longhorn uses `longhorn-proxy-provisioner`; PostgreSQL uses
+  `k3s-postgres-manager-provisioner`; corresponding Grafana/Radar names live in
+  their existing PRs. Bootstrap #64 updates the exact management grants; its
+  attended approval must precede reconciliation. KV paths, destination Secrets,
+  ACL capabilities and credential data stay unchanged.
+- Grafana's corresponding layout/name changes belong to Infra #66; shared VSO
+  connection ownership belongs to #70; Radar's rename belongs to Apps #5. This
+  change does not duplicate those implementation scopes or depend on their merge.
+
+For an existing deployment, resource movement is an attended GitOps handoff.
+Pause competing affected reconcilers before transferring the shared Policy's
+tracking owner from `backup-validation` to `platform-credentials`. Adopt the same
+object and external identity; do not delete/recreate the Policy, remove finalizers
+or bulk-prune. Verify exactly one desired owner and both backup-role references
+before resuming reconciliation. Moving the database connection within its existing
+Application does not transfer ownership and must not recreate its object.
+
+Before syncing renamed producers, stop or await old active producer Jobs. If old
+writer identities were deployed, pause affected reconcilers and retire old
+Crossplane Policy/Role objects through normal Orphan finalization while existing
+management grants remain available; do not strip finalizers. Apply the separately
+approved canonical management grants before creating the new producer resources.
+After successful authentication/custody reuse, separately retire obsolete external
+roles/policies, old Kubernetes helper resources and any old RBAC. Old tokens need
+expiry/revocation review; no credential data is deleted by this name migration. With
+pruning disabled, old Job/ServiceAccount objects may remain: retire them only
+after new hooks authenticate successfully and reuse existing custody. Account
+for outstanding old tokens; changing a role binding does not revoke them. Retain
+all Secrets, KV history, databases and PVCs. Rollback restores names/references
+and the previous tracking owner through the same attended process, not deletion.
 
 ## Argo account versus Radar integration
 

@@ -247,8 +247,7 @@ class RequiredValueRendering(unittest.TestCase):
         for name, expected in (
             ('k8up-repository', {'password': values['password']}),
             ('postgresql-validation-r2', {**{k: values[k] for k in ('access-key-id', 'secret-access-key')},
-             'AWS_ACCESS_KEY_ID': values['access-key-id'], 'AWS_SECRET_ACCESS_KEY': values['secret-access-key'],
-             'AWS_REGION': values['region'], 'S3_ENDPOINT': values['endpoint']})):
+             'region': values['region'], 'S3_ENDPOINT': values['endpoint']})):
             with self.subTest(secret=name):
                 self.assertEqual(self.render(secrets[name]['spec']['destination']['transformation']['templates'], values),
                                  {'Data': expected, 'Error': ''})
