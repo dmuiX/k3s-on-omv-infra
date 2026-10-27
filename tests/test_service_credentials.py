@@ -45,11 +45,11 @@ def module():
 
 class ServiceCredentialContracts(unittest.TestCase):
     def test_audiobookshelf_custody_can_reach_openbao_api_and_ambient(self):
-        documents = yaml.safe_load_all((INFRA / '04-openbao/resources/security.yaml').read_text())
-        policy = next(d for d in documents if d and d['kind'] == 'NetworkPolicy'
-                      and d['metadata']['name'] == 'allow-openbao-raft-and-clients')
+        app = yaml.safe_load((INFRA / '04-openbao/app.yml').read_text())
+        policy = app['spec']['sources'][0]['helm']['valuesObject']['server']['networkPolicy']
+        self.assertTrue(policy['enabled'])
         for port in (8200, 15008):
-            rules = [r for r in policy['spec']['ingress']
+            rules = [r for r in policy['ingress']
                      if any(p['port'] == port for p in r.get('ports', []))]
             self.assertTrue(any('audiobookshelf' in match.get('values', [])
                 for rule in rules for peer in rule.get('from', [])
@@ -79,13 +79,14 @@ class ServiceCredentialContracts(unittest.TestCase):
                 script = next(d['data']['provision.py'] for d in documents if d['kind'] == 'ConfigMap')
                 compile(script, '<' + name + '-provision>', 'exec')
                 job = next(d for d in documents if d['kind'] == 'Job')
-                wave = '-1' if name in ('k3s-postgres', 'radar') else '1'
+                wave = '-1' if name in ('k3s-postgres', 'radar', 'grafana') else '1'
                 self.assertEqual(job['metadata']['annotations']['argocd.argoproj.io/sync-wave'], wave)
                 self.assertEqual(job['spec']['activeDeadlineSeconds'], 600)
                 pod = job['spec']['template']['spec']
                 self.assertFalse(pod['automountServiceAccountToken'])
                 self.assertEqual(pod['restartPolicy'], 'Never')
-                self.assertEqual(job['metadata']['namespace'], 'cloudnative-pg' if name == 'k3s-postgres' else name)
+                self.assertEqual(job['metadata']['namespace'], {
+                    'k3s-postgres': 'cloudnative-pg', 'grafana': 'kube-prometheus-stack'}.get(name, name))
                 self.assertEqual(job['spec']['template']['metadata']['labels']['istio.io/dataplane-mode'], 'ambient')
                 for container in pod['containers'] + pod.get('initContainers', []):
                     self.assertIn('@sha256:', container['image'])
@@ -151,10 +152,28 @@ class ServiceCredentialContracts(unittest.TestCase):
                              'Encoding correction must not rotate or change the persisted cookie key')
 
     def test_sql_blocks_are_json_wrapped_for_the_native_plugin_parser(self):
-        for path in [APPS / 'radar/resources/postgres-access.yaml',
-                     INFRA / '09-kube-prometheus-stack/resources/grafana.yaml']:
-            role = next(d for d in yaml.safe_load_all(path.read_text())
-                        if d and d['kind'] == 'SecretBackendStaticRole')
+        for app_path in [APPS / 'radar/app.yml', INFRA / '09-kube-prometheus-stack/app.yml']:
+            app = yaml.safe_load(app_path.read_text())
+            source, = [s for s in app['spec']['sources'] if s.get('path') == 'charts/postgres-consumer']
+            self.assertEqual(source['repoURL'], 'https://github.com/dmuiX/k3s-on-omv-infra.git')
+            command = ['helm', 'template', 'consumer', str(INFRA / source['path']),
+                       '--namespace', app['spec']['destination']['namespace']]
+            for value_file in source['helm'].get('valueFiles', []):
+                command += ['-f', str(LIVE / value_file.removeprefix('$live/'))]
+            config = source['helm'].get('valuesObject', {})
+            patch = LIVE / 'infra/applications/patches' / (app['metadata']['name'] + '.yaml')
+            if patch.is_file():
+                pointer = f"/spec/sources/{app['spec']['sources'].index(source)}/helm/valuesObject"
+                config = next((op['value'] for op in yaml.safe_load(patch.read_text())
+                               if op['path'] == pointer), config)
+            command += ['-f', '-']
+            result = subprocess.run(command, input=yaml.safe_dump(config),
+                                    text=True, capture_output=True, check=True)
+            docs = list(yaml.safe_load_all(result.stdout))
+            role, = [d for d in docs if d['kind'] == 'SecretBackendStaticRole']
+            self.assertEqual(len(docs), 3)
+            self.assertEqual(len({(d['apiVersion'], d['kind'], d['metadata'].get('namespace'),
+                                  d['metadata']['name']) for d in docs}), 3)
             statement, = role['spec']['forProvider']['rotationStatements']
             sql, = json.loads(statement)
             self.assertTrue(sql.startswith('DO $role$ BEGIN'))
@@ -345,7 +364,8 @@ class ServiceCredentialOpenBao(unittest.TestCase):
         self.assertEqual(rejected.exception.status, 400)
 
     def test_service_entrypoints_reuse_real_native_credentials(self):
-        paths = {'longhorn': 'longhorn/oidc-proxy', 'k3s-postgres': 'postgresql/openbao-manager'}
+        paths = {'longhorn': 'longhorn/oidc-proxy', 'k3s-postgres': 'postgresql/openbao-manager',
+                 }
         for name, path in paths.items():
             script = next(d['data']['provision.py'] for d in DOCUMENTS[name] if d['kind'] == 'ConfigMap')
             entrypoint = types.ModuleType(name + '_provision')

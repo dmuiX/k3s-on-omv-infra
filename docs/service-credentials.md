@@ -19,13 +19,13 @@ Other consumer-specific OpenBao policies/auth roles live in their owner's `resou
 
 Live keeps Longhorn identity/route settings under `infra/longhorn`, Radar's non-secret issuer/callback/route values in `apps/radar/values.yml`, and database retention settings under `infra/k3s-postgres`. Service DNS names, database resources, Kubernetes namespaces, KV paths, Secret names and PVC identities are unchanged. In particular, the manager secret remains at `kv/postgresql/openbao-manager`; renaming an Application is not a secret/data migration.
 
-Audiobookshelf's local chart owns its OIDC key, client, provider, administrator assignment and app-specific role scope. Its PostSync API configurator consumes the existing shared custody helper, without extra Kubernetes RBAC or OIDC provisioning in Ansible. Since ABS requests the standard `profile` scope, the platform owns that global OpenBao scope exactly once as `OidcScope/oidc-profile`; applications reference it instead of declaring conflicting external `profile` objects. Its template supplies only entity name/preferred_username, not administrator permissions or invented email claims. The provider trust-root ACL adds only the exact Audiobookshelf policy/role/OIDC paths and the shared profile path. The reviewed live trust-policy update and state migration remain separate approvals; the new Application's auto-sync stays disabled.
+Audiobookshelf's Application owns its OIDC key, client, provider, administrator assignment and app-specific role scope through the shared `openbao-oidc` chart source. Its PostSync API configurator consumes the existing shared custody helper, without extra Kubernetes RBAC or OIDC provisioning in Ansible. Since ABS requests the standard `profile` scope, the platform owns that global OpenBao scope exactly once as `OidcScope/oidc-profile`; applications reference it instead of declaring conflicting external `profile` objects. Its template supplies only entity name/preferred_username, not administrator permissions or invented email claims. The provider trust-root ACL adds only the exact Audiobookshelf policy/role/OIDC paths and the shared profile path. The reviewed live trust-policy update and state migration remain separate approvals; the new Application's auto-sync stays disabled.
 
 ## Bootstrap ordering
 
 `longhorn` must provide storage before OpenBao starts. Its later `longhorn-config` Application therefore runs in Infra wave 6, after OpenBao/VSO/provider trust, not in controller wave 2.
 
-After Crossplane provider trust is established, Bootstrap activates the Apps root so Radar's administrator group and generated OIDC client exist before attended group assignment. The shared read-only Git credential has already registered the Apps repository at that point. Complete Infra acceptance and final Radar health remain later gates. Radar's local OIDC Helm chart renders the Apps-owned identity resources using the issuer and callback URLs from Live; plain YAML is not used for cross-repository value interpolation. The Radar namespace is created before namespace-local credential helpers/jobs. Group membership remains externally managed by the attended ceremony.
+After Crossplane provider trust is established, Bootstrap activates the Apps root so Radar's administrator group and generated OIDC client exist before attended group assignment. The shared read-only Git credential has already registered the Apps repository at that point. Complete Infra acceptance and final Radar health remain later gates. The shared `openbao-oidc` chart renders Radar's Apps-owned identity resources using the issuer and callback URLs from Live; plain YAML is not used for cross-repository value interpolation. The Radar namespace is created before namespace-local credential helpers/jobs. Group membership remains externally managed by the attended ceremony.
 
 `k3s-postgres` remains in wave 7. Its narrowly scoped manager-credential producer runs before the VSO Secret consumers and Cluster. Backup/restore validation follows in wave 8 (`08-backup-validation`); observability follows in wave 9 (`09-kube-prometheus-stack`). The early Prometheus CRD installation remains in wave 1 so validation resources do not depend on the later monitoring stack. Full Infra acceptance still checks all consumer Applications through wave 9 after the attended external credentials have been supplied.
 
@@ -39,7 +39,7 @@ The pinned provider's [connection mapping](https://github.com/upbound/provider-v
 
 CloudNativePG's managed roles own the non-superuser `openbao_manager` login and consume the VSO-delivered basic-auth Secret. `CREATEROLE` permits creation/rotation of application roles it administers; the manager cannot create databases, replicate or bypass row security. Application databases/roles remain with Radar and Grafana, not with the operator installation.
 
-VSO delivers secrets but does not generate random values or Argo API tokens. Radar chart 1.17.0 and oauth2-proxy accept existing Secrets; Radar's empty-secret fallback is process-local, not durable custody. Three consumer-owned Sync-hook Jobs fill only these gaps:
+VSO delivers secrets but does not generate random values or Argo API tokens. Radar chart 1.17.0 and oauth2-proxy accept existing Secrets; Radar's empty-secret fallback is process-local, not durable custody. Consumer-owned Sync-hook Jobs fill only these gaps:
 
 | Job / namespace | Allowed OpenBao KV data |
 | --- | --- |
@@ -70,7 +70,7 @@ Native evidence: [Radar values](https://github.com/skyhook-io/radar/blob/v1.17.0
 Do not treat this ownership change as an unattended rename. Legacy `postgresql`, `tls-certificates` and `letsencrypt-dns01` Applications and the central issuer may still exist; automated pruning is disabled, so Git deletion does not remove them. Publishing the new paths without updating existing child sources can produce comparison/sync errors even while the parent is paused.
 
 1. Quiesce the Infra root and affected old Application synchronizations; retain their configuration for rollback. Stop the legacy `openbao/service-credentials` Job before enabling replacement issuers. Do not run old/new credential issuers concurrently.
-2. Publish the public Infra Application base, then Live and Bootstrap. Live `infra/applications/kustomization.yaml` follows the public base on protected `main`; the root's source is the private Live overlay. A public-only change may require a hard refresh of the Infra root because Argo caches remote bases independently of Live. Bootstrap validates ownership/source paths, applies the new root, and resumes a previously paused owned root. Update the existing `openbao-config` specification so it no longer manages consumer resources.
+2. Follow the staged direct-root migration in `infra-root-migration.md`: publish private values and shared charts before consumer references, align Bootstrap, and explicitly accept the public Infra root source. Retain the legacy Live wrapper until that cutover is accepted; it is not the target architecture. Bootstrap validates ownership/source paths before applying its owned root. Update the existing `openbao-config` specification so it no longer manages consumer resources.
 3. Transfer unchanged resources to the new consumer Applications, confirming each tracking owner and source revision. Transfer the former `radar-config` resources to the Apps-owned `radar` Application without changing their external OpenBao identities. Create `k3s-postgres` with its original Cluster/Secret/backup identities. Disable the old `postgresql` and `radar-config` reconcilers during adoption.
 4. Only after verified adoption, remove the old `radar-config`, `postgresql`, `tls-certificates` and `letsencrypt-dns01` Applications **non-cascading**, for example `argocd app delete radar-config --cascade=false`. Never delete the Cluster, namespace, PVCs, database roles or KV entries as part of the rename. Never force-remove finalizers to get a green status.
 5. Retire the legacy issuer's ServiceAccount, RoleBinding, Job and its narrowly named OpenBao policy/login role using an authorized administrator; account for any still-valid short-lived issuer tokens. Verify old ownership is gone before resuming automated reconciliation and final acceptance.
@@ -119,3 +119,12 @@ A representation-only Helm source change can leave a child Synced/Healthy while
 its last successful operation still records the old values-file source. Request
 a normal full native Argo sync of that child to record adoption; do not loosen
 its current-source/operation acceptance checks or manually change health status.
+
+### OpenBao metrics: separate follow-up
+
+Platform adoption in Infra PR #65 does not enable OpenBao metrics or create any
+metrics Policy, login role, ServiceAccount, VSO resource or bearer Secret.
+The complete metrics-only listener, ServiceMonitor and port-scoped enforcement
+belong to [Infra PR #71](https://github.com/dmuiX/k3s-on-omv-infra/pull/71).
+Do not deploy the obsolete token-based intermediate design. Ordinary API/Raft
+behavior and unrelated application credentials remain unchanged.

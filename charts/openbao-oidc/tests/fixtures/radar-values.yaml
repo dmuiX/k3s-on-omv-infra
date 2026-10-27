@@ -1,0 +1,43 @@
+---
+openbaoOIDC:
+  providerConfigName: openbao
+  deletionPolicy: Orphan
+  groups:
+  - name: radar-admin
+    syncWave: "-20"
+    externalName: radar:admin
+    type: internal
+    externalMemberEntityIds: true
+  client:
+    name: radar
+    syncWave: "-20"
+    accessTokenTtl: 3600
+    assignments:
+    - allow_all
+    idTokenTtl: 3600
+    key: radar
+    redirectUris:
+    - https://radar.example.invalid:9443/auth/callback
+    connectionSecret:
+      name: radar-oidc-client
+      namespace: radar
+  key:
+    name: radar
+    syncWave: "-20"
+    algorithm: RS256
+    allowedClientIds:
+    - "*"
+    rotationPeriod: 86400
+    verificationTtl: 172800
+  provider:
+    name: radar
+    syncWave: "-20"
+    issuerURL: https://issuer.example.invalid:9443/v1/identity/oidc/provider/radar
+    clientRefs:
+    - radar
+    scopeRefs:
+    - radar
+  scopes:
+  - name: radar
+    syncWave: "-20"
+    template: '{"username":{{identity.entity.name}},"groups":{{identity.entity.groups.names}}}'

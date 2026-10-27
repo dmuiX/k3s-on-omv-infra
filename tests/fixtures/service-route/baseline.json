@@ -1,0 +1,83 @@
+{
+  "openbao": {
+    "identity": {
+      "apiVersion": "gateway.networking.k8s.io/v1",
+      "kind": "HTTPRoute"
+    },
+    "name": "openbao",
+    "namespace": "openbao",
+    "spec": {
+      "parentRefs": [
+        {
+          "group": "gateway.networking.k8s.io",
+          "kind": "Gateway",
+          "name": "istio-gateway",
+          "namespace": "istio-gateway",
+          "sectionName": "https"
+        }
+      ],
+      "rules": [
+        {
+          "backendRefs": [
+            {
+              "kind": "Service",
+              "name": "openbao-active",
+              "port": 8200
+            }
+          ],
+          "matches": [
+            {
+              "path": {
+                "type": "PathPrefix",
+                "value": "/"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "hostnameDigest": "cdb6a9d0033e52f735d4066463d326b844cba18447f9906e1d5df2364a91a6c6"
+  },
+  "longhorn": {
+    "identity": {
+      "apiVersion": "gateway.networking.k8s.io/v1",
+      "kind": "HTTPRoute"
+    },
+    "name": "longhorn",
+    "namespace": "longhorn",
+    "spec": {
+      "parentRefs": [
+        {
+          "group": "gateway.networking.k8s.io",
+          "kind": "Gateway",
+          "name": "istio-gateway",
+          "namespace": "istio-gateway",
+          "sectionName": "https"
+        }
+      ],
+      "rules": [
+        {
+          "matches": [
+            {
+              "path": {
+                "type": "PathPrefix",
+                "value": "/"
+              }
+            }
+          ],
+          "backendRefs": [
+            {
+              "group": "",
+              "kind": "Service",
+              "name": "longhorn-oidc-proxy",
+              "port": 80,
+              "weight": 1
+            }
+          ]
+        }
+      ]
+    },
+    "hostnameDigest": "fdbc0590901d4bcbdca881f92ce16d804c1bcd83c0659c55ee79b409f945208d"
+  },
+  "longhornConfigMapDigest": "8e7a786895a5c9eb6b37eed5550bc2e12889d4d4dc80856757a0d1137305f4b8"
+}

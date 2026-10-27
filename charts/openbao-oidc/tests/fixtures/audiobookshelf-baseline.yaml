@@ -1,0 +1,94 @@
+---
+apiVersion: identity.vault.upbound.io/v1alpha1
+kind: OidcAssignment
+metadata:
+  name: audiobookshelf-users
+  annotations:
+    argocd.argoproj.io/sync-wave: "-30"
+spec:
+  deletionPolicy: Orphan
+  forProvider:
+    name: audiobookshelf-users
+    groupIdsRefs:
+    - name: radar-admin
+  providerConfigRef:
+    name: openbao
+---
+apiVersion: identity.vault.upbound.io/v1alpha1
+kind: OidcClient
+metadata:
+  name: audiobookshelf
+  annotations:
+    argocd.argoproj.io/sync-wave: "-20"
+spec:
+  deletionPolicy: Orphan
+  forProvider:
+    name: audiobookshelf
+    clientType: confidential
+    key: audiobookshelf
+    assignments:
+    - audiobookshelf-users
+    redirectUris:
+    - https://audiobookshelf.example.invalid:9443/auth/openid/callback
+    - https://audiobookshelf.example.invalid:9443/auth/openid/mobile-redirect
+    - https://audiobookshelf.example.invalid:9443/audiobookshelf/auth/openid/callback
+    - https://audiobookshelf.example.invalid:9443/audiobookshelf/auth/openid/mobile-redirect
+    idTokenTtl: 3600
+    accessTokenTtl: 3600
+  providerConfigRef:
+    name: openbao
+  writeConnectionSecretToRef:
+    name: audiobookshelf-oidc-connection
+    namespace: audiobookshelf
+---
+apiVersion: identity.vault.upbound.io/v1alpha1
+kind: OidcKey
+metadata:
+  name: audiobookshelf
+  annotations:
+    argocd.argoproj.io/sync-wave: "-30"
+spec:
+  deletionPolicy: Orphan
+  forProvider:
+    name: audiobookshelf
+    algorithm: RS256
+    allowedClientIds:
+    - "*"
+    rotationPeriod: 86400
+    verificationTtl: 172800
+  providerConfigRef:
+    name: openbao
+---
+apiVersion: identity.vault.upbound.io/v1alpha1
+kind: OidcProvider
+metadata:
+  name: audiobookshelf
+  annotations:
+    argocd.argoproj.io/sync-wave: "-15"
+spec:
+  deletionPolicy: Orphan
+  forProvider:
+    name: audiobookshelf
+    issuerHost: issuer.example.invalid:9443
+    httpsEnabled: true
+    allowedClientIdsRefs:
+    - name: audiobookshelf
+    scopesSupportedRefs:
+    - name: oidc-profile
+    - name: audiobookshelf
+  providerConfigRef:
+    name: openbao
+---
+apiVersion: identity.vault.upbound.io/v1alpha1
+kind: OidcScope
+metadata:
+  name: audiobookshelf
+  annotations:
+    argocd.argoproj.io/sync-wave: "-30"
+spec:
+  deletionPolicy: Orphan
+  forProvider:
+    name: audiobookshelf
+    template: '{"audiobookshelf":["admin"]}'
+  providerConfigRef:
+    name: openbao

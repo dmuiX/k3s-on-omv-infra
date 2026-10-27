@@ -1,0 +1,5 @@
+apiVersion: v2
+name: postgres-consumer
+description: CNPG database, OpenBao static role, and VSO credentials for a PostgreSQL consumer
+type: application
+version: 0.1.0

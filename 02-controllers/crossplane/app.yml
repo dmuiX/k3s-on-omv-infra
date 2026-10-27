@@ -46,10 +46,11 @@ spec:
           capabilities:
             drop:
             - ALL
-  - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
-    targetRevision: main
-    path: 02-controllers/crossplane/resources
   syncPolicy:
+    managedNamespaceMetadata:
+      labels:
+        istio.io/dataplane-mode: ambient
+        pod-security.kubernetes.io/enforce: restricted
     automated:
       enabled: true
       prune: false

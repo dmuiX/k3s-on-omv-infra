@@ -1,0 +1,22 @@
+# Consumer-specific configuration belongs in Live. Auth resources stay consumer-owned.
+postgresConsumer:
+  enabled: false
+  name: ""
+  databaseName: ""
+  username: ""
+  roleDisplayName: ""
+  databaseNamespace: ""
+  clusterName: ""
+  providerConfigRef: ""
+  backend: database
+  rotationPeriod: 2592000
+  connectionLimit: 25
+  databaseSyncWave: "-5"
+  roleSyncWave: "-10"
+  vaultAuthRef: ""
+  secretName: ""
+  deploymentName: ""
+  credentialFormat: split
+  host: ""
+  port: 5432
+  sslMode: disable

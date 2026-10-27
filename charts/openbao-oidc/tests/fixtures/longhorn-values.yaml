@@ -1,0 +1,36 @@
+---
+openbaoOIDC:
+  providerConfigName: openbao
+  deletionPolicy: Orphan
+  assignments:
+  - name: longhorn-admin
+    groupRefs:
+    - radar-admin
+  key:
+    name: longhorn
+    syncWave: "-1"
+    algorithm: RS256
+    allowedClientIds:
+    - "*"
+    rotationPeriod: 86400
+    verificationTtl: 172800
+  scopes:
+  - name: longhorn
+    syncWave: "-1"
+    template: '{"username":{{identity.entity.name}},"groups":{{identity.entity.groups.names}}}'
+  client:
+    name: longhorn
+    key: longhorn
+    assignments:
+    - longhorn-admin
+    redirectUris:
+    - https://longhorn.example.invalid:9443/oauth2/callback
+    idTokenTtl: 3600
+    accessTokenTtl: 3600
+  provider:
+    name: longhorn
+    issuerURL: https://issuer.example.invalid:9443/v1/identity/oidc/provider/longhorn
+    clientRefs:
+    - longhorn
+    scopeRefs:
+    - longhorn

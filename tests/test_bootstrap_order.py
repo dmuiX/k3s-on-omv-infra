@@ -21,32 +21,38 @@ def applications():
 class BootstrapOrderTest(unittest.TestCase):
     def test_all_yaml_parses(self):
         for p in sorted(ROOT.rglob('*')):
-            if p.suffix in ('.yml', '.yaml'):
+            if p.suffix in ('.yml', '.yaml') and 'templates' not in p.parts:
                 with self.subTest(path=str(p.relative_to(ROOT))):
                     list(yaml.safe_load_all(p.read_text()))
 
     def test_apps_owns_radar_identity_before_attended_membership(self):
         apps = ROOT.parent / 'k3s-on-omv-apps'
         live = ROOT.parent / 'k3s-on-omv-live'
-        template = (apps / 'radar/oidc/templates/oidc.yaml.tpl').read_text()
-        for kind in ('Group', 'OidcKey', 'OidcScope', 'OidcClient', 'OidcProvider'):
-            self.assertIn('kind: ' + kind, template)
-        self.assertIn('externalMemberEntityIds: true', template)
-        self.assertEqual(template.count('deletionPolicy: Orphan'), 5)
-        self.assertIn('.Values.auth.oidc.issuerURL', template)
-        self.assertIn('.Values.auth.oidc.redirectURL', template)
+        app = yaml.safe_load((apps / 'radar/app.yml').read_text())
+        source, = [s for s in app['spec']['sources'] if s.get('path') == 'charts/openbao-oidc']
+        self.assertEqual(source['repoURL'], INFRA)
+        self.assertEqual(source['helm']['valueFiles'], ['$live/apps/radar/oidc-values.yml'])
+        rendered = subprocess.run(['helm', 'template', 'radar-oidc', str(ROOT / source['path']),
+            '-f', str(live / 'apps/radar/oidc-values.yml')], check=True, capture_output=True, text=True)
+        docs = list(yaml.safe_load_all(rendered.stdout))
+        self.assertEqual({d['kind'] for d in docs}, {'Group', 'OidcKey', 'OidcScope', 'OidcClient', 'OidcProvider'})
+        self.assertTrue(next(d for d in docs if d['kind'] == 'Group')['spec']['forProvider']['externalMemberEntityIds'])
+        self.assertTrue(all(d['spec']['deletionPolicy'] == 'Orphan' for d in docs))
+        self.assertFalse((apps / 'radar/oidc').exists())
         self.assertFalse((ROOT / '06-platform/radar-config').exists())
         self.assertFalse((live / 'apps/radar/oidc.yaml').exists())
         self.assertTrue((live / 'apps/radar/values.yml').is_file())
-        consumers = list(yaml.safe_load_all((ROOT / '06-platform/longhorn-config/resources/oidc-proxy.yaml').read_text()))
+        proxy = subprocess.run(['helm', 'template', 'longhorn-oidc-proxy', str(ROOT / 'charts/oidc-proxy'),
+            '-f', str(live / 'infra/longhorn/proxy-values.yml')], check=True, capture_output=True, text=True)
+        consumers = list(yaml.safe_load_all(proxy.stdout))
         deployment = next(d for d in consumers if d['kind'] == 'Deployment')
         self.assertEqual(deployment['metadata']['annotations']['argocd.argoproj.io/sync-wave'], '20')
 
     @unittest.skipUnless(shutil.which('helm'), 'Helm is required for OIDC rendering')
     def test_radar_oidc_uses_live_urls_before_database_and_credential_consumers(self):
         apps = ROOT.parent / 'k3s-on-omv-apps'
-        chart = apps / 'radar/oidc'
-        live_values = ROOT.parent / 'k3s-on-omv-live/apps/radar/values.yml'
+        chart = ROOT / 'charts/openbao-oidc'
+        live_values = ROOT.parent / 'k3s-on-omv-live/apps/radar/oidc-values.yml'
         values = yaml.safe_load(live_values.read_text())
         command = ['helm', 'template', 'radar-oidc', str(chart), '--values', str(live_values)]
         result = subprocess.run(command, check=True, text=True, capture_output=True, timeout=30)
@@ -54,10 +60,10 @@ class BootstrapOrderTest(unittest.TestCase):
         by_kind = {d['kind']: d for d in documents}
         self.assertEqual(len(documents), 5)
         self.assertEqual(by_kind['OidcClient']['spec']['forProvider']['redirectUris'],
-                         [values['auth']['oidc']['redirectURL']])
+                         values['openbaoOIDC']['client']['redirectUris'])
         from urllib.parse import urlsplit
         self.assertEqual(by_kind['OidcProvider']['spec']['forProvider']['issuerHost'],
-                         urlsplit(values['auth']['oidc']['issuerURL']).netloc)
+                         urlsplit(values['openbaoOIDC']['provider']['issuerURL']).netloc)
         self.assertEqual(by_kind['OidcScope']['spec']['forProvider']['template'],
                          '{"username":{{identity.entity.name}},"groups":{{identity.entity.groups.names}}}')
         for doc in documents:
@@ -77,16 +83,16 @@ class BootstrapOrderTest(unittest.TestCase):
         self.assertNotIn('rolloutRestartTargets', oidc['spec'])
         self.assertEqual(set(oidc['spec']['destination']['transformation']['templates']),
                          {'client-id', 'client-secret'})
-        for key in ('issuerURL', 'redirectURL'):
+        for section, key in (('provider', 'issuerURL'), ('client', 'redirectUris')):
             with self.subTest(missing=key), tempfile.TemporaryDirectory() as tmp:
                 incomplete = yaml.safe_load(live_values.read_text())
-                incomplete['auth']['oidc'].pop(key)
+                incomplete['openbaoOIDC'][section].pop(key)
                 path = Path(tmp) / 'values.yaml'
                 path.write_text(yaml.safe_dump(incomplete))
                 failure = subprocess.run(command[:-1] + [str(path)],
                                          text=True, capture_output=True, timeout=30)
                 self.assertNotEqual(failure.returncode, 0)
-                self.assertIn(key + ' is required', failure.stderr)
+                self.assertIn(key, failure.stderr)
 
     def test_vault_activation_allowlist_is_exact_and_covers_authored_types(self):
         crossplane = applications()['crossplane']
@@ -161,12 +167,16 @@ class BootstrapOrderTest(unittest.TestCase):
         app = apps['longhorn-config']
         sources = [s.get('path') for s in app['spec']['sources']]
         self.assertIn('06-platform/longhorn-config/resources', sources)
-        self.assertIn('infra/longhorn', sources)
+        self.assertIn('charts/oidc-proxy', sources)
+        self.assertIn('charts/service-route', sources)
         self.assertEqual(app['metadata']['annotations']['argocd.argoproj.io/sync-wave'], '6')
         radar = yaml.safe_load((ROOT.parent / 'k3s-on-omv-apps/radar/app.yml').read_text())
         radar_sources = [s.get('path') for s in radar['spec']['sources']]
-        self.assertIn('radar/oidc', radar_sources)
+        self.assertIn('charts/openbao-oidc', radar_sources)
+        self.assertIn('charts/postgres-consumer', radar_sources)
         self.assertIn('radar/resources', radar_sources)
+        self.assertNotIn('radar/oidc', radar_sources)
+        self.assertNotIn('apps/radar', radar_sources)
         self.assertNotIn('postgresql', apps)
         app = apps['k3s-postgres']
         self.assertEqual(app['metadata']['annotations']['argocd.argoproj.io/sync-wave'], '7')
@@ -199,7 +209,9 @@ class BootstrapOrderTest(unittest.TestCase):
 
     def test_openbao_ambient_transport_preserves_peer_scope(self):
         docs = list(yaml.safe_load_all((ROOT / '04-openbao/resources/security.yaml').read_text()))
-        policy = next(d['spec'] for d in docs if d['metadata']['name'] == 'allow-openbao-raft-and-clients')
+        app = applications()['openbao']
+        policy = app['spec']['sources'][0]['helm']['valuesObject']['server']['networkPolicy']
+        self.assertTrue(policy['enabled'])
         hbone = [r for r in policy['ingress'] if any(p['port'] == 15008 for p in r['ports'])]
         self.assertEqual(len(hbone), 1)
         clients = next(r['from'] for r in policy['ingress'] if any('namespaceSelector' in p for p in r['from'])
@@ -235,20 +247,23 @@ class BootstrapOrderTest(unittest.TestCase):
         apps = applications()
         early = apps['letsencrypt-dns01-issuer']['spec']['sources']
         self.assertEqual([(s['repoURL'], s.get('path')) for s in early], [
-            (INFRA, '00-letsencrypt-dns01-issuer/resources'), (LIVE, 'infra/letsencrypt-dns01')])
+            (LIVE, 'infra/letsencrypt-dns01')])
         late = apps['letsencrypt-dns01-credentials']['spec']['sources']
         self.assertEqual(late, [{'repoURL': INFRA, 'targetRevision': 'main', 'path': '06-platform/letsencrypt-dns01-credentials/resources'}])
         docs = list(yaml.safe_load_all((ROOT / '06-platform/letsencrypt-dns01-credentials/resources/identity.yaml').read_text()))
         secret = next(d for d in docs if d['kind'] == 'VaultStaticSecret')
         self.assertEqual(secret['spec']['destination'], {'name': 'cloudflare-dns01', 'create': False})
 
-    def test_gateway_namespace_has_one_manifest_owner(self):
-        owners = []
-        for p in ROOT.rglob('*.yaml'):
-            for d in yaml.safe_load_all(p.read_text()):
-                if isinstance(d, dict) and d.get('kind') == 'Namespace' and d.get('metadata', {}).get('name') == 'istio-gateway':
-                    owners.append(str(p.relative_to(ROOT)))
-        self.assertEqual(owners, ['00-letsencrypt-dns01-issuer/resources/namespace.yaml'])
+    def test_gateway_namespace_has_one_early_metadata_steward(self):
+        apps = applications()
+        owners = [name for name, app in apps.items()
+                  if app['spec']['destination']['namespace'] == 'istio-gateway'
+                  and app['spec']['syncPolicy'].get('managedNamespaceMetadata')]
+        self.assertEqual(owners, ['letsencrypt-dns01-issuer'])
+        policy = apps[owners[0]]['spec']['syncPolicy']
+        self.assertIn('CreateNamespace=true', policy['syncOptions'])
+        self.assertEqual(policy['managedNamespaceMetadata'], {
+            'labels': {'pod-security.kubernetes.io/enforce': 'restricted'}})
 
     def test_root_selects_every_application_once_at_both_directory_depths(self):
         root = yaml.safe_load((ROOT / 'kustomization.yaml').read_text())

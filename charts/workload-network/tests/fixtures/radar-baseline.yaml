@@ -1,0 +1,111 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: radar
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+    - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-radar
+  namespace: radar
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: radar
+  policyTypes:
+    - Ingress
+    - Egress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-gateway
+      ports:
+        - protocol: TCP
+          port: 9280
+        - protocol: TCP
+          port: 15008
+  egress:
+    # DNS resolution for Kubernetes services and operator-configured Helm sources.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    # Access to Prometheus
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-prometheus-stack
+      ports:
+        - protocol: TCP
+          port: 9090
+        - protocol: TCP
+          port: 15008
+    # PostgreSQL and OpenBao are HTTP/TCP at the application layer; Ambient
+    # provides transparent mTLS on these in-mesh hops.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: cloudnative-pg
+      ports:
+        - protocol: TCP
+          port: 5432
+        - protocol: TCP
+          port: 15008
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: openbao
+      ports:
+        - protocol: TCP
+          port: 8200
+        - protocol: TCP
+          port: 15008
+    # OIDC discovery/token/JWKS use the public HTTPS issuer through the Gateway.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-gateway
+      ports:
+        - protocol: TCP
+          port: 9443
+        - protocol: TCP
+          port: 15008
+    # In-cluster Argo CD API used only for authenticated deep diffs.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: argocd
+      ports:
+        - protocol: TCP
+          port: 80
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 8080
+        - protocol: TCP
+          port: 15008
+    # Kubernetes API access backs impersonated reads/writes, exec, logs,
+    # port-forward and Helm. Service DNAT may resolve to node endpoints, so
+    # standard NetworkPolicy cannot express this using a pod selector.
+    - ports:
+        - protocol: TCP
+          port: 443
+        - protocol: TCP
+          port: 6443
+    # Authenticated users may select HTTPS Helm repositories. This is an
+    # explicit capability egress allowance, not an ingress or LAN boundary.
+    - ports:
+        - protocol: TCP
+          port: 443

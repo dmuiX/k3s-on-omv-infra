@@ -18,9 +18,48 @@ spec:
       valueFiles:
       - $live/infra/kube-prometheus-stack/values.yml
       valuesObject:
+        additionalPrometheusRulesMap:
+          platform-required:
+            groups:
+              - name: platform.required
+                rules:
+                  - alert: PostgreSQLRestoreValidationStale
+                    expr: 'absent(kube_lease_renew_time{namespace="backup-validation",lease="postgresql-restore-status"}) or (time() - kube_lease_renew_time{namespace="backup-validation",lease="postgresql-restore-status"} > 8 * 24 * 3600) or on(namespace,lease) (restore_status_info{namespace="backup-validation",lease="postgresql-restore-status",result!="success"} == 1)'
+                    for: 15m
+                    labels:
+                      severity: critical
+                  - alert: OpenBaoRestoreValidationStale
+                    expr: 'absent(kube_lease_renew_time{namespace="backup-validation",lease="openbao-restore-status"}) or (time() - kube_lease_renew_time{namespace="backup-validation",lease="openbao-restore-status"} > 35 * 24 * 3600) or on(namespace,lease) (restore_status_info{namespace="backup-validation",lease="openbao-restore-status",result!="success"} == 1)'
+                    for: 15m
+                    labels:
+                      severity: critical
+                  - alert: PersistentVolumeFilling
+                    expr: '(kubelet_volume_stats_used_bytes / kubelet_volume_stats_capacity_bytes) > 0.85'
+                    for: 15m
+                    labels:
+                      severity: warning
+                  - alert: OpenBaoRaftPeerMissing
+                    expr: 'openbao_raft_peers < 3'
+                    for: 5m
+                    labels:
+                      severity: critical
+                  - alert: OpenBaoSnapshotStale
+                    expr: 'absent(kube_cronjob_status_last_successful_time{namespace="openbao",cronjob="openbao-snapshot"}) or time() - kube_cronjob_status_last_successful_time{namespace="openbao",cronjob="openbao-snapshot"} > 93600'
+                    for: 15m
+                    labels:
+                      severity: critical
+                  - alert: PostgreSQLClusterNotHealthy
+                    expr: 'cnpg_collector_up < 1'
+                    for: 5m
+                    labels:
+                      severity: critical
         crds:
           enabled: false
         prometheus:
+          podDisruptionBudget:
+            enabled: true
+            minAvailable: 1
+            unhealthyPodEvictionPolicy: IfHealthyBudget
           prometheusSpec:
             replicas: 2
             enableAdminAPI: true
@@ -48,6 +87,10 @@ spec:
                 cpu: '1'
                 memory: 2Gi
         alertmanager:
+          podDisruptionBudget:
+            enabled: true
+            minAvailable: 1
+            unhealthyPodEvictionPolicy: IfHealthyBudget
           alertmanagerSpec:
             replicas: 0
             nodeSelector:
@@ -149,14 +192,27 @@ spec:
                           lease:
                           - metadata
                           - name
+  - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
+    targetRevision: main
+    path: 09-kube-prometheus-stack/resources
   - repoURL: https://github.com/dmuiX/k3s-on-omv-live.git
     targetRevision: main
     path: infra/kube-prometheus-stack
     ref: live
+    directory:
+      exclude: '*values.y*ml'
   - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
     targetRevision: main
-    path: 09-kube-prometheus-stack/resources
+    path: charts/postgres-consumer
+    ref: postgresConsumer
+    helm:
+      valueFiles:
+      - $live/infra/kube-prometheus-stack/postgres-values.yml
   syncPolicy:
+    managedNamespaceMetadata:
+      labels:
+        istio.io/dataplane-mode: ambient
+        pod-security.kubernetes.io/enforce: restricted
     automated:
       enabled: true
       prune: false

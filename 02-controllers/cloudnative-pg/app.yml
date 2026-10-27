@@ -17,6 +17,10 @@ spec:
     helm:
       valuesObject:
         replicaCount: 2
+        monitoring:
+          podMonitorEnabled: true
+          podMonitorAdditionalLabels:
+            release: kube-prometheus-stack
         resources:
           requests:
             cpu: 100m
@@ -32,6 +36,10 @@ spec:
     targetRevision: main
     path: 02-controllers/cloudnative-pg/resources
   syncPolicy:
+    managedNamespaceMetadata:
+      labels:
+        istio.io/dataplane-mode: ambient
+        pod-security.kubernetes.io/enforce: restricted
     automated:
       enabled: true
       prune: false

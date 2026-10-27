@@ -1,0 +1,3 @@
+# No client, administrator group, assignment or claim is enabled by default.
+# Supply the complete openbaoOIDC integration explicitly (see tests/fixtures).
+openbaoOIDC: {}

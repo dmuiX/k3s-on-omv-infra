@@ -1,0 +1,128 @@
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: audiobookshelf-configurator
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: audiobookshelf
+      app.kubernetes.io/component: configurator
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress: []
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: openbao
+      podSelector:
+        matchLabels:
+          app.kubernetes.io/name: openbao
+    ports:
+    - protocol: TCP
+      port: 8200
+    - protocol: TCP
+      port: 15008
+  - to:
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/name: audiobookshelf
+          app.kubernetes.io/instance: audiobookshelf
+          app.kubernetes.io/component: server
+    ports:
+    - protocol: TCP
+      port: 13378
+    - protocol: TCP
+      port: 15008
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: audiobookshelf-default-deny
+  labels:
+    app.kubernetes.io/name: audiobookshelf
+    app.kubernetes.io/instance: audiobookshelf
+    app.kubernetes.io/component: server
+    app.kubernetes.io/version: 2.37.1
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: audiobookshelf-0.1.0
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: audiobookshelf
+      app.kubernetes.io/instance: audiobookshelf
+      app.kubernetes.io/component: server
+  policyTypes:
+  - Ingress
+  - Egress
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: audiobookshelf-allow
+  labels:
+    app.kubernetes.io/name: audiobookshelf
+    app.kubernetes.io/instance: audiobookshelf
+    app.kubernetes.io/component: server
+    app.kubernetes.io/version: 2.37.1
+    app.kubernetes.io/managed-by: Helm
+    helm.sh/chart: audiobookshelf-0.1.0
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: audiobookshelf
+      app.kubernetes.io/instance: audiobookshelf
+      app.kubernetes.io/component: server
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: istio-gateway
+    - podSelector:
+        matchLabels:
+          app.kubernetes.io/component: configurator
+    ports:
+    - protocol: TCP
+      port: 13378
+    - protocol: TCP
+      port: 15008
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: kube-system
+    ports:
+    - protocol: UDP
+      port: 53
+    - protocol: TCP
+      port: 53
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          kubernetes.io/metadata.name: istio-gateway
+    ports:
+    - protocol: TCP
+      port: 443
+    - protocol: TCP
+      port: 9443
+    - protocol: TCP
+      port: 15008
+  - ports:
+    - protocol: TCP
+      port: 443
+    - protocol: TCP
+      port: 9443

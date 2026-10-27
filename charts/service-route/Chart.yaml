@@ -1,0 +1,5 @@
+apiVersion: v2
+name: service-route
+description: A Gateway HTTPRoute to a namespaced Service.
+type: application
+version: 0.1.0

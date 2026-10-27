@@ -1,0 +1,93 @@
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: audiobookshelf-vso
+  annotations:
+    argocd.argoproj.io/sync-wave: "-10"
+automountServiceAccountToken: false
+---
+apiVersion: kubernetes.vault.upbound.io/v1alpha1
+kind: AuthBackendRole
+metadata:
+  name: audiobookshelf-vso
+  annotations:
+    argocd.argoproj.io/sync-wave: "-20"
+spec:
+  deletionPolicy: Orphan
+  forProvider:
+    backend: kubernetes
+    roleName: audiobookshelf-vso
+    boundServiceAccountNames:
+    - audiobookshelf-vso
+    boundServiceAccountNamespaces:
+    - audiobookshelf
+    tokenPolicies:
+    - audiobookshelf-vso-read
+    tokenTtl: 3600
+  providerConfigRef:
+    name: openbao
+---
+apiVersion: vault.vault.upbound.io/v1alpha1
+kind: Policy
+metadata:
+  name: audiobookshelf-vso-read
+  annotations:
+    argocd.argoproj.io/sync-wave: "-30"
+spec:
+  deletionPolicy: Orphan
+  forProvider:
+    name: audiobookshelf-vso-read
+    policy: |
+      path "auth/token/renew-self" { capabilities = ["update"] }
+      path "identity/oidc/client/audiobookshelf" { capabilities = ["read"] }
+  providerConfigRef:
+    name: openbao
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultAuth
+metadata:
+  name: audiobookshelf-vso
+  annotations:
+    argocd.argoproj.io/sync-wave: "-10"
+spec:
+  method: kubernetes
+  mount: kubernetes
+  vaultConnectionRef: audiobookshelf-openbao
+  kubernetes:
+    role: audiobookshelf-vso
+    serviceAccount: audiobookshelf-vso
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultConnection
+metadata:
+  name: audiobookshelf-openbao
+  annotations:
+    argocd.argoproj.io/sync-wave: "-10"
+spec:
+  address: http://openbao-active.openbao.svc.cluster.local:8200
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultDynamicSecret
+metadata:
+  name: audiobookshelf-oidc
+  annotations:
+    argocd.argoproj.io/sync-wave: "-5"
+spec:
+  vaultAuthRef: audiobookshelf-vso
+  mount: identity
+  path: oidc/client/audiobookshelf
+  requestHTTPMethod: GET
+  refreshAfter: 1h
+  destination:
+    create: true
+    name: audiobookshelf-oidc
+    transformation:
+      excludeRaw: true
+      templates:
+        client-id:
+          text: '{{- $v := get .Secrets "client_id" -}}{{- if empty $v -}}{{- fail
+            "missing OIDC client ID" -}}{{- end -}}{{- $v -}}'
+        client-secret:
+          text: '{{- $v := get .Secrets "client_secret" -}}{{- if empty $v -}}{{-
+            fail "missing OIDC client secret" -}}{{- end -}}{{- $v -}}'

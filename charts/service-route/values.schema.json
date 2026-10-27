@@ -1,0 +1,101 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "namespace", "parentRefs", "hostnames", "rules"],
+  "properties": {
+    "name": {"$ref": "#/definitions/name"},
+    "namespace": {"$ref": "#/definitions/name"},
+    "parentRefs": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["name", "namespace"],
+        "properties": {
+          "group": {"const": "gateway.networking.k8s.io"},
+          "kind": {"const": "Gateway"},
+          "name": {"$ref": "#/definitions/name"},
+          "namespace": {"$ref": "#/definitions/name"},
+          "sectionName": {"$ref": "#/definitions/name"}
+        }
+      }
+    },
+    "hostnames": {
+      "type": "array", "minItems": 1,
+      "items": {"type": "string", "minLength": 1, "maxLength": 253, "pattern": "^(\\*\\.)?[a-z0-9]([a-z0-9.-]*[a-z0-9])?$"}
+    },
+    "rules": {
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object", "additionalProperties": false,
+        "required": ["backend"],
+        "properties": {
+          "backend": {
+            "type": "object", "additionalProperties": false,
+            "required": ["name", "port", "weight"],
+            "properties": {
+              "name": {"$ref": "#/definitions/name"},
+              "port": {"type": "integer", "minimum": 1, "maximum": 65535},
+              "weight": {"type": "integer", "minimum": 0, "maximum": 1000000}
+            }
+          },
+          "matches": {
+            "type": "array", "minItems": 1,
+            "items": {
+              "type": "object", "additionalProperties": false, "required": ["path"],
+              "properties": {
+                "path": {
+                  "type": "object", "additionalProperties": false, "required": ["type", "value"],
+                  "properties": {
+                    "type": {"enum": ["Exact", "PathPrefix"]},
+                    "value": {"type": "string", "pattern": "^/"}
+                  }
+                }
+              }
+            }
+          },
+          "filters": {
+            "type": "array",
+            "items": {
+              "type": "object", "additionalProperties": false, "required": ["type"],
+              "properties": {
+                "type": {"enum": ["RequestHeaderModifier", "ResponseHeaderModifier"]},
+                "requestHeaderModifier": {"$ref": "#/definitions/headerModifier"},
+                "responseHeaderModifier": {"$ref": "#/definitions/headerModifier"}
+              },
+              "oneOf": [
+                {"properties": {"type": {"const": "RequestHeaderModifier"}}, "required": ["requestHeaderModifier"], "not": {"required": ["responseHeaderModifier"]}},
+                {"properties": {"type": {"const": "ResponseHeaderModifier"}}, "required": ["responseHeaderModifier"], "not": {"required": ["requestHeaderModifier"]}}
+              ]
+            }
+          },
+          "timeouts": {
+            "type": "object", "additionalProperties": false,
+            "properties": {
+              "request": {"$ref": "#/definitions/duration"},
+              "backendRequest": {"$ref": "#/definitions/duration"}
+            }
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "name": {"type": "string", "minLength": 1, "maxLength": 63, "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"},
+    "duration": {"type": "string", "pattern": "^([0-9]{1,5}(h|m|s|ms)){1,4}$"},
+    "headerModifier": {
+      "type": "object", "additionalProperties": false, "minProperties": 1,
+      "properties": {
+        "set": {"$ref": "#/definitions/headers"},
+        "add": {"$ref": "#/definitions/headers"},
+        "remove": {"type": "array", "items": {"type": "string", "minLength": 1}}
+      }
+    },
+    "headers": {
+      "type": "array", "items": {
+        "type": "object", "additionalProperties": false, "required": ["name", "value"],
+        "properties": {"name": {"type": "string", "minLength": 1}, "value": {"type": "string"}}
+      }
+    }
+  }
+}

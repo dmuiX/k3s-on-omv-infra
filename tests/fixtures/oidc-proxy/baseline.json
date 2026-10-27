@@ -1,0 +1,160 @@
+{
+  "resources": [
+    {
+      "apiVersion": "apps/v1",
+      "kind": "Deployment",
+      "metadata": {
+        "name": "longhorn-oidc-proxy",
+        "namespace": "longhorn",
+        "annotations": {
+          "argocd.argoproj.io/sync-wave": "20"
+        }
+      },
+      "spec": {
+        "replicas": 1,
+        "selector": {
+          "matchLabels": {
+            "app.kubernetes.io/name": "longhorn-oidc-proxy"
+          }
+        },
+        "template": {
+          "metadata": {
+            "labels": {
+              "app.kubernetes.io/name": "longhorn-oidc-proxy"
+            }
+          },
+          "spec": {
+            "serviceAccountName": "longhorn-oidc-proxy",
+            "containers": [
+              {
+                "name": "proxy",
+                "image": "quay.io/oauth2-proxy/oauth2-proxy:v7.15.5@sha256:8498b0d0ef0a7b29686414000a08aee467f02d0299c9ed1e006a8f33fc017916",
+                "args": [
+                  "--provider=oidc",
+                  "--upstream=http://longhorn-frontend.longhorn.svc:80",
+                  "--http-address=0.0.0.0:4180",
+                  "--email-domain=*",
+                  "--scope=openid longhorn",
+                  "--oidc-email-claim=username",
+                  "--insecure-oidc-allow-unverified-email=true",
+                  "--allowed-group=radar:admin",
+                  "--skip-provider-button=true"
+                ],
+                "env": [
+                  {
+                    "name": "OAUTH2_PROXY_OIDC_ISSUER_URL",
+                    "valueFrom": {
+                      "configMapKeyRef": {
+                        "name": "longhorn-oidc-proxy-inputs",
+                        "key": "issuer-url"
+                      }
+                    }
+                  },
+                  {
+                    "name": "OAUTH2_PROXY_REDIRECT_URL",
+                    "valueFrom": {
+                      "configMapKeyRef": {
+                        "name": "longhorn-oidc-proxy-inputs",
+                        "key": "redirect-url"
+                      }
+                    }
+                  },
+                  {
+                    "name": "OAUTH2_PROXY_CLIENT_ID",
+                    "valueFrom": {
+                      "secretKeyRef": {
+                        "name": "longhorn-oidc-proxy",
+                        "key": "client-id"
+                      }
+                    }
+                  },
+                  {
+                    "name": "OAUTH2_PROXY_CLIENT_SECRET",
+                    "valueFrom": {
+                      "secretKeyRef": {
+                        "name": "longhorn-oidc-proxy",
+                        "key": "client-secret"
+                      }
+                    }
+                  },
+                  {
+                    "name": "OAUTH2_PROXY_COOKIE_SECRET",
+                    "valueFrom": {
+                      "secretKeyRef": {
+                        "name": "longhorn-oidc-proxy",
+                        "key": "cookie-secret"
+                      }
+                    }
+                  }
+                ],
+                "ports": [
+                  {
+                    "name": "http",
+                    "containerPort": 4180
+                  }
+                ],
+                "readinessProbe": {
+                  "httpGet": {
+                    "path": "/ping",
+                    "port": "http"
+                  },
+                  "periodSeconds": 10
+                },
+                "livenessProbe": {
+                  "httpGet": {
+                    "path": "/ping",
+                    "port": "http"
+                  },
+                  "periodSeconds": 20
+                },
+                "resources": {
+                  "requests": {
+                    "cpu": "25m",
+                    "memory": "32Mi"
+                  },
+                  "limits": {
+                    "cpu": "200m",
+                    "memory": "128Mi"
+                  }
+                },
+                "securityContext": {
+                  "allowPrivilegeEscalation": false,
+                  "readOnlyRootFilesystem": true,
+                  "runAsNonRoot": true,
+                  "capabilities": {
+                    "drop": [
+                      "ALL"
+                    ]
+                  }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "apiVersion": "v1",
+      "kind": "Service",
+      "metadata": {
+        "name": "longhorn-oidc-proxy",
+        "namespace": "longhorn"
+      },
+      "spec": {
+        "type": "ClusterIP",
+        "selector": {
+          "app.kubernetes.io/name": "longhorn-oidc-proxy"
+        },
+        "ports": [
+          {
+            "name": "http",
+            "port": 80,
+            "targetPort": "http"
+          }
+        ]
+      }
+    }
+  ],
+  "configMapDigest": "8e7a786895a5c9eb6b37eed5550bc2e12889d4d4dc80856757a0d1137305f4b8",
+  "credentialsTextDigest": "ec33457516f8be9686fa27f001d4e6a54eedb64571e607203d632fe2424cd115"
+}

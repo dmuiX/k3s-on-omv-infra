@@ -1,0 +1,6 @@
+apiVersion: v2
+name: oidc-proxy
+description: Pinned Longhorn OIDC proxy runtime and non-secret configuration.
+type: application
+version: 0.1.0
+appVersion: "7.15.5"

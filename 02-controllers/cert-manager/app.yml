@@ -18,6 +18,9 @@ spec:
       valuesObject:
         crds:
           enabled: true
+        prometheus:
+          servicemonitor:
+            enabled: true
         config:
           gatewayAPI:
             enabled: true
@@ -46,10 +49,11 @@ spec:
           limits:
             cpu: 300m
             memory: 256Mi
-  - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
-    targetRevision: main
-    path: 02-controllers/cert-manager/resources
   syncPolicy:
+    managedNamespaceMetadata:
+      labels:
+        istio.io/dataplane-mode: ambient
+        pod-security.kubernetes.io/enforce: restricted
     automated:
       enabled: true
       prune: false

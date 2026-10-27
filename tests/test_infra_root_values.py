@@ -51,11 +51,19 @@ def values(name):
 
 
 class InfraRootValuesTest(unittest.TestCase):
-    def test_effective_values_are_identical_to_legacy_patches(self):
+    def test_legacy_settings_survive_additional_native_chart_configuration(self):
+        def preserved(expected, actual):
+            if isinstance(expected, dict):
+                self.assertIsInstance(actual, dict)
+                for key, value in expected.items():
+                    self.assertIn(key, actual)
+                    preserved(value, actual[key])
+            else:
+                self.assertEqual(expected, actual)
         for name in APPLICATIONS:
             with self.subTest(application=name):
                 _, _, before, after = values(name)
-                self.assertEqual(before, after)
+                preserved(before, after)
 
     def test_private_sources_and_paths_are_resolvable(self):
         for name in APPLICATIONS:
@@ -64,7 +72,12 @@ class InfraRootValuesTest(unittest.TestCase):
                 refs = [s for s in app['spec']['sources'] if s.get('ref') == 'live']
                 self.assertEqual(len(refs), 1)
                 self.assertEqual(refs[0]['repoURL'], 'https://github.com/dmuiX/k3s-on-omv-live.git')
-                self.assertEqual(source['helm']['valueFiles'], [f'$live/infra/{name}/values.yml'])
+                if name == 'openbao':
+                    route, = [s for s in app['spec']['sources'] if s.get('path') == 'charts/service-route']
+                    self.assertEqual(route['helm']['valueFiles'], ['$live/infra/openbao/route-values.yml'])
+                    self.assertFalse(source['helm']['valuesObject']['server']['gateway']['httpRoute']['enabled'])
+                else:
+                    self.assertEqual(source['helm']['valueFiles'], [f'$live/infra/{name}/values.yml'])
                 private_file = LIVE / f'infra/{name}/values.yml'
                 self.assertTrue(private_file.is_file())
                 # Supported by the installed Argo CD 3.5.5 directory renderer:
