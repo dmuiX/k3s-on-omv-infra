@@ -18,6 +18,18 @@ spec:
       valueFiles:
       - $live/infra/longhorn/values.yml
       valuesObject:
+        metrics:
+          serviceMonitor:
+            enabled: true
+        networkPolicies:
+          metricsScrapeSources:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: kube-prometheus-stack
+            podSelector:
+              matchLabels:
+                app.kubernetes.io/name: prometheus
+                prometheus: kube-prometheus-stack-prometheus
         defaultSettings:
           defaultReplicaCount: '{"v1":"3","v2":"3"}'
           defaultDataLocality: disabled
@@ -31,6 +43,9 @@ spec:
           defaultFsType: ext4
         longhornUI:
           replicas: 2
+          podDisruptionBudget:
+            enabled: true
+            minAvailable: 1
         longhornManager:
           tolerations:
           - key: CriticalAddonsOnly
@@ -50,13 +65,18 @@ spec:
           provisionerReplicaCount: 3
           resizerReplicaCount: 3
           snapshotterReplicaCount: 3
-  - repoURL: https://github.com/dmuiX/k3s-on-omv-live.git
-    targetRevision: main
-    ref: live
   - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
     targetRevision: main
     path: 02-controllers/longhorn/resources
+  - repoURL: https://github.com/dmuiX/k3s-on-omv-live.git
+    targetRevision: main
+    ref: live
   syncPolicy:
+    managedNamespaceMetadata:
+      labels:
+        pod-security.kubernetes.io/enforce: privileged
+        pod-security.kubernetes.io/warn: restricted
+        pod-security.kubernetes.io/audit: restricted
     automated:
       enabled: true
       prune: false

@@ -74,10 +74,10 @@ spec:
           limits:
             cpu: '1'
             memory: 1Gi
-  - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
-    targetRevision: main
-    path: 01-bootstrap/istio/base-resources
   syncPolicy:
+    managedNamespaceMetadata:
+      labels:
+        pod-security.kubernetes.io/enforce: privileged
     automated:
       enabled: true
       prune: false

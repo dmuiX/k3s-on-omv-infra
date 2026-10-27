@@ -35,14 +35,21 @@ spec:
               limits:
                 cpu: 300m
                 memory: 256Mi
+        # The native monitor authenticates with the Prometheus ServiceAccount token.
+        # VSO 1.6.0 hardcodes skipped HTTPS certificate verification; Ambient mTLS
+        # protects transport between the enrolled monitoring and VSO namespaces.
+        telemetry:
+          serviceMonitor:
+            enabled: true
         defaultVaultConnection:
           enabled: false
         defaultAuthMethod:
           enabled: false
-  - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
-    targetRevision: main
-    path: 02-controllers/vault-secrets-operator/resources
   syncPolicy:
+    managedNamespaceMetadata:
+      labels:
+        istio.io/dataplane-mode: ambient
+        pod-security.kubernetes.io/enforce: restricted
     automated:
       enabled: true
       prune: false

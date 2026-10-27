@@ -21,7 +21,8 @@ ruby -EUTF-8 "$infra/tests/verify-contracts.rb"
 ruby -EUTF-8 "$infra/tests/verify-mesh-renders.rb"
 
 for playbook in "$bootstrap"/ansible/*.yml "$bootstrap"/ansible/recovery/*.yml "$bootstrap"/ansible/maintenance/*.yml; do
-  case "$playbook" in */requirements.yml) continue ;; esac
+  # Task includes are validated through their importing playbooks or fixture tests.
+  case "$playbook" in */requirements.yml|*/maintenance/vault-withdrawal-*.yml|*/maintenance/openbao-provider-session.yml|*/maintenance/openbao-provider-review.yml) continue ;; esac
   ANSIBLE_CONFIG="$bootstrap/ansible/ansible.cfg" \
     ansible-playbook --syntax-check \
       -i "$bootstrap/ansible/inventory/hosts.yml" \

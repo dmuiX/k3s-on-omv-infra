@@ -18,6 +18,10 @@ spec:
       targetRevision: main
       path: infra/backup-validation
   syncPolicy:
+    managedNamespaceMetadata:
+      labels:
+        istio.io/dataplane-mode: ambient
+        pod-security.kubernetes.io/enforce: restricted
     automated:
       enabled: true
       prune: false
