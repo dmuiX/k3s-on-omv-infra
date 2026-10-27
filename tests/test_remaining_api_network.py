@@ -147,7 +147,7 @@ class RemainingAPINetwork(unittest.TestCase):
 
     def test_radar_chart_renders_exact_api_rules_and_preserves_https(self):
         app = load(APPS / 'radar/app.yml')
-        source, = [s for s in app['spec']['sources'] if s.get('path') == 'charts/workload-network']
+        source, = [s for s in app['spec']['sources'] if s.get('path') == 'charts/network-policies']
         self.assertEqual(source['helm']['valueFiles'], ['$live/apps/radar/network-values.yml'])
         result = subprocess.run([
             'helm', 'template', 'radar-network', str(INFRA / source['path']),

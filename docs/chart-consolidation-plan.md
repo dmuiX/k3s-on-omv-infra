@@ -56,7 +56,7 @@ resource-by-resource live handoff approvals remain outstanding.
 - VSO: native authenticated HTTPS ServiceMonitor enabled; chart-hardcoded HTTPS certificate verification skip explicitly accepted with Ambient mTLS.
 - OpenBao: native server NetworkPolicy carries the exact existing rule arrays; intended release-specific selector and changed policy identity are documented for adoption. Default-deny/injector/snapshot exceptions remain explicit.
 - OpenBao metrics are excluded from this adoption batch. No telemetry activation, ServiceMonitor, metrics identity or VSO token delivery is introduced by #65. The complete metrics-only listener and enforcement are owned by follow-up Infra PR #71; no intermediate token design needs deployment.
-- Shared charts adopted: openbao-oidc (Radar/ABS/Longhorn), postgres-consumer (Radar/Grafana), workload-network (Radar; existing ABS native network interface retained), service-route (OpenBao/Longhorn proxy).
+- Shared charts adopted: openbao-oidc (Radar/ABS/Longhorn), postgres-consumer (Radar/Grafana), network-policies (Radar; existing ABS native network interface retained), service-route (OpenBao/Longhorn proxy).
 - Private configuration remains Live. No upstream chart versions, workload replicas, admin groups, storage data, or credential identities are changed.
 
 The stage descriptions below record the implementation plan and its gates; this current-status section supersedes earlier pending decisions. Runtime scrape success, login renewal/max-TTL recovery, namespace field ownership and resource-owner handoffs are not proven by offline tests. Publishing draft branches does not authorize merge, sync, prune or deployment.
