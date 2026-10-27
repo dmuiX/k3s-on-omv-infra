@@ -20,7 +20,7 @@ spec:
     backend: kubernetes
     roleName: alertmanager-vso
     boundServiceAccountNames:
-      - alertmanager-vso
+      - kube-prometheus-stack-alertmanager
     boundServiceAccountNamespaces:
       - kube-prometheus-stack
     tokenPolicies:

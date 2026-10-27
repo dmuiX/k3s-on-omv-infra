@@ -1,14 +1,291 @@
 # Native chart capabilities and shared-resource audit
 
-Date: 2026-10-22
+Date: 2026-10-27
 
-## Scope and decision
+## Current Infra follow-up: native workload identities
 
-Audited the current Infra, Apps and Live working trees, including uncommitted Radar changes. Inspected the exact 17 external chart versions referenced by Applications, bundled subcharts where relevant, and the local Audiobookshelf chart 0.1.0. Inventory covers authored resource families and consolidation opportunities, not every possible combination of every chart value. No cluster state, installed field ownership, or runtime behavior was inspected.
+Reviewed all 16 external Infra chart pins, bundled monitoring charts, the five
+local support charts and the companion Live Infra overlays (`e78a5c0`). This
+follow-up is independent of Infra #66; Grafana's native reader-account reuse is
+handled separately and is not included here. It does not enable new policies,
+change replicas, replace specialized Jobs or introduce
+`extraObjects` wrappers. The older audit below is a historical snapshot, not a
+claim that its pending migrations are still pending in the adoption branches.
+
+| Infra chart / version | Current native-first disposition |
+| --- | --- |
+| argo-cd 10.10.3 | Component accounts/policies already chart-owned; no duplicate reader account or equivalent raw policy to remove. |
+| Istio base 1.31.2 | Native foundation resources; no duplicate consumer identity. |
+| istiod 1.31.2 | Native account and optional policy; enabling additional isolation is separate hardening. |
+| Istio CNI 1.31.2 | Native account; optional policy requires host-network/Ambient review, not a relocation. |
+| ztunnel 1.31.2 | Native account; mesh infrastructure policies cannot replace consumer isolation. |
+| prometheus-operator-crds 32.0.1 | CRDs only; no workload identity or policy. |
+| plugin-barman-cloud 0.8.1 | Native operator account; no native operator NetworkPolicy/PDB replacement. |
+| cert-manager v1.21.2 | **Reuse native `cert-manager` account for the DNS01 VSO reader; remove `cert-manager-dns01` ServiceAccount.** Native controller/webhook/cainjector policies have no corresponding raw duplicate here. |
+| cloudnative-pg 0.29.1 | Native controller already reads both delivered Secrets; reuse its `cloudnative-pg` account in independent main-targeted PR #75. Instance identity is a separate lifecycle choice. Keep database policies and standalone operator PDB. |
+| crossplane 2.4.2 | **Let DeploymentRuntimeConfig create the stable `provider-vault` account through `serviceAccountTemplate.metadata.name`; remove its standalone manifest and pod-level account override.** Keep the provider identity distinct from Crossplane's controller. |
+| csi-driver-smb 1.20.3 | Native controller already consumes SMB credentials and has cluster-wide Secret get; reuse `csi-smb-controller-sa` in independent main-targeted PR #76. Keep the host R2 helper separate. No native NetworkPolicy template. |
+| k8up 4.10.0 | Native operator account is not a backup/restore Job account. Keep those identities and standalone PDB; no native NetworkPolicy template. |
+| longhorn 1.13.0 | Native internal policies and configured metrics sources already used. OIDC proxy already shares its workload/reader identity; credential producer remains separate. |
+| vault-secrets-operator 1.6.0 | Native controller account; do not substitute it for every consumer's OpenBao identity. No native NetworkPolicy template. |
+| openbao 0.30.4 | Native server policy/PDB already adopted. Snapshot and injector identities/policies have different scopes. Metrics-listener follow-up remains Infra #71. |
+| kube-prometheus-stack 92.10.1 | **Reuse native `kube-prometheus-stack-alertmanager` account for the SMTP/config VSO reader; remove `alertmanager-vso` ServiceAccount.** Grafana reuse is handled separately in #66, not inherited here; provisioning and backup-Job identities remain separate. |
+
+Bundled Grafana 14.0.1, kube-state-metrics 8.6.0, node-exporter 4.60.0,
+windows-exporter 0.12.9 and CRDs 0.0.0 were included in the inventory. Their
+component accounts do not replace unrelated provisioning/backup identities.
+Grafana/KSM/node-exporter policy selectors and rules differ from the remaining
+raw policies. Local `service-route`, `openbao-oidc`, `oidc-proxy`,
+`postgres-consumer` and unused Infra `workload-network` charts need no new
+identity abstraction. Moving raw objects into a new chart source only to reduce
+file count is not a simplification.
+
+All 11 remaining raw NetworkPolicies are retained: OpenBao namespace isolation,
+injector and snapshots (3); PostgreSQL instance isolation (2); credential Jobs
+(3); restore validation (3). None has a verified equivalent native replacement
+in its associated chart. In particular, Grafana's native selector does not cover
+its credential Job, and the CNPG operator chart does not manage instance policy.
+
+### Identity migration and acceptance
+
+The reader changes remove two ServiceAccount manifests and update their
+VaultAuth/OpenBao-role account references. VaultAuth/role names, audience settings, TTLs, policies, KV
+paths, Secret names/ownership and bootstrap ordering stay unchanged. The reader
+roles now authorize the existing native workload identities for their respective
+credential paths; this is an intentional trust-boundary change, not just YAML
+movement. No producer/create permission is added to either workload.
+
+cert-manager's controller account exists before the later DNS01 credential
+Application. Alertmanager's account is rendered even while its CR has zero
+replicas; this change must not start Alertmanager. Keep native account creation
+and the owning chart component enabled while these VSO readers depend on them.
+
+With pruning disabled, old accounts remain if previously deployed. After a
+separately approved sync, require fresh VSO authentication as the new identity
+(not only Ready from a cached old token), successful DNS01/config Secret delivery
+and unchanged controller health. Only then consider attended retirement of the
+old ServiceAccounts, accounting for outstanding tokens and other references.
+Changing allowed account names does not itself revoke existing tokens. Do not
+delete the still-used VaultAuth/OpenBao roles named `cert-manager-dns01` and
+`alertmanager-vso`, delete Secrets, or force recreation of bootstrap credentials.
+Rollback restores both identity references together and retains the old account
+until acceptance; after retirement, restoring that account requires approval.
+
+### Remaining standalone accounts
+
+- Keep real workload identities `longhorn-oidc-proxy`, `openbao-snapshot`,
+  `postgresql-size-retention` and `backup-validation`; these are not duplicate
+  reader accounts. The proxy and snapshot workloads already reuse their reader
+  identities.
+- Keep `longhorn-proxy-provisioner`, `k3s-postgres-manager-provisioner` and
+  `grafana-admin-provisioner` separate from the read-only consumers because they
+  create credentials. Their complete producer bundles, login audiences and exact
+  management grants use those canonical names (Infra #66/#77, Bootstrap #64).
+  Radar likewise uses `radar-auth-provisioner` (Apps #5); shared Live API-policy
+  selectors follow that name in Live #11. Existing KV paths and Secret names stay
+  unchanged. If older identities exist, use an attended Orphan/tracking handoff
+  before withdrawing old management grants; do not rotate or recreate credentials.
+
+### Complete follow-up on the five additional VSO readers
+
+The following supersedes the earlier claim that no suitable SMB/PostgreSQL
+reader had been established. Different controller purposes alone are not proof
+that identity reuse is unsuitable. Effective existing Secret permissions matter.
+This is a source-derived audit, not a live RBAC or secret-content inventory.
+The two implementation PRs target **main directly**, independently of this PR.
+
+| Reader | Verified existing candidate | Decision |
+| --- | --- | --- |
+| `postgresql-vso` | `cloudnative-pg/cloudnative-pg`, native controller, already reads both destination Secrets | Reuse in [#75](https://github.com/dmuiX/k3s-on-omv-infra/pull/75). |
+| `smb-vso` | `kube-system/csi-smb-controller-sa`, actual provisioner credential consumer with unrestricted Secret get | Reuse in [#76](https://github.com/dmuiX/k3s-on-omv-infra/pull/76). |
+| `platform-r2-vso` | SMB controller/helper are technically usable, but neither is the host k3s process | Retain; sharing is possible with an explicit union of upstream authorities. |
+| `k8up-validation-vso` | Existing `backup-validation` or operator-created local `pod-executor` | Retain; either choice adds a source permission not directly supplied to that workload today. |
+| `prometheus-k8up-vso` | Native monitoring accounts or local `pod-executor` | Retain pending an intentional sharing choice; several native accounts already read the destination Secret. Reuse is not technically blocked. |
+
+**Common mechanics and permission delta.** VSO 1.6.0 retrieves the named account
+and requests its token in the consuming Secret resource's namespace. A workload
+need not run under that account for VSO to use it, and disabled token automount
+does not prevent TokenRequest. A remote controller account is not a drop-in
+replacement for a namespace-local reader. See the pinned
+[Kubernetes credential provider](https://github.com/hashicorp/vault-secrets-operator/blob/v1.6.0/credentials/vault/kubernetes.go)
+and [TokenRequest helper](https://github.com/hashicorp/vault-secrets-operator/blob/v1.6.0/helpers/serviceaccount.go).
+
+Every reuse adds direct OpenBao login, source/metadata reads and renewal to the
+chosen identity. That is not permission-neutral, even if it already reads the
+materialized Secrets. Source KV records may contain omitted fields or historical
+versions. The five current roles author no explicit audience restriction; ordinary
+API-audience workload tokens may qualify for OpenBao login depending on backend
+configuration. #75/#76 preserve those settings rather than bundling hardening.
+
+**1. PostgreSQL.** `07-k3s-postgres/resources/credentials.yaml` delivers
+`openbao-manager-credentials` and `postgresql-r2-credentials`. The manager is
+consumed by the Cluster's managed `openbao_manager` role and provider-vault's
+`SecretBackendConnection/postgresql`; R2 is consumed by the Barman ObjectStore
+integration and `postgresql-size-retention` through envFrom. Actual ObjectStore
+creation remains external Bootstrap configuration, not a live verified object.
+
+Exact chart 0.29.1 (CNPG 1.30.1) gives the controller cluster-wide Secret
+create/delete/get/list/patch/update/watch without resource-name restrictions.
+It already exists at controller wave 2, before PostgreSQL wave 7. It is therefore
+a stronger candidate than an arbitrarily chosen nearby workload. The Barman
+controller also already reads these Secrets, but tying manager delivery to the
+optional backup-plugin lifecycle is less appropriate. The instance account
+`k3s-postgres` has named manager/plugin Secret access, but is created with the
+Cluster and adds unnecessary instance-lifecycle coupling. The retention account
+receives R2, not the manager input; the producer combines create authority; the
+provider-vault account is in another namespace. #75 preserves role/policy names,
+manager/R2 scopes (including the existing PostgreSQL metadata wildcard), token
+settings, destinations and the separate producer identity.
+
+Evidence: pinned chart `templates/rbac.yaml` and `_helpers.tpl`,
+[CNPG managed-role Secret rules](https://github.com/cloudnative-pg/cloudnative-pg/blob/v1.30.1/pkg/specs/roles.go),
+[Barman instance bindings](https://github.com/cloudnative-pg/plugin-barman-cloud/blob/v0.15.1/internal/cnpgi/operator/specs/role.go),
+`07-k3s-postgres/resources/{cluster,credentials,retention}.yaml`.
+
+**2. SMB.** Exact chart 1.20.3 gives `csi-smb-controller-sa` cluster-wide Secret
+get. Its node account also has Secret get under the enabled inline-volume
+feature; it is not Secret-unprivileged. Both already can retrieve the known SMB
+and etcd Secret names. Live's `infra/csi-driver-smb/values.yml` uses
+`kube-system/smb-credentials` for provisioner and node-stage credentials; the
+static PostgreSQL mirror PV uses the same node-stage Secret. These are real
+controller/node consumers, while application Pods mount CSI volumes without
+needing SMB OpenBao rights. Prefer the controller over extending upstream login
+to the distributed node identity. #76 keeps the role SMB-only and does not grant
+R2 OpenBao access. Native controller installation precedes the credential link.
+
+Evidence: pinned `templates/{rbac-csi-smb,csi-smb-controller,csi-smb-node}.yaml`,
+[controller](https://github.com/kubernetes-csi/csi-driver-smb/blob/v1.20.3/pkg/smb/controllerserver.go)
+and [node](https://github.com/kubernetes-csi/csi-driver-smb/blob/v1.20.3/pkg/smb/nodeserver.go),
+Live's StorageClass values and `08-backup-validation/resources/validation.yaml`.
+
+**3. Host etcd/R2.** `platform-r2-vso` delivers `kube-system/etcd-s3-config-secret`.
+The configured host k3s server reads it through its runtime Kubernetes client;
+it is not a Pod running as this helper. The configured k3s version is
+`v1.37.1+k3s1`. There is no matching Helm-workload account. The local SMB
+controller/node accounts already have Kubernetes get access to this Secret, so
+reuse would not introduce first access to its current materialized values.
+It would nevertheless add upstream R2-path/metadata authorization to an SMB
+workload. One helper could instead authenticate to both existing SMB/R2 roles,
+but its effective authority becomes their union; that is an alternative to #76,
+not an additional independent simplification. Preserve separate upstream login
+and revocation boundaries by default. Never substitute namespace `default`.
+
+Evidence: Bootstrap `roles/k3s_server/templates/config.yaml.j2`,
+[k3s Secret lookup](https://github.com/k3s-io/k3s/blob/v1.37.1%2Bk3s1/pkg/etcd/s3/config_secret.go),
+[S3 runtime client](https://github.com/k3s-io/k3s/blob/v1.37.1%2Bk3s1/pkg/etcd/s3/s3.go)
+and [server context](https://github.com/k3s-io/k3s/blob/v1.37.1%2Bk3s1/pkg/server/context.go).
+CoreDNS/metrics-server have no comparable declared Secret grants; local-path and
+Traefik are disabled. k3s controller User identities are not reusable Pod SAs.
+
+**4. Validation backups.** This reader delivers both `k8up-repository` and
+`postgresql-validation-r2` in `backup-validation`. K8up-generated Backup/Check/
+Prune Jobs consume the repository password; the PostgreSQL validation CronJob
+receives R2 through envFrom and creates a recovery ObjectStore selecting its
+R2 Secret. The existing `backup-validation` account can manage validation
+Clusters/ObjectStores and has named source-Secret permissions, but has no direct
+repository-Secret read grant or repository-password input. Rebinding the combined
+reader role to it adds direct repository-password source authorization as well
+as R2 authorization. This observation is not a proof against indirect access
+through its existing controller/resource-creation powers.
+
+The actual K8up 4.10.0 operator image is v2.16.0. Its Backup/Prune default to
+namespace-local `pod-executor`; Check leaves the SA unset, so Kubernetes uses
+`default`. Live's two PodConfigs do not override it. PodConfig Spec is merged
+using `mergo.WithOverride`, so explicit Job-SA alignment is supported, including
+Check. However, the operator creates the configured `pod-executor` account and
+executor RoleBinding independently of that override. Custom Job SAs do not
+therefore inherit executor RBAC. This role permits Pods get/list, pods/exec
+create/get and K8up Snapshots operations, not Secret reads. Initial account
+existence depends on Backup reconciliation; choosing it for VSO couples initial
+delivery to that lifecycle. Declaratively seeding another account or adding
+bindings/token mounts is an orchestration change, not a free native substitution.
+Using the existing reader as a Job identity can be valid, but does not remove
+that account and gives Jobs the combined R2/repository source scope. Do not
+change the operator's global account flag merely for these two namespaces.
+
+Evidence: `08-backup-validation/resources/{credentials,validation,openbao-access}.yaml`,
+Live `infra/backup-validation/{targets,k8up-omv}.yaml`, K8up v2.16.0
+[Job merge](https://github.com/k8up-io/k8up/blob/v2.16.0/operator/job/job.go),
+[executor identity creation](https://github.com/k8up-io/k8up/blob/v2.16.0/operator/backupcontroller/backup_utils.go),
+[Backup](https://github.com/k8up-io/k8up/blob/v2.16.0/operator/backupcontroller/executor.go),
+[Prune](https://github.com/k8up-io/k8up/blob/v2.16.0/operator/prunecontroller/executor.go)
+and [Check](https://github.com/k8up-io/k8up/blob/v2.16.0/operator/checkcontroller/executor.go).
+
+**5. Prometheus backup repository.** The only delivered Secret is
+`prometheus-k8up-repository`, consumed by one-shot K8up Backup/Check/Prune resources
+from `docs/prometheus-tsdb-backup-runbook.md`. The Prometheus server, TSDB snapshot
+PreBackupPod and cleanup Job do not reference that password Secret. There is no
+Prometheus K8up Schedule in the inspected Live directory; its PodConfig/PVC
+support those attended operations. Password injection is via secretKeyRef, not
+a Secret-get call by the Job account.
+
+Several existing native monitoring accounts nevertheless already read it:
+Grafana has cluster-wide Secret get/list/watch; the Prometheus operator has
+get/list/watch/create/update/delete; kube-state-metrics has list/watch, which
+exposes full Secret objects rather than metadata alone. These are technically
+viable substitutions; denying that they already see the password would be
+incorrect. None is the actual K8up Job consumer. Direct OpenBao authorization
+would additionally couple backup custody to that component. Prometheus's own
+account has no corresponding Secret-read rule, so it gains additional authority.
+Alertmanager likewise has no matching Secret rule. Admission/test hook accounts
+are lifecycle-bound, node-exporter and the K8up controller are in other namespaces,
+and `pod-executor` has the creation/binding considerations described above.
+Retaining the helper is an explicit isolation/lifecycle choice, not a technical
+impossibility. Sharing with an existing reader remains an available alternative
+if reducing object count takes priority over a separate upstream identity.
+
+Evidence: pinned monitoring chart 92.10.1 `prometheus/clusterrole.yaml`,
+`prometheus-operator/clusterrole.yaml`, bundled Grafana ClusterRole and KSM Role/
+ClusterRoleBinding; `09-kube-prometheus-stack/resources/{prometheus-k8up-credentials,
+prometheus-snapshot}.yaml`, Live `infra/kube-prometheus-stack/prometheus-k8up-omv.yaml`,
+and the TSDB backup runbook. Chart defaults and Live inputs are included in the
+permission analysis; live drift, extra bindings, backend audiences, source fields
+and actual external bucket permissions remain unverified.
+
+The two implemented cases ran only one exact-chart test each (0.742s and 0.145s),
+including effective existing Secret-read RBAC and unchanged reader policy checks.
+All other follow-up work was source inspection; no broad suites, live operations,
+secret-value retrieval, mounts or backups were performed.
+
+### Native provider-account ownership
+
+Crossplane 2.4.2 supports a named `serviceAccountTemplate`. Its runtime builder
+uses that name for both the account and provider Deployment; ProviderHooks applies
+the account before the Deployment. Previously, the explicit pod account override
+selected an externally managed account instead. Keep the stable name/namespace,
+provider package pin, runtime hardening, Kubernetes/OpenBao permissions and token
+mount behavior unchanged; only account creation/lifecycle ownership moves.
+
+This is an attended ownership handoff if the provider already exists. Pruning is
+disabled, so do not delete the old account: Crossplane must adopt the same object
+without changing its UID. Verify provider health, runtime account selection,
+Kubernetes/OpenBao authentication and owner references before acceptance. Native
+accounts are now owned by ProviderRevisions; provider uninstall/revision cleanup
+must respect that lifecycle. Source rollback alone does not remove controller
+owner references. Reverting to external management requires a separately reviewed
+handoff, not deleting the Provider/account or blindly stripping owner references.
+
+Evidence: pinned [runtime-config API](https://github.com/crossplane/crossplane/blob/v2.4.2/apis/pkg/v1beta1/deployment_runtime_config_types.go),
+[runtime builder](https://github.com/crossplane/crossplane/blob/v2.4.2/internal/controller/pkg/runtime/runtime.go)
+and [ProviderHooks/account adoption](https://github.com/crossplane/crossplane/blob/v2.4.2/internal/controller/pkg/runtime/runtime_provider.go).
+One additional static contract checks native template/account selection; no extra
+chart render or live test was run for that source-wiring check.
+
+Native evidence: pinned cert-manager `templates/serviceaccount.yaml` and
+`deployment.yaml`; kube-prometheus-stack `templates/alertmanager/serviceaccount.yaml`
+and `alertmanager.yaml`; bundled Grafana `serviceaccount.yaml`, `_pod.tpl` and
+`networkpolicy.yaml`. One focused test with two subcases renders only the changed
+charts with their actual Live inputs, checks workload/account/reader-role
+agreement, exact reader ACLs and unchanged audiences, and verifies Alertmanager
+remains at zero replicas. No full suite or live test was run for this follow-up.
+
+## Original audit scope and decision (2026-10-22)
+
+The original audit inspected the Infra, Apps and Live working trees at that date, including then-uncommitted Radar changes. Inspected the exact 17 external chart versions referenced by Applications, bundled subcharts where relevant, and the local Audiobookshelf chart 0.1.0. Inventory covers authored resource families and consolidation opportunities, not every possible combination of every chart value. No cluster state, installed field ownership, or runtime behavior was inspected.
 
 **Recommendation:** use existing chart values and operator APIs first. Manage destination-namespace metadata in one designated Application. Use small reusable Helm components for repeated, parameterized platform integrations; retain plain YAML/Kustomize for deployment-specific resources and overlays. Do not convert everything to one universal chart.
 
-The audit created no deployment changes. Previously requested Radar changes in Apps/Live remain separate from this report.
+That original audit created no deployment changes. Previously requested Radar changes in Apps/Live remain separate from this report.
 
 ## Findings that change the implementation plan
 

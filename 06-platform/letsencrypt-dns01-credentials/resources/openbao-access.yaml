@@ -20,7 +20,7 @@ spec:
     backend: kubernetes
     roleName: cert-manager-dns01
     boundServiceAccountNames:
-      - cert-manager-dns01
+      - cert-manager
     boundServiceAccountNamespaces:
       - cert-manager
     tokenPolicies:
