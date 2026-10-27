@@ -120,78 +120,11 @@ its last successful operation still records the old values-file source. Request
 a normal full native Argo sync of that child to record adoption; do not loosen
 its current-source/operation acceptance checks or manually change health status.
 
-### OpenBao authenticated metrics: native VSO login lifecycle
+### OpenBao metrics: separate follow-up
 
-OpenBao chart 0.30.4 enables authenticated scraping through its native
-`serverTelemetry.serviceMonitor.authorization`: Bearer credentials reference
-Secret `openbao-metrics`, key `token`, in the monitor's namespace `openbao`.
-The existing 30-second retention, disabled hostname labels, three-replica Raft
-configuration and single native PDB (`maxUnavailable: 1`) remain unchanged.
-No listener unauthenticated-access flag is enabled.
-
-`04-openbao/resources/metrics.yaml` gives the dedicated `openbao-metrics`
-ServiceAccount in `openbao` its own Kubernetes login role. Its sole token policy
-allows `read` on `sys/metrics`, `read` on `auth/token/lookup-self`, and `update`
-on `auth/token/renew-self`; the default policy is excluded. Login TTL is one hour,
-with a 24-hour maximum (also subject to mount/system limits). Do not attach
-additional identity/group policies to this dedicated identity. Exposure of this
-specific login token to Prometheus is intentional: it grants metrics and only
-its own lookup/renewal, not KV access, token creation, sudo or other-token access.
-
-VSO's VaultAuth/VaultConnection own authentication, renewal and re-login.
-A VaultDynamicSecret performs GET `auth/token/lookup-self`, using that same login,
-and transforms only `.Secrets.id` into Secret key `token` (`excludeRaw: true`,
-fail closed on missing ID). This endpoint reads the caller's token; it does not
-create a child token or a secret lease. `refreshAfter: 1m` schedules rereads when
-there is no lease TTL. There is no provider Token resource/CRD activation,
-connection-secret export, KV copy, extra issuer Job or custom renewal script.
-
-**Bootstrap prerequisite:** apply the updated Bootstrap policy file
-`ansible/roles/openbao_setup/files/crossplane-provider-vault.hcl` before these
-managed resources reconcile. Its only new permissions are `create/read/update`
-on the exact paths `sys/policies/acl/openbao-metrics` and
-`auth/kubernetes/role/openbao-metrics`. No additional provider token-lifecycle
-permissions are needed. This repository-only change has not been applied live.
-
-Pinned native evidence:
-
-- [provider-vault v4.0.5 role schema](https://github.com/upbound/provider-vault/blob/v4.0.5/apis/cluster/kubernetes/v1alpha1/zz_authbackendrole_types.go)
-  exposes `tokenNoDefaultPolicy`, `tokenTtl` and `tokenMaxTtl` (seconds).
-- [OpenBao token API: self lookup](https://openbao.org/docs/api/auth/token/#lookup-a-token-self)
-  documents GET and a response containing `data.id` for the current client token.
-  [v2.7.1 implementation](https://github.com/openbao/openbao/blob/v2.7.1/internal/vault/token_store.go)
-  `handleLookupSelf` passes `req.ClientToken` to lookup, which returns
-  `id: out.ID`; accessor lookup, by contrast, redacts the ID.
-- [VSO v1.6.0 response](https://github.com/hashicorp/vault-secrets-operator/blob/v1.6.0/vault/responses.go)
-  `defaultResponse.Data()` returns `r.secret.Data`, making lookup's `id` available
-  as `.Secrets.id`, not `.Secrets.data.id` or `.Secrets.client_token`.
-- [VSO v1.6.0 dynamic controller](https://github.com/hashicorp/vault-secrets-operator/blob/v1.6.0/controllers/vaultdynamicsecret_controller.go)
-  `doVault` joins mount/path and supports GET; `getRotationDuration` uses
-  `refreshAfter` when the response has no lease duration. Client callbacks also
-  request reconciliation of associated dynamic secrets.
-- [VSO v1.6.0 client](https://github.com/hashicorp/vault-secrets-operator/blob/v1.6.0/vault/client.go)
-  `Login` starts a LifetimeWatcher for renewable auth tokens. Watcher completion
-  marks the client invalid, and
-  [client factory](https://github.com/hashicorp/vault-secrets-operator/blob/v1.6.0/vault/client_factory.go)
-  removes invalid clients and obtains a new logged-in client. This is the native
-  auth lifecycle, separate from dynamic-secret lease renewal. Its
-  [pinned Vault API v1.23.0 dependency](https://github.com/hashicorp/vault-secrets-operator/blob/v1.6.0/go.mod)
-  uses [LifetimeWatcher token renewal](https://github.com/hashicorp/vault/blob/api/v1.23.0/api/lifetime_watcher.go)
-  via `RenewTokenAsSelf`, whose
-  [implementation](https://github.com/hashicorp/vault/blob/api/v1.23.0/api/auth_token.go)
-  calls only `auth/token/renew-self`, not another-token renewal.
-- [OpenBao v2.7.1 HTTP authentication](https://github.com/openbao/openbao/blob/v2.7.1/internal/http/handler.go)
-  accepts Bearer authentication; the
-  [chart 0.30.4 archive](https://github.com/openbao/openbao-helm/releases/download/openbao-0.30.4/openbao-0.30.4.tgz)
-  contains `templates/prometheus-servicemonitor.yaml`, which renders the
-  authorization Secret reference without reading its value.
-
-At maximum TTL or after authentication recreation, the old Secret value may be
-invalid until VSO re-logs in and republishes it. One-minute refresh bounds the
-normal reconciliation interval (with controller jitter); reconciliation,
-Prometheus Secret propagation and scrape timing can cause a bounded scrape gap
-under healthy operation. Controller/OpenBao outages can extend it. This is not a
-zero-gap guarantee: renewal, re-login and scrape recovery have been source-checked
-and tested offline only, not validated against a running cluster. Runtime
-acceptance must observe successful renewal and max-TTL re-login/recovery without
-printing tokens or enabling credential-bearing debug logs.
+Platform adoption in Infra PR #65 does not enable OpenBao metrics or create any
+metrics Policy, login role, ServiceAccount, VSO resource or bearer Secret.
+The complete metrics-only listener, ServiceMonitor and port-scoped enforcement
+belong to [Infra PR #71](https://github.com/dmuiX/k3s-on-omv-infra/pull/71).
+Do not deploy the obsolete token-based intermediate design. Ordinary API/Raft
+behavior and unrelated application credentials remain unchanged.

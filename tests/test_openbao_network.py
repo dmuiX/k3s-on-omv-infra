@@ -158,11 +158,12 @@ class OpenBaoNetworkTests(unittest.TestCase):
         self.assertEqual(effective_policy_types({'egress': [{}]}), ['Ingress', 'Egress'])
         self.assertEqual(effective_policy_types(BASELINE['spec']), ['Ingress', 'Egress'])
 
-    def test_route_disabled_without_changing_telemetry_or_ha(self):
+    def test_route_disabled_and_metrics_deferred_without_changing_ha(self):
         server = self.values['server']
         self.assertIs(server['gateway']['httpRoute']['enabled'], False)
         self.assertEqual(server['ha']['disruptionBudget'], {'enabled': True, 'maxUnavailable': 1})
-        self.assertIn('prometheus_retention_time = "30s"', server['ha']['raft']['config'])
+        self.assertNotIn('telemetry {', server['ha']['raft']['config'])
+        self.assertNotIn('serverTelemetry', self.values)
         self.assertNotIn('unauthenticated_metrics_access', server['ha']['raft']['config'])
 
 
