@@ -154,11 +154,11 @@ class RemainingAPINetwork(unittest.TestCase):
             '-f', str(LIVE / 'apps/radar/network-values.yml')], capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, 'Network chart render failed')
         policies = {d['metadata']['name']: d for d in yaml.safe_load_all(result.stdout) if d}
-        credentials = policies['allow-radar-credentials-api']
+        credentials = policies['allow-radar-auth-provisioner-api']
         self.assertEqual(credentials['metadata']['annotations'],
                          {'argocd.argoproj.io/sync-wave': '-2'})
         self.assertEqual(credentials['spec'], {
-            'podSelector': {'matchLabels': {'app.kubernetes.io/name': 'radar-credentials'}},
+            'podSelector': {'matchLabels': {'app.kubernetes.io/name': 'radar-auth-provisioner'}},
             'policyTypes': ['Egress'], 'egress': api_rules()})
         radar = policies['allow-radar']
         self.assertEqual(radar['spec']['egress'][-3:], api_rules() + [{'ports': tcp(443)}])
@@ -173,7 +173,7 @@ class RemainingAPINetwork(unittest.TestCase):
             (APPS / 'radar/resources/provision-credentials.yaml').read_text()))
         policy, = [d for d in docs if d['kind'] == 'NetworkPolicy']
         self.assertEqual(policy['spec']['podSelector'], {
-            'matchLabels': {'app.kubernetes.io/name': 'radar-credentials'}})
+            'matchLabels': {'app.kubernetes.io/name': 'radar-auth-provisioner'}})
         openbao = namespace('openbao')
         openbao['podSelector'] = {'matchLabels': {'app.kubernetes.io/name': 'openbao'}}
         self.assertEqual(policy['spec']['egress'], [
@@ -184,7 +184,7 @@ class RemainingAPINetwork(unittest.TestCase):
         ])
         job, = [d for d in docs if d['kind'] == 'Job']
         self.assertEqual(job['spec']['template']['metadata']['labels']['app.kubernetes.io/name'],
-                         'radar-credentials')
+                         'radar-auth-provisioner')
 
 
 if __name__ == '__main__':
