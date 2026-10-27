@@ -1,0 +1,15 @@
+# Shared by validation and Prometheus backups. Keep the external policy name stable.
+apiVersion: vault.vault.upbound.io/v1alpha1
+kind: Policy
+metadata:
+  name: k8up-validation-vso-read
+spec:
+  deletionPolicy: Orphan
+  forProvider:
+    name: k8up-validation-vso-read
+    policy: |
+      path "auth/token/renew-self" { capabilities = ["update"] }
+      path "kv/data/k8up/repository-password" { capabilities = ["read"] }
+      path "kv/metadata/k8up/repository-password" { capabilities = ["read"] }
+  providerConfigRef:
+    name: openbao
