@@ -252,7 +252,15 @@ class BootstrapOrderTest(unittest.TestCase):
         self.assertEqual(late, [{'repoURL': INFRA, 'targetRevision': 'main', 'path': '06-platform/letsencrypt-dns01-credentials/resources'}])
         docs = list(yaml.safe_load_all((ROOT / '06-platform/letsencrypt-dns01-credentials/resources/identity.yaml').read_text()))
         secret = next(d for d in docs if d['kind'] == 'VaultStaticSecret')
-        self.assertEqual(secret['spec']['destination'], {'name': 'cloudflare-dns01', 'create': False})
+        self.assertEqual(secret['spec']['destination'], {
+            'name': 'cloudflare-dns01', 'create': False,
+            'transformation': {
+                'excludeRaw': True,
+                'transformationRefs': [{'name': 'required-openbao-value',
+                                        'namespace': 'vault-secrets-operator'}],
+                'templates': {'api-token': {'text': '{{ template "requiredValue" (dict "key" "api-token" "value" (get .Secrets "api-token")) }}'}},
+            },
+        })
 
     def test_gateway_namespace_has_one_early_metadata_steward(self):
         apps = applications()

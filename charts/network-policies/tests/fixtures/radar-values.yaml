@@ -1,4 +1,4 @@
-workloadNetwork:
+networkPolicies:
   namespace: radar
   defaultDeny:
     name: default-deny

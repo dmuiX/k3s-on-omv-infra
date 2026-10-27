@@ -1,4 +1,4 @@
-{{- $network := .Values.workloadNetwork -}}
+{{- $network := .Values.networkPolicies -}}
 {{- $names := dict -}}
 {{- with $network.defaultDeny }}
 {{- $_ := set $names .name true }}
@@ -13,7 +13,7 @@ spec:
   policyTypes: {{ .policyTypes | toJson }}
 {{- end }}
 {{- range $network.policies }}
-{{- if hasKey $names .name }}{{ fail "workloadNetwork policy names must be unique" }}{{ end }}
+{{- if hasKey $names .name }}{{ fail "networkPolicies policy names must be unique" }}{{ end }}
 {{- $_ := set $names .name true }}
 {{- $ingress := .extraIngress | default list }}
 {{- range $ingress }}
@@ -48,6 +48,10 @@ kind: NetworkPolicy
 metadata:
   name: {{ .name }}
   namespace: {{ $network.namespace }}
+  {{- with .annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
   podSelector: {{ .podSelector | toJson }}
   policyTypes: {{ .policyTypes | toJson }}

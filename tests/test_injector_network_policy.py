@@ -1,4 +1,5 @@
 """The injector needs its own policy; server labels do not select it."""
+import os
 from pathlib import Path
 import unittest
 
@@ -14,15 +15,18 @@ class InjectorNetworkPolicyTest(unittest.TestCase):
             'app.kubernetes.io/name': 'openbao-agent-injector'}]
         self.assertEqual(len(selected), 1, 'Injector is isolated by default-deny without its own allow policy')
         spec = selected[0]['spec']
+        live = Path(os.environ.get('PLATFORM_LIVE_REPO', path.parents[3] / 'k3s-on-omv-live'))
+        api = yaml.safe_load((live / 'infra/openbao/api-network-policy.yaml').read_text())['spec']
+        self.assertEqual(api['podSelector'], spec['podSelector'])
         self.assertEqual(set(spec['policyTypes']), {'Ingress', 'Egress'})
         for port in (443, 6443):
             self.assertTrue(any({'protocol': 'TCP', 'port': port} in rule['ports']
-                                and rule.get('to') for rule in spec['egress']))
+                                and rule.get('to') for rule in api['egress']))
         dns = [rule for rule in spec['egress']
                if {'protocol': 'UDP', 'port': 53} in rule['ports']]
         self.assertEqual(dns[0]['to'][0]['namespaceSelector']['matchLabels'],
                          {'kubernetes.io/metadata.name': 'kube-system'})
-        ingress = spec['ingress']
+        ingress = spec['ingress'] + api['ingress']
         self.assertTrue(any({'protocol': 'TCP', 'port': 8080} in rule['ports']
                             for rule in ingress))
         sources = [peer.get('ipBlock', {}).get('cidr')

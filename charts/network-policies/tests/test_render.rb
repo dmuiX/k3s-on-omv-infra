@@ -6,7 +6,7 @@ require 'json'
 require 'open3'
 require 'tmpdir'
 
-class WorkloadNetworkTest < Minitest::Test
+class NetworkPoliciesTest < Minitest::Test
   CHART = File.expand_path('..', __dir__)
   FIXTURES = File.join(__dir__, 'fixtures')
   WORKSPACE = File.expand_path('../../..', CHART)
@@ -21,11 +21,11 @@ class WorkloadNetworkTest < Minitest::Test
     YAML.load_file(File.join(FIXTURES, name))
   end
 
-  def render(values)
+  def render(values, chart = CHART)
     Dir.mktmpdir('network-test-') do |dir|
       path = File.join(dir, 'values.json')
       File.write(path, JSON.generate(values))
-      out, err, status = Open3.capture3('helm', 'template', 'network', CHART, '-f', path)
+      out, err, status = Open3.capture3('helm', 'template', 'network', chart, '-f', path)
       assert status.success?, err
       documents(out)
     end
@@ -37,13 +37,49 @@ class WorkloadNetworkTest < Minitest::Test
     docs.zip(keys).to_h { |doc, key| [key, doc] }
   end
 
+  def test_chart_name_and_values_key_contract
+    assert_equal 'network-policies', YAML.load_file(File.join(CHART, 'Chart.yaml'))['name']
+    values = fixture('radar-values.yaml')
+    refute_empty render(values)
+    # Legacy-only input must fail, not silently produce zero policies.
+    reject({'workloadNetwork' => values.fetch('networkPolicies')})
+  end
+
+  def test_renamed_chart_matches_previous_chart_for_equivalent_values
+    previous_chart = ENV['PREVIOUS_NETWORK_CHART']
+    skip 'Set PREVIOUS_NETWORK_CHART to compare an old chart checkout' unless previous_chart
+    [fixture('radar-values.yaml'), YAML.load_file(File.join(LIVE, 'apps/radar/network-values.yml'))].each do |values|
+      previous_values = {'workloadNetwork' => values.fetch('networkPolicies')}
+      assert_equal indexed(render(previous_values, previous_chart)), indexed(render(values))
+    end
+  end
+
   def test_full_radar_objects_equal_before_migration
     baseline = documents(File.read(File.join(FIXTURES, 'radar-baseline.yaml')))
     assert_equal indexed(baseline), indexed(render(fixture('radar-values.yaml')))
     actual = YAML.load_file(File.join(LIVE, 'apps/radar/network-values.yml'))
-    assert_equal indexed(baseline), indexed(render(actual))
+    # Keep the captured migration baseline immutable; model only this topic's delta.
+    api_rules = [
+      {'to' => [{'ipBlock' => {'cidr' => '10.43.0.1/32'}}],
+       'ports' => [{'protocol' => 'TCP', 'port' => 443}]},
+      {'to' => %w[192.168.1.2/32 192.168.1.5/32 192.168.1.7/32].map { |ip| {'ipBlock' => {'cidr' => ip}} },
+       'ports' => [{'protocol' => 'TCP', 'port' => 6443}]}
+    ]
+    expected = Marshal.load(Marshal.dump(baseline))
+    radar = expected.find { |d| d['metadata']['name'] == 'allow-radar' }
+    assert_equal({'ports' => [{'protocol' => 'TCP', 'port' => 443},
+                             {'protocol' => 'TCP', 'port' => 6443}]}, radar['spec']['egress'][-2])
+    radar['spec']['egress'][-2, 1] = api_rules
+    expected << {
+      'apiVersion' => 'networking.k8s.io/v1', 'kind' => 'NetworkPolicy',
+      'metadata' => {'name' => 'allow-radar-credentials-api', 'namespace' => 'radar',
+                     'annotations' => {'argocd.argoproj.io/sync-wave' => '-2'}},
+      'spec' => {'podSelector' => {'matchLabels' => {'app.kubernetes.io/name' => 'radar-credentials'}},
+                 'policyTypes' => ['Egress'], 'egress' => api_rules}
+    }
+    assert_equal indexed(expected), indexed(render(actual))
     app = YAML.load_file(File.join(APPS, 'radar/app.yml'))
-    sources = app['spec']['sources'].select { |s| s['path'] == 'charts/workload-network' }
+    sources = app['spec']['sources'].select { |s| s['path'] == 'charts/network-policies' }
     assert_equal 1, sources.length
     assert_equal ['$live/apps/radar/network-values.yml'], sources.first['helm']['valueFiles']
     assert app['spec']['sources'].any? { |s| s['path'] == 'radar/resources' && s['repoURL'].end_with?('/k3s-on-omv-apps.git') }
@@ -59,14 +95,14 @@ class WorkloadNetworkTest < Minitest::Test
       'extraEgress' => configurator['spec']['egress'].drop(2)
     }
     network = {'namespace' => 'audiobookshelf', 'policies' => [policy]}
-    rendered = render({'workloadNetwork' => network}).first
+    rendered = render({'networkPolicies' => network}).first
     assert_equal configurator['spec']['egress'], rendered['spec']['egress']
     # The intended destination is namespace AND OpenBao pod, never OR.
     assert_equal 1, rendered['spec']['egress'][1]['to'].length
     assert_equal %w[namespaceSelector podSelector], rendered['spec']['egress'][1]['to'].first.keys.sort
     # A workload-only default deny remains workload-only, unlike Radar's {}.
     network['defaultDeny'] = {'name' => 'deny', 'podSelector' => policy['podSelector'], 'policyTypes' => ['Ingress', 'Egress']}
-    assert_equal policy['podSelector'], render({'workloadNetwork' => network}).first['spec']['podSelector']
+    assert_equal policy['podSelector'], render({'networkPolicies' => network}).first['spec']['podSelector']
   end
 
   def test_audiobookshelf_retains_all_native_policies
@@ -120,7 +156,7 @@ class WorkloadNetworkTest < Minitest::Test
       ->(n, p) { n['policies'] << Marshal.load(Marshal.dump(p)) }
     ].each do |mutate|
       values = fixture('radar-values.yaml')
-      n = values['workloadNetwork']
+      n = values['networkPolicies']
       mutate.call(n, n['policies'].first)
       reject(values)
     end

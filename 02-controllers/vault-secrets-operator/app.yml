@@ -42,9 +42,13 @@ spec:
           serviceMonitor:
             enabled: true
         defaultVaultConnection:
-          enabled: false
+          enabled: true
+          address: http://openbao-active.openbao.svc.cluster.local:8200
         defaultAuthMethod:
           enabled: false
+  - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
+    targetRevision: main
+    path: 02-controllers/vault-secrets-operator/resources
   syncPolicy:
     managedNamespaceMetadata:
       labels:

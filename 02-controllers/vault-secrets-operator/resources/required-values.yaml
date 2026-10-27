@@ -1,0 +1,15 @@
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: SecretTransformation
+metadata:
+  name: required-openbao-value
+  namespace: vault-secrets-operator
+spec:
+  sourceTemplates:
+    - name: required-openbao-value
+      text: |-
+        {{- define "requiredValue" -}}
+          {{- if empty .value -}}
+            {{- fail (printf "missing or empty OpenBao key: %s" .key) -}}
+          {{- end -}}
+          {{- .value -}}
+        {{- end -}}

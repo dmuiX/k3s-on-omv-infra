@@ -74,20 +74,12 @@ spec:
                 defaultMode: 0444
 ---
 apiVersion: secrets.hashicorp.com/v1beta1
-kind: VaultConnection
-metadata:
-  name: openbao
-  namespace: openbao
-spec:
-  address: "http://openbao-active.openbao.svc.cluster.local:8200"
----
-apiVersion: secrets.hashicorp.com/v1beta1
 kind: VaultAuth
 metadata:
   name: openbao-snapshot
   namespace: openbao
 spec:
-  vaultConnectionRef: openbao
+  vaultConnectionRef: vault-secrets-operator/default
   method: kubernetes
   mount: kubernetes
   kubernetes:
@@ -111,32 +103,19 @@ spec:
     type: Opaque
     transformation:
       excludeRaw: true
+      transformationRefs:
+        - name: required-openbao-value
+          namespace: vault-secrets-operator
       templates:
         AWS_ACCESS_KEY_ID:
           text: |-
-            {{- $value := get .Secrets "access-key-id" -}}
-            {{- if empty $value -}}
-            {{- fail "missing required OpenBao key: access-key-id" -}}
-            {{- end -}}
-            {{- $value -}}
+            {{- template "requiredValue" (dict "key" "access-key-id" "value" (get .Secrets "access-key-id")) -}}
         AWS_SECRET_ACCESS_KEY:
           text: |-
-            {{- $value := get .Secrets "secret-access-key" -}}
-            {{- if empty $value -}}
-            {{- fail "missing required OpenBao key: secret-access-key" -}}
-            {{- end -}}
-            {{- $value -}}
+            {{- template "requiredValue" (dict "key" "secret-access-key" "value" (get .Secrets "secret-access-key")) -}}
         AWS_REGION:
           text: |-
-            {{- $value := get .Secrets "region" -}}
-            {{- if empty $value -}}
-            {{- fail "missing required OpenBao key: region" -}}
-            {{- end -}}
-            {{- $value -}}
+            {{- template "requiredValue" (dict "key" "region" "value" (get .Secrets "region")) -}}
         S3_ENDPOINT:
           text: |-
-            {{- $value := get .Secrets "endpoint" -}}
-            {{- if empty $value -}}
-            {{- fail "missing required OpenBao key: endpoint" -}}
-            {{- end -}}
-            {{- $value -}}
+            {{- template "requiredValue" (dict "key" "endpoint" "value" (get .Secrets "endpoint")) -}}

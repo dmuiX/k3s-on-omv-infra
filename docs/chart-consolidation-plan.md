@@ -56,7 +56,7 @@ resource-by-resource live handoff approvals remain outstanding.
 - VSO: native authenticated HTTPS ServiceMonitor enabled; chart-hardcoded HTTPS certificate verification skip explicitly accepted with Ambient mTLS.
 - OpenBao: native server NetworkPolicy carries the exact existing rule arrays; intended release-specific selector and changed policy identity are documented for adoption. Default-deny/injector/snapshot exceptions remain explicit.
 - OpenBao metrics are excluded from this adoption batch. No telemetry activation, ServiceMonitor, metrics identity or VSO token delivery is introduced by #65. The complete metrics-only listener and enforcement are owned by follow-up Infra PR #71; no intermediate token design needs deployment.
-- Shared charts adopted: openbao-oidc (Radar/ABS/Longhorn), postgres-consumer (Radar/Grafana), workload-network (Radar; existing ABS native network interface retained), service-route (OpenBao/Longhorn proxy).
+- Shared charts adopted: openbao-oidc (Radar/ABS/Longhorn), postgres-consumer (Radar/Grafana), network-policies (Radar; existing ABS native network interface retained), service-route (OpenBao/Longhorn proxy).
 - Private configuration remains Live. No upstream chart versions, workload replicas, admin groups, storage data, or credential identities are changed.
 
 The stage descriptions below record the implementation plan and its gates; this current-status section supersedes earlier pending decisions. Runtime scrape success, login renewal/max-TTL recovery, namespace field ownership and resource-owner handoffs are not proven by offline tests. Publishing draft branches does not authorize merge, sync, prune or deployment.
@@ -297,7 +297,7 @@ Do not set every available `networkPolicy.enabled` or monitor flag to true in on
 
 Approved after reviewing the selector distinction: the native policy is now enabled with exact previous ingress/egress arrays. It adds `app.kubernetes.io/instance: openbao` to the old name-only selector; tests prove declared server pods carry both labels. This is equivalence for the intended workload, not a claim that selector populations are identical.
 
-The policy identity changes from `allow-openbao-raft-and-clients` to `openbao`. The old live policy will remain under prune=false and requires a separately approved retirement after target-pod/connectivity verification. Keeping it indefinitely would retain its broader target selection. Namespace-wide default deny, injector/snapshot policies, API access and Ambient/HBONE allowances remain unchanged. Native default rule lists were not adopted.
+The policy identity changes from `allow-openbao-raft-and-clients` to `openbao`. The old live policy will remain under prune=false and requires a separately approved retirement after target-pod/connectivity verification. Keeping it indefinitely would retain its broader target selection. Namespace-wide default deny and Ambient/HBONE allowances remain unchanged. The subsequent [API ownership candidate](api-network-ownership.md) removes only the native server's broad TCP 6443 rule, moves injector API tuples to Live, and preserves snapshot HTTPS as a separate broad Live exception. These additive allowances are not R2-only enforcement. Native default rule lists were not adopted.
 
 ### 5.2 Monitoring configuration targets
 
@@ -311,7 +311,7 @@ These are exact candidate switches, not an instruction to enable them without th
 | Longhorn | `metrics.serviceMonitor.enabled: true` and constrained `networkPolicies.metricsScrapeSources` | Restrict to the intended monitoring namespace/workload, retain internal isolation. |
 | VSO | `telemetry.serviceMonitor.enabled: true` | Approved and enabled in repository configuration: native HTTPS scrape with Prometheus SA token. VSO 1.6.0 hardcodes `tlsConfig.insecureSkipVerify: true`; this is explicitly accepted with Ambient mTLS between monitoring and VSO. No custom proxy, certificate plumbing, ignored TLS values or auth bypass. Live mesh enrollment and scrape success remain rollout checks. |
 | Argo CD | Selected component `metrics.enabled` and `metrics.serviceMonitor.enabled` | Choose actual enabled components; verify namespace policy and telemetry endpoints. |
-| OpenBao | Deferred to Infra PR #71 | This adoption batch leaves OpenBao metrics disabled. The follow-up owns the complete native metrics-only listener, ServiceMonitor and port/identity enforcement, without bearer-token machinery. |
+| OpenBao | `serverTelemetry.serviceMonitor.enabled: true` and `port: metrics` | Dedicated metrics-only 9101 listener, API metrics disabled, no Bearer Secret. Install and verify Ambient identity protection before exposing the listener; follow the attended retirement procedure. |
 
 Targeted rendering confirmed ServiceMonitor discovery accepts all labels/all namespaces, while PodMonitor discovery requires `release: kube-prometheus-stack`. No extra release label is needed for the proposed ServiceMonitors. Do not relax global PodMonitor discovery.
 
@@ -321,7 +321,7 @@ VSO implementation check against the official v1.6.0 source confirmed the limita
 
 Argo metrics can be enabled for controller, server, repoServer, ApplicationSet, notifications and enabled Dex through each component's two metrics switches. Initially select controller/server/repoServer/ApplicationSet/notifications only; leave Dex and Redis additions out unless their metrics are required. Redis also needs `redis.exporter.enabled: true`, a new sidecar, not just a monitor flag. Monitor templates requiring the monitoring API must render with the actual API capability, including offline tests.
 
-OpenBao telemetry, metrics listener ports, scrape configuration and their network/identity enforcement are introduced together by Infra PR #71, not by this adoption batch. The obsolete Policy/AuthBackendRole/ServiceAccount/VSO metrics-token path is not published here. Review and accept the follow-up's policy-before-listener rollout independently; normal API/Raft and other monitoring consumers remain unchanged.
+The separate Infra #71 change enables OpenBao telemetry with `prometheus_retention_time = "30s"` and `disable_hostname = true` on the metrics-free #65/#66 baseline. The native ServiceMonitor scrapes named port `metrics` (9101), whose listener serves only metrics without a bearer token. API 8200 disables metrics. Direct-port NetworkPolicy and a port-scoped Ambient DENY admit only the actual Prometheus workload identity, including protection against other clients carried over shared HBONE ingress. Policy propagation, negative access checks, HA rollout and leader-transition scraping remain runtime gates. Only if legacy metrics token resources were actually deployed should their external role/policy and provider grants be retired after acceptance; a fresh installation must not create them. See [the staged cutover](openbao-metrics-rollout.md).
 
 Additional dashboards/rules are separate opt-ins; validate their queries first.
 

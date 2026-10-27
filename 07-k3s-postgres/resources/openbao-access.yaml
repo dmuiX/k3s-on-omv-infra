@@ -23,7 +23,7 @@ spec:
     backend: kubernetes
     roleName: postgresql-vso
     boundServiceAccountNames:
-      - postgresql-vso
+      - cloudnative-pg
     boundServiceAccountNamespaces:
       - cloudnative-pg
     tokenPolicies:

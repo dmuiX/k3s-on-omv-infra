@@ -21,6 +21,12 @@ Live keeps Longhorn identity/route settings under `infra/longhorn`, Radar's non-
 
 Audiobookshelf's Application owns its OIDC key, client, provider, administrator assignment and app-specific role scope through the shared `openbao-oidc` chart source. Its PostSync API configurator consumes the existing shared custody helper, without extra Kubernetes RBAC or OIDC provisioning in Ansible. Since ABS requests the standard `profile` scope, the platform owns that global OpenBao scope exactly once as `OidcScope/oidc-profile`; applications reference it instead of declaring conflicting external `profile` objects. Its template supplies only entity name/preferred_username, not administrator permissions or invented email claims. The provider trust-root ACL adds only the exact Audiobookshelf policy/role/OIDC paths and the shared profile path. The reviewed live trust-policy update and state migration remain separate approvals; the new Application's auto-sync stays disabled.
 
+## Required VSO values
+
+VSO consumers share the early operator-owned `required-openbao-value` source
+template. See [required-value semantics and rollout ordering](vso-required-values.md).
+This changes neither namespace-local authentication nor credential ownership.
+
 ## Bootstrap ordering
 
 `longhorn` must provide storage before OpenBao starts. Its later `longhorn-config` Application therefore runs in Infra wave 6, after OpenBao/VSO/provider trust, not in controller wave 2.
@@ -48,6 +54,9 @@ VSO delivers secrets but does not generate random values or Argo API tokens. Rad
 | `longhorn-proxy-provisioner` / `longhorn` | `longhorn/oidc-proxy`: native client credentials plus random 32-byte cookie key |
 | `k3s-postgres-manager-provisioner` / `cloudnative-pg` | `postgresql/openbao-manager`: fixed username plus random password |
 | `radar-auth-provisioner` / `radar` (Apps #5) | `radar/auth`: session key; `radar/argocd`: issued account token |
+| `grafana-admin-provisioner` / `kube-prometheus-stack` | `monitoring/grafana-admin`: fixed admin login plus random password |
+
+Grafana consumes the separate VSO-owned `grafana-admin` Secret through the native chart's `admin.existingSecret`, including reload sidecars. These are bootstrap credentials, not a declarative reset of the password persisted in PostgreSQL. See [Grafana administrator cutover](grafana-admin.md) for provider-policy prerequisites, the attended one-time stdin CLI reset, safe operator access and rollback. No live reset is performed by the Sync hook.
 
 Each Job has a separate ServiceAccount, audience-bound login role, create-only policy and NetworkPolicy. Longhorn/database producers have no Argo permissions or Argo CLI. The central multi-service Job has been removed. A small `adapters/credential-custody` ConfigMap provides identical HTTP/CAS/ownership handling in each consumer namespace; it contains no consumer paths, identity decisions, Argo implementation or combined issuer permissions.
 
@@ -169,11 +178,41 @@ its last successful operation still records the old values-file source. Request
 a normal full native Argo sync of that child to record adoption; do not loosen
 its current-source/operation acceptance checks or manually change health status.
 
-### OpenBao metrics: separate follow-up
+### OpenBao dedicated metrics listener
 
-Platform adoption in Infra PR #65 does not enable OpenBao metrics or create any
-metrics Policy, login role, ServiceAccount, VSO resource or bearer Secret.
-The complete metrics-only listener, ServiceMonitor and port-scoped enforcement
-belong to [Infra PR #71](https://github.com/dmuiX/k3s-on-omv-infra/pull/71).
-Do not deploy the obsolete token-based intermediate design. Ordinary API/Raft
-behavior and unrelated application credentials remain unchanged.
+OpenBao 2.7.1 / chart 0.30.4 serves unauthenticated metrics only on internal port
+9101; API port 8200 disables metrics even for authenticated callers. Native
+`server.extraPorts`, `server.service.extraPorts` and
+`serverTelemetry.serviceMonitor.port: metrics` introduce the complete metrics
+setup in Infra #71. The #65/#66 baseline contains no OpenBao metrics activation
+or metrics-token resources, so no intermediate token design needs deployment.
+The follow-up enables 30-second retention and hostname suppression; three-replica
+Raft, active-Service discovery and the native PDB remain unchanged.
+The metrics handler returns local metrics without forwarding to the leader;
+the chart's active selector deliberately preserves the existing HA scrape scope.
+
+`04-openbao/resources/metrics.yaml` now contains only a workload-scoped Istio L4
+DENY policy: destination port 9101 rejects every principal except
+`cluster.local/ns/kube-prometheus-stack/sa/kube-prometheus-stack-prometheus`.
+This ServiceAccount comes from rendering pinned monitoring chart 92.10.1 with
+the Live inputs, not from a guessed name. Missing principals (direct plaintext)
+also match the negative condition. No waypoint or HTTP path/method policy is
+needed. The direct-port NetworkPolicy combines monitoring namespace and
+`app.kubernetes.io/name: prometheus` in one peer. Broad shared HBONE ingress on
+15008 is retained for API clients, so that NetworkPolicy is not the identity
+boundary. There is no external route to 9101.
+
+Follow the mandatory [policy-first metrics cutover](openbao-metrics-rollout.md)
+before enabling the listener or retiring existing resources. Offline checks do
+not prove live Ambient enrollment, policy propagation or scrape availability.
+Current Bootstrap #64 contains Grafana grants only. A fresh listener setup needs
+no metrics Policy/AuthBackendRole management grants or token lifecycle. Legacy
+cleanup is conditional on verified pre-existing objects; no live cleanup is
+automated.
+
+Native evidence: [OpenBao 2.7.1 listener options](https://github.com/openbao/openbao/blob/v2.7.1/website/content/docs/configuration/listener/tcp.mdx),
+[listener enforcement](https://github.com/openbao/openbao/blob/v2.7.1/internal/http/metrics.go),
+[local unauthenticated handler](https://github.com/openbao/openbao/blob/v2.7.1/internal/http/sys_metrics.go),
+[chart 0.30.4](https://github.com/openbao/openbao-helm/tree/openbao-0.30.4/templates),
+[Istio L4 attributes](https://istio.io/latest/docs/ambient/usage/l4-policy/),
+and [ztunnel 1.31.2 negative/empty-identity matching](https://github.com/istio/ztunnel/blob/1.31.2/src/rbac.rs).

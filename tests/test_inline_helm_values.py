@@ -155,6 +155,9 @@ class InlineHelmValuesTest(unittest.TestCase):
             for path in repository.glob('**/*values.y*ml'):
                 if repository == INFRA and path.name == 'values.yaml' and (path.parent / 'Chart.yaml').exists():
                     continue
+                if path == INFRA / '02-controllers/vault-secrets-operator/resources/required-values.yaml':
+                    self.assertEqual(yaml.safe_load(path.read_text())['kind'], 'SecretTransformation')
+                    continue
                 if repository == LIVE:
                     relative = path.relative_to(LIVE)
                     if relative.parts[0] == 'apps':
@@ -223,7 +226,7 @@ class InlineHelmValuesTest(unittest.TestCase):
         self.assertEqual(source['targetRevision'], '1.6.0')
         values = source['helm']['valuesObject']
         self.assertEqual(values['telemetry']['serviceMonitor'], {'enabled': True})
-        self.assertFalse(values['defaultVaultConnection']['enabled'])
+        self.assertTrue(values['defaultVaultConnection']['enabled'])
         self.assertFalse(values['defaultAuthMethod']['enabled'])
         monitoring = yaml.safe_load((INFRA / '09-kube-prometheus-stack/app.yml').read_text())
         for consumer in (app, monitoring):
