@@ -79,6 +79,17 @@ spec:
               ports:
               - protocol: TCP
                 port: 8200
+            # Direct traffic is constrained too; HBONE authorization is in metrics.yaml.
+            - from:
+              - namespaceSelector:
+                  matchLabels:
+                    kubernetes.io/metadata.name: kube-prometheus-stack
+                podSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: prometheus
+              ports:
+              - protocol: TCP
+                port: 9101
             egress:
             - to:
               - namespaceSelector:
@@ -114,6 +125,19 @@ spec:
                 port: 53
               - protocol: TCP
                 port: 443
+            - ports:
+              - protocol: TCP
+                port: 6443
+          extraPorts:
+          - name: metrics
+            containerPort: 9101
+            protocol: TCP
+          service:
+            extraPorts:
+            - name: metrics
+              port: 9101
+              targetPort: metrics
+              protocol: TCP
             # Deployment-specific API destinations are supplied by Live.
           podManagementPolicy: Parallel
           statefulSet:
@@ -151,9 +175,24 @@ spec:
               setNodeId: true
               config: |
                 ui = true
+                telemetry {
+                  prometheus_retention_time = "30s"
+                  disable_hostname = true
+                }
                 listener "tcp" {
                   address = "[::]:8200"
                   tls_disable = 1
+                  telemetry {
+                    disallow_metrics = true
+                  }
+                }
+                listener "tcp" {
+                  address = "[::]:9101"
+                  tls_disable = 1
+                  telemetry {
+                    metrics_only = true
+                    unauthenticated_metrics_access = true
+                  }
                 }
                 storage "raft" {
                   path = "/openbao/data"
@@ -200,6 +239,10 @@ spec:
           - name: seal
             mountPath: /openbao/seal
             readOnly: true
+        serverTelemetry:
+          serviceMonitor:
+            enabled: true
+            port: metrics
         ui:
           enabled: true
   - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git

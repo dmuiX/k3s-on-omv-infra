@@ -129,11 +129,41 @@ its last successful operation still records the old values-file source. Request
 a normal full native Argo sync of that child to record adoption; do not loosen
 its current-source/operation acceptance checks or manually change health status.
 
-### OpenBao metrics: separate follow-up
+### OpenBao dedicated metrics listener
 
-Platform adoption in Infra PR #65 does not enable OpenBao metrics or create any
-metrics Policy, login role, ServiceAccount, VSO resource or bearer Secret.
-The complete metrics-only listener, ServiceMonitor and port-scoped enforcement
-belong to [Infra PR #71](https://github.com/dmuiX/k3s-on-omv-infra/pull/71).
-Do not deploy the obsolete token-based intermediate design. Ordinary API/Raft
-behavior and unrelated application credentials remain unchanged.
+OpenBao 2.7.1 / chart 0.30.4 serves unauthenticated metrics only on internal port
+9101; API port 8200 disables metrics even for authenticated callers. Native
+`server.extraPorts`, `server.service.extraPorts` and
+`serverTelemetry.serviceMonitor.port: metrics` introduce the complete metrics
+setup in Infra #71. The #65/#66 baseline contains no OpenBao metrics activation
+or metrics-token resources, so no intermediate token design needs deployment.
+The follow-up enables 30-second retention and hostname suppression; three-replica
+Raft, active-Service discovery and the native PDB remain unchanged.
+The metrics handler returns local metrics without forwarding to the leader;
+the chart's active selector deliberately preserves the existing HA scrape scope.
+
+`04-openbao/resources/metrics.yaml` now contains only a workload-scoped Istio L4
+DENY policy: destination port 9101 rejects every principal except
+`cluster.local/ns/kube-prometheus-stack/sa/kube-prometheus-stack-prometheus`.
+This ServiceAccount comes from rendering pinned monitoring chart 92.10.1 with
+the Live inputs, not from a guessed name. Missing principals (direct plaintext)
+also match the negative condition. No waypoint or HTTP path/method policy is
+needed. The direct-port NetworkPolicy combines monitoring namespace and
+`app.kubernetes.io/name: prometheus` in one peer. Broad shared HBONE ingress on
+15008 is retained for API clients, so that NetworkPolicy is not the identity
+boundary. There is no external route to 9101.
+
+Follow the mandatory [policy-first metrics cutover](openbao-metrics-rollout.md)
+before enabling the listener or retiring existing resources. Offline checks do
+not prove live Ambient enrollment, policy propagation or scrape availability.
+Current Bootstrap #64 contains Grafana grants only. A fresh listener setup needs
+no metrics Policy/AuthBackendRole management grants or token lifecycle. Legacy
+cleanup is conditional on verified pre-existing objects; no live cleanup is
+automated.
+
+Native evidence: [OpenBao 2.7.1 listener options](https://github.com/openbao/openbao/blob/v2.7.1/website/content/docs/configuration/listener/tcp.mdx),
+[listener enforcement](https://github.com/openbao/openbao/blob/v2.7.1/internal/http/metrics.go),
+[local unauthenticated handler](https://github.com/openbao/openbao/blob/v2.7.1/internal/http/sys_metrics.go),
+[chart 0.30.4](https://github.com/openbao/openbao-helm/tree/openbao-0.30.4/templates),
+[Istio L4 attributes](https://istio.io/latest/docs/ambient/usage/l4-policy/),
+and [ztunnel 1.31.2 negative/empty-identity matching](https://github.com/istio/ztunnel/blob/1.31.2/src/rbac.rs).

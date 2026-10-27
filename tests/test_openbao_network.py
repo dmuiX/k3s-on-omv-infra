@@ -14,6 +14,7 @@ import unittest
 import yaml
 
 import test_native_chart_migrations as native
+from test_openbao_metrics import METRICS_INGRESS
 
 ROOT = native.INFRA
 # Exact original document (mapping/array semantics), including ordered peer lists.
@@ -180,13 +181,14 @@ class OpenBaoNetworkTests(unittest.TestCase):
         self.assertEqual(effective_policy_types({'egress': [{}]}), ['Ingress', 'Egress'])
         self.assertEqual(effective_policy_types(BASELINE['spec']), ['Ingress', 'Egress'])
 
-    def test_route_disabled_and_metrics_deferred_without_changing_ha(self):
+    def test_route_disabled_without_changing_telemetry_or_ha(self):
         server = self.values['server']
         self.assertIs(server['gateway']['httpRoute']['enabled'], False)
         self.assertEqual(server['ha']['disruptionBudget'], {'enabled': True, 'maxUnavailable': 1})
-        self.assertNotIn('telemetry {', server['ha']['raft']['config'])
-        self.assertNotIn('serverTelemetry', self.values)
-        self.assertNotIn('unauthenticated_metrics_access', server['ha']['raft']['config'])
+        self.assertIn('prometheus_retention_time = "30s"', server['ha']['raft']['config'])
+        self.assertEqual(server['ha']['raft']['config'].count('unauthenticated_metrics_access = true'), 1)
+        self.assertIn('metrics_only = true', server['ha']['raft']['config'])
+        self.assertIn('disallow_metrics = true', server['ha']['raft']['config'])
 
 
 if __name__ == '__main__':
