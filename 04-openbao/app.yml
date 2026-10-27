@@ -138,6 +138,7 @@ spec:
               port: 9101
               targetPort: metrics
               protocol: TCP
+            # Deployment-specific API destinations are supplied by Live.
           podManagementPolicy: Parallel
           statefulSet:
             securityContext:
@@ -269,6 +270,9 @@ spec:
   - repoURL: https://github.com/dmuiX/k3s-on-omv-live.git
     targetRevision: main
     ref: live
+    path: infra/openbao
+    directory:
+      exclude: '*values.y*ml'
   syncPolicy:
     managedNamespaceMetadata:
       labels:

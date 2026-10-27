@@ -55,8 +55,8 @@ resource-by-resource live handoff approvals remain outstanding.
 - PDBs: OpenBao duplicate retired in favor of explicit native maxUnavailable 1; separately approved Longhorn UI/Prometheus/Alertmanager native minAvailable 1 enabled, existing two replicas unchanged.
 - VSO: native authenticated HTTPS ServiceMonitor enabled; chart-hardcoded HTTPS certificate verification skip explicitly accepted with Ambient mTLS.
 - OpenBao: native server NetworkPolicy carries the exact existing rule arrays; intended release-specific selector and changed policy identity are documented for adoption. Default-deny/injector/snapshot exceptions remain explicit.
-- OpenBao metrics: #65/#66 leave metrics inactive and introduce no token resources. Infra #71 adds the complete native ServiceMonitor and dedicated metrics-only port 9101, with API metrics disabled and NetworkPolicy/Ambient identity enforcement. No intermediate token deployment or provider metrics grants are needed. Legacy retirement is conditional on verified existing objects; see the [policy-first cutover](openbao-metrics-rollout.md).
-- Shared charts adopted: openbao-oidc (Radar/ABS/Longhorn), postgres-consumer (Radar/Grafana), workload-network (Radar; existing ABS native network interface retained), service-route (OpenBao/Longhorn proxy).
+- OpenBao metrics are excluded from this adoption batch. No telemetry activation, ServiceMonitor, metrics identity or VSO token delivery is introduced by #65. The complete metrics-only listener and enforcement are owned by follow-up Infra PR #71; no intermediate token design needs deployment.
+- Shared charts adopted: openbao-oidc (Radar/ABS/Longhorn), postgres-consumer (Radar/Grafana), network-policies (Radar; existing ABS native network interface retained), service-route (OpenBao/Longhorn proxy).
 - Private configuration remains Live. No upstream chart versions, workload replicas, admin groups, storage data, or credential identities are changed.
 
 The stage descriptions below record the implementation plan and its gates; this current-status section supersedes earlier pending decisions. Runtime scrape success, login renewal/max-TTL recovery, namespace field ownership and resource-owner handoffs are not proven by offline tests. Publishing draft branches does not authorize merge, sync, prune or deployment.
@@ -297,7 +297,7 @@ Do not set every available `networkPolicy.enabled` or monitor flag to true in on
 
 Approved after reviewing the selector distinction: the native policy is now enabled with exact previous ingress/egress arrays. It adds `app.kubernetes.io/instance: openbao` to the old name-only selector; tests prove declared server pods carry both labels. This is equivalence for the intended workload, not a claim that selector populations are identical.
 
-The policy identity changes from `allow-openbao-raft-and-clients` to `openbao`. The old live policy will remain under prune=false and requires a separately approved retirement after target-pod/connectivity verification. Keeping it indefinitely would retain its broader target selection. Namespace-wide default deny, injector/snapshot policies, API access and Ambient/HBONE allowances remain unchanged. Native default rule lists were not adopted.
+The policy identity changes from `allow-openbao-raft-and-clients` to `openbao`. The old live policy will remain under prune=false and requires a separately approved retirement after target-pod/connectivity verification. Keeping it indefinitely would retain its broader target selection. Namespace-wide default deny and Ambient/HBONE allowances remain unchanged. The subsequent [API ownership candidate](api-network-ownership.md) removes only the native server's broad TCP 6443 rule, moves injector API tuples to Live, and preserves snapshot HTTPS as a separate broad Live exception. These additive allowances are not R2-only enforcement. Native default rule lists were not adopted.
 
 ### 5.2 Monitoring configuration targets
 

@@ -58,30 +58,20 @@ spec:
     name: {{ $p.secretName | quote }}
     transformation:
       excludeRaw: true
+      transformationRefs:
+        - name: required-openbao-value
+          namespace: vault-secrets-operator
       templates:
 {{- if eq $p.credentialFormat "dsn" }}
         dsn:
           text: |-
             {{`{{- $username := get .Secrets "username" -}}`}}
             {{`{{- $password := get .Secrets "password" -}}`}}
-            {{`{{- if or (empty $username) (empty $password) -}}`}}
-            {{`{{- fail "missing required OpenBao database username or password" -}}`}}
-            {{`{{- end -}}`}}
-            postgresql://{{`{{ $username | urlquery }}`}}:{{`{{ $password | urlquery }}`}}@{{ $p.host }}:{{ $p.port }}/{{ $p.databaseName }}?sslmode={{ $p.sslMode }}
+            postgresql://{{`{{ template "requiredValue" (dict "key" "username" "value" (and $username ($username | urlquery))) }}`}}:{{`{{ template "requiredValue" (dict "key" "password" "value" (and $password ($password | urlquery))) }}`}}@{{ $p.host }}:{{ $p.port }}/{{ $p.databaseName }}?sslmode={{ $p.sslMode }}
 {{- else }}
         username:
-          text: |-
-            {{`{{- $value := get .Secrets "username" -}}`}}
-            {{`{{- if empty $value -}}`}}
-            {{`{{- fail "missing required OpenBao key: username" -}}`}}
-            {{`{{- end -}}`}}
-            {{`{{- $value -}}`}}
+          text: '{{`{{ template "requiredValue" (dict "key" "username" "value" (get .Secrets "username")) }}`}}'
         password:
-          text: |-
-            {{`{{- $value := get .Secrets "password" -}}`}}
-            {{`{{- if empty $value -}}`}}
-            {{`{{- fail "missing required OpenBao key: password" -}}`}}
-            {{`{{- end -}}`}}
-            {{`{{- $value -}}`}}
+          text: '{{`{{ template "requiredValue" (dict "key" "password" "value" (get .Secrets "password")) }}`}}'
 {{- end }}
 {{- end }}
