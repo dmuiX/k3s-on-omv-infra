@@ -139,6 +139,8 @@ spec:
               targetPort: metrics
               protocol: TCP
             # Deployment-specific API destinations are supplied by Live.
+          # Replace server pods sequentially when the chart image or config changes.
+          updateStrategyType: RollingUpdate
           podManagementPolicy: Parallel
           statefulSet:
             securityContext:
@@ -154,14 +156,6 @@ spec:
               # charts/service-route below preserves this route with explicit defaults;
               # restore native routing once upstream supports these fields.
               enabled: false
-              apiVersion: gateway.networking.k8s.io/v1
-              activeService: true
-              parentRefs:
-              - group: gateway.networking.k8s.io
-                kind: Gateway
-                name: istio-gateway
-                namespace: istio-gateway
-                sectionName: https
           standalone:
             enabled: false
           ha:

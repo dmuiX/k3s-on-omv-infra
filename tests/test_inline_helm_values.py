@@ -14,6 +14,15 @@ APPS = INFRA.parent / 'k3s-on-omv-apps'
 
 
 class InlineHelmValuesTest(unittest.TestCase):
+    def test_openbao_automatically_rolls_server_updates(self):
+        app = yaml.safe_load((INFRA / '04-openbao/app.yml').read_text())
+        source, = [s for s in app['spec']['sources'] if s.get('chart') == 'openbao']
+        server = source['helm']['valuesObject']['server']
+        self.assertEqual(server['updateStrategyType'], 'RollingUpdate')
+        self.assertEqual(server['ha']['replicas'], 3)
+        self.assertEqual(server['ha']['disruptionBudget'], {
+            'enabled': True, 'maxUnavailable': 1})
+
     def test_chart_overrides_live_in_the_application(self):
         count = 0
         for repository in (INFRA,):

@@ -1,3 +1,11 @@
+# Keep these policies as standalone resources: OpenBao chart 0.30.6 has no
+# suitable native values for namespace-wide default deny, the required injector
+# rules, or our custom snapshot workload's egress. server.networkPolicy only
+# covers server pods; the upstream injector policy is OpenShift-specific.
+# extraObjects would merely embed these same manifests in values, not replace
+# them with native chart configuration. Retain these controls until upstream
+# supports equivalent rules and workload selectors; recheck before migrating.
+# The server NetworkPolicy and PDB are already configured natively in app.yml.
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
