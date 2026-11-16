@@ -20,7 +20,7 @@ Resources in namespace `longhorn`:
 2. ConfigMap `longhorn-encrypted-discard`, holding the reviewed Python program.
 3. DaemonSet `longhorn-encrypted-discard`, one process per eligible Linux node, tolerating the storage Pi's existing taint.
 4. NetworkPolicy `longhorn-encrypted-discard`, denying pod ingress and egress.
-5. RecurringJob `encrypted-volume-trim`, task `filesystem-trim`, daily `0 3 * * *` in the controller's configured timezone, concurrency 1, group `default`.
+5. RecurringJob `encrypted-volume-trim`, task `filesystem-trim`, daily `35 18 * * *` in the controller's configured timezone, concurrency 1, group `default`. This cluster currently schedules in `Europe/Berlin` (18:35 local, 17:35 UTC in winter). The trim container itself uses UTC, but its timezone does not schedule the Job. Longhorn does not set an explicit CronJob `timeZone`; recheck the controller timezone after moving/rebuilding the control plane.
 
 All inspected existing volumes have `recurring-job-group.longhorn.io/default=enabled`; new default-group volumes inherit the job. A volume deliberately excluded from that group is not silently relabeled. No setting enabling recurring-job attachment of detached volumes is changed. No snapshot is deleted by this manifest, and `removeSnapshotsDuringFilesystemTrim` remains unchanged: snapshots can still legitimately retain old blocks. Cleanup of previously retained snapshots is a separate approval, not a side effect of the new global discard policy.
 

@@ -373,6 +373,7 @@ class DiscardTests(unittest.TestCase):
     ) -> None:
         job = next(x for x in self.documents if x["kind"] == "RecurringJob")
         self.assertEqual(job["spec"]["task"], "filesystem-trim")
+        self.assertEqual(job["spec"]["cron"], "35 18 * * *")
         self.assertEqual(job["spec"]["groups"], ["default"])
         self.assertEqual(job["spec"]["concurrency"], 1)
         self.assertNotIn("Setting", [x["kind"] for x in self.documents])
