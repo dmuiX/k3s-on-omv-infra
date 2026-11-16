@@ -36,7 +36,7 @@ These are addressed implementation findings, not claims that the host mutation p
 - A pre-operation identity check and local flock reduce accidental overlap. They are not an atomic lock shared with CSI; no protection against an already malicious host-root administrator is claimed. cryptsetup errors or a changed/missing device fail readiness and retry.
 - The process does not format devices, delete snapshots, reset WAL, change image/StorageClass/PVC configuration, or deliberately change host-system disks. Discard can nevertheless make already-free block history unrecoverable and reveal allocation patterns; that is the requested policy effect.
 
-## Executed evidence
+## Initial executed evidence (first PR head `4e2856b`)
 
 - TDD baseline: all 13 initial feature tests failed before the resource existed; subsequent implementation/resource-boundary findings gained focused tests. Final focused suite: **30 passed**.
 - Runtime source coverage: **98% statement coverage (128 statements, 3 uncovered)**. The coverage harness maps the test imports to the same stable extraction of the checksum-verified ConfigMap source; host operations remain simulated. This is not kernel/CSI integration coverage.
@@ -54,3 +54,22 @@ These are addressed implementation findings, not claims that the host mutation p
 No real mutating stage test was run because the user requested a PR rather than immediate activation. No key was mounted into the test container. A new synthetic CSI/iSCSI cluster, architecture-specific mutating test, complete Bootstrap/Ansible run, general backup/restore test or adversarial host-root test was not performed. Existing full-suite failures remain deployment-review items. Removing the workload does not reset persistent flags, and Git revert alone does not delete live resources because this Application has prune disabled.
 
 Code-reviewer, differential-review and Python-pro checks were applied to the changed scope. SQL performance/index analysis is not applicable: this feature contains no database mutation or SQL implementation. Remaining release gates above prevent a `NO_FINDINGS` or unconditional release-clearance claim.
+
+## Follow-up: second-review P2 process containment (16 November 2026)
+
+The [second PR review](https://github.com/dmuiX/k3s-on-omv-infra/pull/79#pullrequestreview-5922030394) reproduced a P2: `subprocess.run` timed out its direct `flock` child but left the descendant running and holding its lock. This follow-up changes only command lifecycle handling, regression tests, source checksum and documentation; no additional Kubernetes resources, StorageClasses, permissions or deployment steps are added.
+
+The host wrapper now starts each operation in its own session/group, checks timeout or SIGTERM/SIGINT cancellation every 250ms, then sends SIGTERM and bounded SIGKILL to that owned group before reaping. It does not poll/reap the leader before both signals, preventing PID/PGID reuse; an already-reaped leader is not signalled. Signal/reap failure stops the helper rather than allowing an unsafe retry. Cancellation handlers also cover one-off/audit entrypoints. The direct child, streams and key-file descriptor are cleaned up on the failure path.
+
+`tests/test_longhorn_discard_processes.py` tests the actual ConfigMap code with real flock/child processes and a temporary exec-through nsenter shim. The identical timeout regression fails against old head `4e2856b` (surviving descendant) and passes against this fix. It checks no delayed action, released flock, completed descendant and an unrelated process left running. Another test sends real SIGTERM through the actual main entrypoint; the synthetic descendant ignores SIGTERM to exercise SIGKILL escalation. Additional fault tests cover unconfirmed cleanup, signal errors and an already-reaped leader. A subreaper fixture reaps synthetic descendants even when the baseline test intentionally fails.
+
+The five lifecycle tests also pass inside the exact pinned image as the unprivileged checkout owner, with all capabilities dropped, no network, no host PID namespace, no key/device mount, read-only root and a small executable temporary filesystem for the synthetic shim. The disposable test container is removed afterward. This is real process/entrypoint evidence, **not** a real encrypted-volume/CSI activation test.
+
+| Repeat review | Result / boundary |
+|---|---|
+| Code-reviewer | Timeout/stop paths and process ownership rechecked; the reproduced P2 is addressed by the real-process regression. |
+| Differential-review | Fix delta reviewed against `4e2856b`; group signalling is restricted to the newly created, unreaped operation leader. No host-wide group signal, new key exposure, RBAC or storage-policy change. |
+| Python-pro | **35 focused tests pass; 96% runtime statement coverage (171 statements, 6 uncovered); mypy strict, black and ruff pass** on the runtime extraction and both test files. |
+| Kubernetes-specialist | All five manifests pass fresh server dry-run; source checksum updated. Command deadline + 1s TERM grace + 5s reap budget fit within the unchanged 150s pod termination grace. Expected privileged-storage PodSecurity warnings remain; rollout and real TRIM are still untested. |
+
+The full Python suite now runs **145 tests with the same 18 failures, 4 errors and 11 skips** as the pre-feature baseline; Ruby runs **33 tests, 1857 assertions, 3 failures and 5 errors**, again the same named baseline failures/errors. The full platform suite is not green. No independent/background reviewer was started. Reviews and tests do not close the real-key, mapping persistence, physical reclamation or unchanged-host-state gates above. **Keep the PR draft; no merge or live rollout has been performed.**

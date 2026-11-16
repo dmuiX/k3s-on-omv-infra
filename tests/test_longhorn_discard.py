@@ -6,10 +6,10 @@ import importlib.util
 import io
 import json
 from pathlib import Path
-import subprocess
+import signal
 import tempfile
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import yaml
 
@@ -33,6 +33,8 @@ class DiscardTests(unittest.TestCase):
         self.policy = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(self.policy)
         self.policy.STOP.clear()
+        for sig in (signal.SIGTERM, signal.SIGINT):
+            self.addCleanup(signal.signal, sig, signal.getsignal(sig))
         self.calls: list[tuple[tuple[str, ...], bool]] = []
         self.active = False
         self.persistent = False
@@ -193,8 +195,9 @@ class DiscardTests(unittest.TestCase):
         self.assertFalse(any(key for _, key in self.calls))
 
     def test_host_wrapper_never_logs_failed_process_output(self) -> None:
-        result = subprocess.CompletedProcess([], 5, b"SENSITIVE", b"SENSITIVE")
-        with patch.object(self.policy.subprocess, "run", return_value=result):
+        process = Mock(returncode=5, stdout=None, stderr=None)
+        process.communicate.return_value = (b"SENSITIVE", b"SENSITIVE")
+        with patch.object(self.policy.subprocess, "Popen", return_value=process):
             with self.assertRaises(self.policy.Failure) as error:
                 self.policy.host("/usr/bin/ls", "/dev/longhorn")
         self.assertNotIn("SENSITIVE", str(error.exception))
@@ -246,27 +249,29 @@ class DiscardTests(unittest.TestCase):
                 self.assertEqual(self.policy.main(), 1)
         self.assertFalse(any(key for _, key in self.calls))
 
-    def test_host_timeout_and_missing_result_are_sanitized(self) -> None:
+    def test_host_spawn_error_and_missing_result_are_sanitized(self) -> None:
         with patch.object(
             self.policy.subprocess,
-            "run",
-            side_effect=subprocess.TimeoutExpired("SENSITIVE", 120),
+            "Popen",
+            side_effect=OSError("SENSITIVE"),
         ):
             with self.assertRaises(self.policy.Failure) as error:
                 self.policy.host("/usr/bin/ls")
         self.assertNotIn("SENSITIVE", str(error.exception))
         with self.assertRaises(self.policy.Failure):
             self.policy.required(None)
-        result = subprocess.CompletedProcess([], 1, b"SENSITIVE", b"SENSITIVE")
-        with patch.object(self.policy.subprocess, "run", return_value=result):
+        process = Mock(returncode=1, stdout=None, stderr=None)
+        process.communicate.return_value = (b"SENSITIVE", b"SENSITIVE")
+        with patch.object(self.policy.subprocess, "Popen", return_value=process):
             self.assertIsNone(self.policy.host("/usr/bin/test", missing_ok=True))
 
     def test_key_is_passed_by_file_descriptor_not_in_argv(self) -> None:
         key = Path(self.temporary.name) / "synthetic-key"
         key.write_bytes(b"SYNTHETIC_TEST_ONLY")
-        result = subprocess.CompletedProcess([], 0, b"", b"")
+        process = Mock(returncode=0, stdout=None, stderr=None)
+        process.communicate.return_value = (b"", b"")
         with patch.object(self.policy, "KEY", key), patch.object(
-            self.policy.subprocess, "run", return_value=result
+            self.policy.subprocess, "Popen", return_value=process
         ) as run:
             self.policy.host(
                 "/usr/sbin/cryptsetup", "--key-file=-", "refresh", VOLUME, key=True
@@ -276,6 +281,7 @@ class DiscardTests(unittest.TestCase):
         self.assertNotIn(str(key), repr(args))
         self.assertIn("--mount", args[0])
         self.assertIn("--ipc", args[0])
+        self.assertTrue(kwargs["start_new_session"])
         self.assertTrue(kwargs["stdin"].closed)
 
     def test_once_mode_runs_real_reconcile_and_audit_cannot_refresh(self) -> None:

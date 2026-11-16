@@ -16,11 +16,13 @@ data:
 
     import argparse
     import json
+    import os
     from pathlib import Path
     import re
     import signal
     import subprocess
     import threading
+    import time
 
     KEY = Path("/key/key")
     NSENTER = "/usr/bin/nsenter"
@@ -29,33 +31,80 @@ data:
     # Bound cryptsetup within the pod's 2GiB limit and preserve host headroom.
     MAX_KDF_KIB = 1536 * 1024
     HOST_HEADROOM_KIB = 256 * 1024
+    COMMAND_TIMEOUT = 120.0
+    TERM_GRACE = 1.0
+    REAP_TIMEOUT = 5.0
 
 
     class Failure(Exception):
         """A safe diagnostic that never includes subprocess output or key data."""
 
 
+    def terminate_operation(process: subprocess.Popen[bytes]) -> None:
+        """Stop the private operation group before reaping its leader."""
+        # Do not poll/wait before both signals: retaining the leader prevents
+        # reuse of its PID/PGID while descendants may still own the flock.
+        if process.returncode is not None:
+            raise SystemExit("Host process ownership lost; stopping helper")
+        for sig in (signal.SIGTERM, signal.SIGKILL):
+            try:
+                os.killpg(process.pid, sig)
+            except ProcessLookupError:
+                pass
+            except OSError:
+                raise SystemExit("Host process cleanup failed; stopping helper") from None
+            if sig == signal.SIGTERM:
+                time.sleep(TERM_GRACE)
+        try:
+            process.communicate(timeout=REAP_TIMEOUT)
+        except (OSError, subprocess.TimeoutExpired):
+            # Never continue with another device if the operation is not terminal.
+            raise SystemExit("Host process cleanup failed; stopping helper") from None
+
+
     def host(*args: str, key: bool = False, missing_ok: bool = False) -> str | None:
         """Execute a fixed host utility; feed authentication through stdin only."""
+        if STOP.is_set():
+            raise Failure("Host operation cancelled")
         command = [NSENTER, "--target=1", "--mount", "--ipc", "--root", "--wd", "--", *args]
         try:
             with KEY.open("rb") if key else open("/dev/null", "rb") as source:
-                result = subprocess.run(
+                process = subprocess.Popen(
                     command,
                     stdin=source,
                     stdout=subprocess.PIPE,
                     stderr=subprocess.PIPE,
                     env={"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LC_ALL": "C"},
-                    timeout=120,
-                    check=False,
+                    start_new_session=True,
                 )
-        except (OSError, subprocess.TimeoutExpired):
-            raise Failure("Host operation unavailable or timed out") from None
-        if result.returncode:
-            if missing_ok and result.returncode == 1:
+                try:
+                    deadline = time.monotonic() + COMMAND_TIMEOUT
+                    while True:
+                        if STOP.is_set():
+                            raise Failure("Host operation cancelled")
+                        remaining = deadline - time.monotonic()
+                        if remaining <= 0:
+                            raise Failure("Host operation timed out")
+                        try:
+                            output, _ = process.communicate(timeout=min(0.25, remaining))
+                            break
+                        except subprocess.TimeoutExpired:
+                            continue
+                except BaseException:
+                    terminate_operation(process)
+                    raise
+                finally:
+                    if process.stdout is not None:
+                        process.stdout.close()
+                    if process.stderr is not None:
+                        process.stderr.close()
+        except OSError:
+            raise Failure("Host operation unavailable") from None
+        if process.returncode:
+            if missing_ok and process.returncode == 1:
                 return None
             raise Failure("Host operation failed: " + Path(args[0]).name)
-        return result.stdout.decode("utf-8", errors="strict").strip()
+        return output.decode("utf-8", errors="strict").strip()
 
 
     def required(value: str | None) -> str:
@@ -224,14 +273,14 @@ data:
         parser.add_argument("--audit-only", action="store_true")
         parser.add_argument("--once", action="store_true")
         args = parser.parse_args()
+        signal.signal(signal.SIGTERM, lambda *_: STOP.set())
+        signal.signal(signal.SIGINT, lambda *_: STOP.set())
         if args.audit_only or args.once:
             try:
                 return 0 if reconcile(audit=args.audit_only) else 1
             except (Failure, ValueError, OSError):
                 print("Discard policy inventory failed", flush=True)
                 return 1
-        signal.signal(signal.SIGTERM, lambda *_: STOP.set())
-        signal.signal(signal.SIGINT, lambda *_: STOP.set())
         while not STOP.is_set():
             try:
                 reconcile()
@@ -261,7 +310,7 @@ spec:
   template:
     metadata:
       annotations:
-        checksum/discard-policy: 77299e97fc37d411f773a69a33270dc4a6ffd4f43d0de75a7526f000d17868c5
+        checksum/discard-policy: 28888cddd0503be71643e1944d441b59a65a2e2b457d351e2a2fe77e30e995a6
       labels:
         app.kubernetes.io/name: longhorn-encrypted-discard
     spec:
