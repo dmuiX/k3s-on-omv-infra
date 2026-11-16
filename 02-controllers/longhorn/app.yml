@@ -61,6 +61,7 @@ spec:
         preUpgradeChecker:
           jobEnabled: false
         csi:
+          podAntiAffinityPreset: hard
           attacherReplicaCount: 3
           provisionerReplicaCount: 3
           resizerReplicaCount: 3

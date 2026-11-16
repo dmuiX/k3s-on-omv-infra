@@ -1,0 +1,78 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: coredns
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: '-5'
+spec:
+  project: default
+  destination:
+    name: in-cluster
+    namespace: kube-system
+  sources:
+  - repoURL: https://coredns.github.io/helm
+    chart: coredns
+    targetRevision: 1.50.7
+    helm:
+      releaseName: coredns
+      valuesObject:
+        fullnameOverride: coredns
+        image:
+          repository: rancher/mirrored-coredns-coredns
+          tag: 1.14.7
+        replicaCount: 1
+        k8sAppLabelOverride: kube-dns
+        nodeSelector:
+          compute-class: standard
+        deployment:
+          # Adopt the existing immutable selector; keep the bootstrapped Corefile,
+          # custom imports and dynamic NodeHosts instead of publishing local DNS data.
+          selector:
+            matchLabels:
+              k8s-app: kube-dns
+          skipConfig: true
+        service:
+          name: kube-dns
+          selector:
+            k8s-app: kube-dns
+        zoneFiles:
+        - filename: NodeHosts
+          contents: ''
+        extraVolumes:
+        - name: custom-config-volume
+          configMap:
+            name: coredns-custom
+            optional: true
+        extraVolumeMounts:
+        - name: custom-config-volume
+          mountPath: /etc/coredns/custom
+          readOnly: true
+        rollingUpdate:
+          maxSurge: 1
+          maxUnavailable: 0
+        priorityClassName: system-cluster-critical
+        resources:
+          requests:
+            cpu: 100m
+            memory: 70Mi
+          limits:
+            cpu: '1'
+            memory: 170Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop: [ALL]
+            add: [NET_BIND_SERVICE]
+        podSecurityContext:
+          seccompProfile:
+            type: RuntimeDefault
+  syncPolicy:
+    automated:
+      enabled: true
+      prune: false
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+    - ServerSideApply=true

@@ -3,6 +3,8 @@ kind: Kustomization
 resources:
 - 00-letsencrypt-dns01-issuer/app.yml
 - 01-bootstrap/argocd-config/app.yml
+- 01-bootstrap/coredns/app.yml
+- 01-bootstrap/metrics-server/app.yml
 - 01-bootstrap/istio/app.yml
 - 01-bootstrap/istio-gateway/app.yml
 - 01-bootstrap/prometheus-operator-crds/app.yml

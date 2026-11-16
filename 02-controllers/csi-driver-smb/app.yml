@@ -20,6 +20,8 @@ spec:
       valuesObject:
         controller:
           replicas: 1
+          nodeSelector:
+            compute-class: standard
         linux:
           enabled: true
           kubelet: /var/lib/kubelet
