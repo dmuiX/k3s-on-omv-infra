@@ -4,7 +4,8 @@
 
 `.github/workflows/bootstrap-order.yml` runs **Repository workload contracts** on
 pull requests, main pushes and manual dispatch. It checks only this public repo;
-there is no private checkout, repository token input, kubeconfig or deployment.
+there is no private checkout, repository token input, production kubeconfig or deployment.
+A separate native-admission job uses only its owned network-isolated disposable API.
 
 ```sh
 python -m pip install -r tests/requirements-ci.txt
@@ -38,7 +39,8 @@ This is input isolation for reviewed tests, **not a sandbox for arbitrary code**
 New unclassified modules, overlapping/unknown selectors, empty suites and skipped
 mandatory public checks fail. Integration-only modules are not imported by the
 selector. Remaining methods in mixed modules are integration coverage, explicitly
-reported as **NOT RUN**. Full Python discovery is not the public CI entrypoint.
+reported as **NOT RUN by this runner**. Native timezone admission is covered by
+the separate job below, not by this repository-only entrypoint. Full Python discovery is not the public CI entrypoint.
 The CLI's own tests prove that an actual failing assertion exits nonzero and a
 mandatory skip cannot become green. Helper tests also reject corrupted downloads,
 unsafe redirects/archive paths, escaped source paths and broken monitor ports.
@@ -56,7 +58,11 @@ Application fails until its intended test scope is reviewed.
 
 ## Native timezone admission tests
 
-`test_timezone_defaults.py` has four offline guards and fourteen opt-in native API tests. These cover forced CronJob timezones (including actual Git-owned manifests), CREATE/UPDATE admission, literal/empty/valueFrom TZ replacement, envFrom overrides without source reads, unrelated env/reference preservation, init/native sidecars, Windows and new ephemeral containers, existing ephemeral immutability, idempotence and final rejection with mutation disabled. There are no per-application TZ exceptions. They never invoke the host's kubectl context. No test image is scheduled or executed by the agentless test API.
+The `timezone-admission` job executes all tests in `test_timezone_defaults.py`
+against an owned, network-isolated API with a digest-pinned K3s image, two CPUs,
+2 GiB RAM, readiness/terminal-state checks and exact-ID cleanup. It is independent
+of the repository job, so a workload-policy failure cannot hide native results.
+Locally, `test_timezone_defaults.py` has four offline guards and fourteen opt-in native API tests. These cover forced CronJob timezones (including actual Git-owned manifests), CREATE/UPDATE admission, literal/empty/valueFrom TZ replacement, envFrom overrides without source reads, unrelated env/reference preservation, init/native sidecars, Windows and new ephemeral containers, existing ephemeral immutability, idempotence and final rejection with mutation disabled. There are no per-application TZ exceptions. They never invoke the host's kubectl context. No test image is scheduled or executed by the agentless test API.
 
 For a disposable test API, use the same pinned K3s version as the platform. Docker owns the process/health state; the server has a 900-second lifetime, no network access, no host mounts and no privileges. Its automatically created anonymous data volumes belong only to this test. Run from the Infra checkout in a dedicated shell:
 
@@ -84,6 +90,7 @@ TIMEZONE_TEST_CONTAINER="$test_id" PYTHONDONTWRITEBYTECODE=1 \
 | Infra child | Public contract / actual interface | Separate acceptance not proved here |
 |---|---|---|
 | `argocd-config` | Real chart, TLS mode, five monitor/service named-port targets; actual Argo CLI evaluates parent Application Lua health | Private routes, identity provider and real source reconciliation |
+| `timezone-defaults` | Four offline contracts plus fourteen actual CREATE/UPDATE/deny admission tests in the isolated API job, including Git-owned CronJobs | Existing production Pods and host/OS timezone behavior |
 | `istio-core` | All official component charts, native CNI/ztunnel DaemonSets, readiness, non-privileged CNI and consumed ztunnel resources | Node injection/traffic and actual ambient connectivity |
 | `istio-ambient` | Public Gateway deployment/PDB overlays: three replicas, bounded rolling update, restricted seccomp | Private Gateway/Certificate binding and istiod-generated Deployment |
 | `prometheus-operator-crds` | Exact chart renders and safely parses the complete public CRD documents | Complete API-server/CRD schema validation |
@@ -146,6 +153,8 @@ a release blocker in that validation lane.
 - No complete kubeconform/API-server schema pass is claimed. Helm values-schema
   validation where provided, safe YAML parsing and semantic contracts are not a
   substitute for all Kubernetes/custom-resource schemas.
+- Isolated native timezone admission is exercised; this does not prove production
+  admission or policy activation. No production policy is installed by CI.
 - No runtime rollout, reachability, failover, storage, backup/restore, credential
   rotation or recovery acceptance occurs here. Ansible lint/private entrypoint
   validation belongs to Bootstrap/private integration, not this public workflow.

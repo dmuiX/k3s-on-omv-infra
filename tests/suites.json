@@ -76,6 +76,12 @@
       "ServiceRoute.test_optional_typed_fields_preserved",
       "ServiceRoute.test_invalid_fields_rejected"
     ],
+    "test_timezone_defaults": [
+      "TimezoneContractTest.test_native_mutation_and_deny_bindings_fail_closed",
+      "TimezoneContractTest.test_namespace_global_admission_scope",
+      "TimezoneContractTest.test_application_is_canonical_and_before_platform_controllers",
+      "TimezoneContractTest.test_berlin_trim_wall_time_in_winter_and_summer"
+    ],
     "test_vso_connection": [
       "SharedConnectionTests.test_infra_consumers_keep_isolated_identities",
       "SharedConnectionTests.test_pinned_chart_renders_single_connection_and_no_default_auth"

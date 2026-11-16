@@ -96,7 +96,7 @@ class DependencyIntegrity(unittest.TestCase):
                 member.size = 1
                 output.addfile(member, io.BytesIO(b"x"))
             with self.assertRaises((ValueError, tarfile.FilterError)):
-                extract_chart(archive, root / "charts")
+                extract_chart(archive, root / "nested/charts")
             self.assertFalse((root / "escaped").exists())
 
 
