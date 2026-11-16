@@ -147,6 +147,7 @@ metadata:
 spec:
   suspend: false
   schedule: '0 4 * * *'
+  timeZone: Europe/Berlin
   concurrencyPolicy: Forbid
   jobTemplate:
     spec:

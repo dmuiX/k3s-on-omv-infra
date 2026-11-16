@@ -1,0 +1,92 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingAdmissionPolicy
+metadata:
+  name: default-cronjob-timezone
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  # These are convenience defaults, not a security boundary. Never block work
+  # because timezone defaulting failed.
+  failurePolicy: Ignore
+  reinvocationPolicy: IfNeeded
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [batch]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [cronjobs]
+  matchConditions:
+    - name: timezone-missing
+      expression: "!has(object.spec.timeZone) || object.spec.timeZone == ''"
+  mutations:
+    - patchType: ApplyConfiguration
+      applyConfiguration:
+        expression: >-
+          Object{spec: Object.spec{timeZone: 'Europe/Berlin'}}
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingAdmissionPolicyBinding
+metadata:
+  name: default-cronjob-timezone
+spec:
+  policyName: default-cronjob-timezone
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingAdmissionPolicy
+metadata:
+  name: default-container-timezone
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  failurePolicy: Ignore
+  reinvocationPolicy: IfNeeded
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE]
+        resources: [pods]
+  matchConditions:
+    # Mirror Pods describe static workloads; admission cannot change the
+    # containers actually started from the node's static manifest.
+    - name: not-a-node-mirror-request
+      expression: "!request.userInfo.username.startsWith('system:node:')"
+    - name: linux-or-unspecified
+      expression: "!has(object.spec.os) || object.spec.os.name == 'linux'"
+  variables:
+    # envFrom may already provide TZ. Do not read credential objects or override
+    # values inherited from ConfigMaps/Secrets. Explicit env TZ always wins.
+    - name: containers
+      expression: >-
+        object.spec.containers.filter(c,
+          (!has(c.envFrom) || size(c.envFrom) == 0) &&
+          (!has(c.env) || c.env.all(e, e.name != 'TZ'))
+        ).map(c, c.name)
+    - name: initContainers
+      expression: >-
+        has(object.spec.initContainers) ?
+        object.spec.initContainers.filter(c,
+          (!has(c.envFrom) || size(c.envFrom) == 0) &&
+          (!has(c.env) || c.env.all(e, e.name != 'TZ'))
+        ).map(c, c.name) : []
+  mutations:
+    - patchType: ApplyConfiguration
+      applyConfiguration:
+        expression: >-
+          Object{spec: Object.spec{
+            containers: variables.containers.map(name, Object.spec.containers{
+              name: name,
+              env: [Object.spec.containers.env{name: 'TZ', value: 'Europe/Berlin'}]
+            }),
+            initContainers: variables.initContainers.map(name, Object.spec.initContainers{
+              name: name,
+              env: [Object.spec.initContainers.env{name: 'TZ', value: 'Europe/Berlin'}]
+            })
+          }}
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingAdmissionPolicyBinding
+metadata:
+  name: default-container-timezone
+spec:
+  policyName: default-container-timezone

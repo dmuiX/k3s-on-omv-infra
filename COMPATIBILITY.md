@@ -4,6 +4,7 @@ Pinned in the reviewed manifests: cert-manager `v1.21.2`, K8up `4.10.0`, csi-dri
 
 Runtime evidence collected automatically during and after deployment:
 
+- Kubernetes timezone defaults require `admissionregistration.k8s.io/v1` MutatingAdmissionPolicy and binding APIs. Schema/CEL compilation passed against the current production API using dry-run only; 15 focused checks (5 offline, 10 native admission) passed against an isolated agentless K3s `v1.37.1+k3s1` API. Production activation, existing generated-CronJob backfill and Longhorn reconciliation remain separate post-merge gates; see `docs/timezone-defaults.md`.
 - Istio is pinned to the official `base`, `istiod`, `cni`, and `ztunnel` charts `1.31.2`; Gateway API uses istiod's native automated deployment and `infrastructure.parametersRef` overlays (no separate gateway chart). Local renders and Linux amd64/arm64 image-manifest inspection are static evidence only. The K3s `v1.37.1+k3s1` support-matrix gap is the explicit Homelab exception recorded by the architecture contract; runtime validation remains mandatory. Verify actual K3s/Flannel CNI paths, kernel/netfilter, ambient traffic, DNS, NetworkPolicy, gateway admission/readiness, three-node scheduling, and Argo child-Application health sequencing. See `docs/mesh-chart-evidence.md`.
 - provider-vault `4.0.5` package digest, exact 16-type v2 activation-policy APIs, OpenBao behavior, and drift reconciliation.
 - OpenBao snapshot and PostgreSQL retention adapter multi-arch image digests.

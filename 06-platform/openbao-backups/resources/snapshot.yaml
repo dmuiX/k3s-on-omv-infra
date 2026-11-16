@@ -11,6 +11,7 @@ metadata:
   namespace: openbao
 spec:
   schedule: "17 2 * * *"
+  timeZone: Europe/Berlin
   concurrencyPolicy: Forbid
   jobTemplate:
     spec:
