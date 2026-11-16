@@ -16,9 +16,11 @@ no new system Application, APIService, skip marker or add-on handover is include
   setting and preserve existing unbounded burst limits, rather than inventing a
   V1 instance-manager override. These targets come from measured consumption.
 - Reduce ztunnel memory request 512Mi -> 128Mi; keep CPU request and limits.
+- GitOps owns Barman ObjectStore sidecar requests 250m/192Mi and unchanged
+  250m/256Mi limits through a resource-only SSA manifest in the existing postgres
+  Application. Endpoint and credential custody remain Bootstrap/OpenBao-owned.
 - Paired Bootstrap: candidate Pi kubeReserved 1536Mi -> 1024Mi, unchanged system
-  and eviction reserves, and ObjectStore Barman sidecar 250m/192Mi requests with
-  unchanged 250m/256Mi limits. No SQL, credentials or primary role is changed.
+  and eviction reserves. No SQL, credentials or primary role is changed.
 
 ## Budget and remaining gaps
 
@@ -50,11 +52,13 @@ the new Pi budget by about 338Mi. No data-HA reduction is hidden in this change.
    changes. ztunnel must converge before resource headroom is consumed. Verify SMB
    placement, CSI requests and distribution, healthy local plugins and unchanged
    data-replica counts. Do not directly patch operator-owned CSI Deployments.
-4. Run only bounded `configure-barman-resources` maintenance from the paired
-   Bootstrap revision. Its fresh effective-request check requires at least 128Mi
-   remaining after the sidecar increase. An atomic UID/resourceVersion/resource
-   test replaces only the requests map, preserving the exact rest of the ObjectStore
-   spec. No credential ceremony, forced Pod restart or switchover is run.
+4. Reconcile the resource-only ObjectStore manifest through the existing
+   `k3s-postgres` Application, not a Barman maintenance playbook. Before activation,
+   check projected CPU/RAM on **every** affected host, retaining at least 128Mi RAM
+   and 100m CPU request headroom. Argo's client-side apply migration is disabled;
+   SSA owns only sidecar resources, not endpoint/credential configuration. The
+   object is protected against prune/delete. Do not replace or client-side-apply
+   the partial manifest. No credential ceremony or forced switchover is run.
 5. Inspect actual database sidecars: an updated ObjectStore is desired state, not
    proof that existing Pods use new requests. If CNPG requires rolling Pods or a
    supervised primary operation, obtain separate approval and use its supported

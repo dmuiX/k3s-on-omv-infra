@@ -727,7 +727,12 @@ class PlatformContractTest < Minitest::Test
     git_owned_object_stores = YAML_REPOSITORIES.flat_map { |repository| yaml_files(repository) }
       .flat_map { |path| yaml_documents(path) }
       .select { |document| document["kind"] == "ObjectStore" }
-    assert_empty git_owned_object_stores
+    assert_equal 1, git_owned_object_stores.length
+    resource_profile = git_owned_object_stores.first
+    assert_equal "k3s-postgres-backups", resource_profile.dig("metadata", "name")
+    assert_equal ["instanceSidecarConfiguration"], resource_profile.fetch("spec").keys
+    assert_equal ["resources"], resource_profile.dig("spec", "instanceSidecarConfiguration").keys
+    assert_equal %w[limits requests], resource_profile.dig("spec", "instanceSidecarConfiguration", "resources").keys.sort
     bootstrap_ceremony = (BOOTSTRAP / "ansible/roles/openbao_setup/tasks/platform-backups.yml").read
     assert_includes bootstrap_ceremony, "kind: ObjectStore"
     assert_includes bootstrap_ceremony, 'endpointURL: {{ platform_r2_endpoint.user_input | to_json }}'

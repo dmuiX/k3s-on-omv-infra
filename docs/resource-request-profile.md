@@ -63,9 +63,13 @@ Native ownership/configuration paths:
   a native `resources` override; their targets are listed separately below.
 - Barman instance sidecar resources come from the ObjectStore's
   `instanceSidecarConfiguration.resources`, **not** the plugin controller chart's
-  `resources`. The existing ObjectStore is created/verified by Bootstrap. A future
-  activation must update that authoritative contract and the retained object in a
-  bounded operation; rerunning unrelated credential ceremonies is not an answer.
+  `resources`. The existing postgres Application now reconciles a resource-only
+  `ObjectStore` SSA manifest. Bootstrap continues first creation and verifies only
+  protected configuration; it seeds initial resources from that same public GitOps
+  profile, never hardcodes or reapplies them on resume. Client-side apply migration
+  is disabled at the Application level, server-side diff preserves omitted fields,
+  and prune/delete protection retains the shared object. Endpoint/credential custody
+  is unchanged; no extra maintenance playbook or credential ceremony is required.
 
 ## Measured targets without a native override in this version
 
