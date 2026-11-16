@@ -1,0 +1,359 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: longhorn-encrypted-discard
+  namespace: longhorn
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: longhorn-encrypted-discard
+  namespace: longhorn
+data:
+  discard.py: |
+    """Enable persistent discard only on verified Longhorn v1 LUKS mappings."""
+
+    import argparse
+    import json
+    from pathlib import Path
+    import re
+    import signal
+    import subprocess
+    import threading
+
+    KEY = Path("/key/key")
+    NSENTER = "/usr/bin/nsenter"
+    STOP = threading.Event()
+    NAME = re.compile(r"[a-z0-9][a-z0-9-]{0,62}\Z")
+    # Bound cryptsetup within the pod's 2GiB limit and preserve host headroom.
+    MAX_KDF_KIB = 1536 * 1024
+    HOST_HEADROOM_KIB = 256 * 1024
+
+
+    class Failure(Exception):
+        """A safe diagnostic that never includes subprocess output or key data."""
+
+
+    def host(*args: str, key: bool = False, missing_ok: bool = False) -> str | None:
+        """Execute a fixed host utility; feed authentication through stdin only."""
+        command = [NSENTER, "--target=1", "--mount", "--ipc", "--root", "--wd", "--", *args]
+        try:
+            with KEY.open("rb") if key else open("/dev/null", "rb") as source:
+                result = subprocess.run(
+                    command,
+                    stdin=source,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    env={"PATH": "/usr/sbin:/usr/bin:/sbin:/bin", "LC_ALL": "C"},
+                    timeout=120,
+                    check=False,
+                )
+        except (OSError, subprocess.TimeoutExpired):
+            raise Failure("Host operation unavailable or timed out") from None
+        if result.returncode:
+            if missing_ok and result.returncode == 1:
+                return None
+            raise Failure("Host operation failed: " + Path(args[0]).name)
+        return result.stdout.decode("utf-8", errors="strict").strip()
+
+
+    def required(value: str | None) -> str:
+        """Reject absent output at a boundary that requires a value."""
+        if value is None:
+            raise Failure("Required host result is missing")
+        return value
+
+
+    def block_id(path: str) -> tuple[int, int]:
+        """Compare device numbers, not path strings or mutable sdX names."""
+        output = required(host("/usr/bin/stat", "-Lc", "%F|%t:%T", path))
+        kind, device = output.split("|", 1)
+        if kind != "block special file":
+            raise Failure("Expected a block device")
+        major, minor = device.split(":", 1)
+        return int(major, 16), int(minor, 16)
+
+
+    def status(name: str) -> dict[str, str]:
+        """Read non-secret mapping status without ever dumping a dm table."""
+        output = required(host("/usr/sbin/cryptsetup", "status", name))
+        return {
+            k.strip(): v.strip()
+            for line in output.splitlines()
+            if ":" in line
+            for k, v in [line.split(":", 1)]
+        }
+
+
+    def identity(name: str) -> dict[str, str]:
+        """Bind the named mapping to its Longhorn block node and iSCSI target."""
+        raw_id = block_id("/dev/longhorn/" + name)
+        current = status(name)
+        if current.get("type") != "LUKS2" or current.get("mode") != "read/write":
+            raise Failure("Expected a writable LUKS2 mapping")
+        backing = current.get("device", "")
+        if not backing.startswith("/dev/") or block_id(backing) != raw_id:
+            raise Failure("Mapping backing device does not match Longhorn")
+        syspath = required(
+            host("/usr/bin/readlink", "-f", "/sys/dev/block/%d:%d/device" % raw_id)
+        )
+        session = re.search(r"/session([0-9]+)/", syspath)
+        if session is None:
+            raise Failure("Not a supported Longhorn v1 iSCSI device")
+        target = required(
+            host(
+                "/usr/bin/cat",
+                "/sys/class/iscsi_session/session" + session[1] + "/targetname",
+            )
+        )
+        if target != "iqn.2019-10.io.longhorn:" + name:
+            raise Failure("Longhorn iSCSI target identity mismatch")
+        return current
+
+
+    def persistent(name: str, *, check_resources: bool = False) -> bool:
+        """Inspect only LUKS flags and KDF resource requirements; never log metadata."""
+        metadata = json.loads(
+            required(
+                host(
+                    "/usr/sbin/cryptsetup",
+                    "luksDump",
+                    "--dump-json-metadata",
+                    "/dev/longhorn/" + name,
+                )
+            )
+        )
+        if check_resources:
+            if set(metadata.get("config", {}).get("flags", [])) - {"allow-discards"}:
+                raise Failure("Preserve non-default persistent activation flags")
+            needed = max(
+                (
+                    int(slot.get("kdf", {}).get("memory", 0))
+                    for slot in metadata.get("keyslots", {}).values()
+                ),
+                default=0,
+            )
+            if needed > MAX_KDF_KIB:
+                raise Failure("LUKS KDF exceeds the configured memory budget")
+            memory = required(host("/usr/bin/cat", "/proc/meminfo"))
+            available = next(
+                (
+                    int(line.split()[1])
+                    for line in memory.splitlines()
+                    if line.startswith("MemAvailable:")
+                ),
+                0,
+            )
+            if available < needed + HOST_HEADROOM_KIB:
+                raise Failure("Insufficient host memory for LUKS authentication")
+        return "allow-discards" in metadata.get("config", {}).get("flags", [])
+
+
+    def reconcile(*, audit: bool = False) -> bool:
+        """Recheck attached mappings; new volumes and reattachments are retried."""
+        if host("/usr/bin/test", "-d", "/dev/longhorn", missing_ok=True) is None:
+            return True
+        names = required(host("/usr/bin/ls", "-1", "/dev/longhorn")).splitlines()
+        healthy = True
+        for name in names:
+            if STOP.is_set():
+                return False
+            if not NAME.fullmatch(name):
+                print("Discard policy failed: invalid Longhorn device name", flush=True)
+                healthy = False
+                continue
+            try:
+                if (
+                    host("/usr/bin/test", "-b", "/dev/mapper/" + name, missing_ok=True)
+                    is None
+                ):
+                    if (
+                        host(
+                            "/usr/bin/test",
+                            "-b",
+                            "/dev/mapper/" + name + "-encrypted",
+                            missing_ok=True,
+                        )
+                        is not None
+                    ):
+                        raise Failure("Longhorn v2 requires a separately validated policy")
+                    continue  # Unencrypted volume or not yet staged by CSI.
+                current = identity(name)
+                saved = persistent(name)
+                if "discards" in current.get("flags", "").split() and saved:
+                    continue
+                if set(current.get("flags", "").split()) - {"discards"}:
+                    raise Failure("Preserve non-default active mapping flags")
+                if audit:
+                    print("Discard not enabled: " + name, flush=True)
+                    healthy = False
+                    continue
+                # Recheck binding and memory before the authenticated operation.
+                identity(name)
+                persistent(name, check_resources=True)
+                host(
+                    "/usr/bin/flock",
+                    "-w",
+                    "5",
+                    "/run/lock/longhorn-encrypted-discard.lock",
+                    "/usr/sbin/cryptsetup",
+                    "--batch-mode",
+                    "--allow-discards",
+                    "--persistent",
+                    "--key-file=-",
+                    "refresh",
+                    name,
+                    key=True,
+                )
+                if "discards" not in identity(name).get(
+                    "flags", ""
+                ).split() or not persistent(name):
+                    raise Failure("Discard postcondition was not observed")
+                print("Persistent discard enabled: " + name, flush=True)
+            except (Failure, ValueError, KeyError, TypeError, OSError):
+                # Never echo exceptions, metadata, command stderr, or key material.
+                print("Discard policy failed: " + name, flush=True)
+                healthy = False
+        return healthy
+
+
+    def main() -> int:
+        """Keep the policy active without API permissions or network access."""
+        parser = argparse.ArgumentParser()
+        parser.add_argument("--audit-only", action="store_true")
+        parser.add_argument("--once", action="store_true")
+        args = parser.parse_args()
+        if args.audit_only or args.once:
+            try:
+                return 0 if reconcile(audit=args.audit_only) else 1
+            except (Failure, ValueError, OSError):
+                print("Discard policy inventory failed", flush=True)
+                return 1
+        signal.signal(signal.SIGTERM, lambda *_: STOP.set())
+        signal.signal(signal.SIGINT, lambda *_: STOP.set())
+        while not STOP.is_set():
+            try:
+                reconcile()
+            except (Failure, ValueError, OSError):
+                print("Discard policy inventory failed", flush=True)
+            STOP.wait(60)
+        return 0
+
+
+    if __name__ == "__main__":
+        raise SystemExit(main())
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: longhorn-encrypted-discard
+  namespace: longhorn
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: longhorn-encrypted-discard
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 0
+  template:
+    metadata:
+      annotations:
+        checksum/discard-policy: 77299e97fc37d411f773a69a33270dc4a6ffd4f43d0de75a7526f000d17868c5
+      labels:
+        app.kubernetes.io/name: longhorn-encrypted-discard
+    spec:
+      serviceAccountName: longhorn-encrypted-discard
+      automountServiceAccountToken: false
+      # Enter host mount/IPC namespaces for authenticated dm-crypt ioctls.
+      # No hostPath mounts or API token; privileged hostPID still grants node-root access.
+      hostPID: true
+      nodeSelector:
+        kubernetes.io/os: linux
+      tolerations:
+      - key: CriticalAddonsOnly
+        operator: Equal
+        value: 'true'
+        effect: NoSchedule
+      terminationGracePeriodSeconds: 150
+      securityContext:
+        runAsUser: 0
+        runAsGroup: 0
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+      - name: reconcile
+        image: python:3.13-slim-bookworm@sha256:a1165e272e578941b84abc79e4ab38a0305cd12803a5c4247979ac7655f4d641
+        command: [python3, -B, /config/discard.py]
+        securityContext:
+          # Required for host namespaces and device-cgroup access. This is a
+          # deliberate storage-administration exception, not an application pod.
+          privileged: true
+          allowPrivilegeEscalation: true
+          readOnlyRootFilesystem: true
+        resources:
+          requests:
+            cpu: 50m
+            memory: 64Mi
+          limits:
+            cpu: 500m
+            memory: 2Gi
+        readinessProbe:
+          exec:
+            command: [python3, -B, /config/discard.py, --audit-only]
+          periodSeconds: 60
+          timeoutSeconds: 30
+        livenessProbe:
+          exec:
+            command: [python3, -c, 'import os; os.kill(1, 0)']
+          initialDelaySeconds: 30
+          periodSeconds: 30
+          timeoutSeconds: 5
+          failureThreshold: 12
+        volumeMounts:
+        - name: script
+          mountPath: /config
+          readOnly: true
+        - name: key
+          mountPath: /key
+          readOnly: true
+      volumes:
+      - name: script
+        configMap:
+          name: longhorn-encrypted-discard
+          defaultMode: 0444
+      - name: key
+        secret:
+          secretName: longhorn-crypto
+          defaultMode: 0400
+          items:
+          - key: CRYPTO_KEY_VALUE
+            path: key
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: longhorn-encrypted-discard
+  namespace: longhorn
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: longhorn-encrypted-discard
+  policyTypes: [Ingress, Egress]
+  ingress: []
+  egress: []
+---
+apiVersion: longhorn.io/v1beta2
+kind: RecurringJob
+metadata:
+  name: encrypted-volume-trim
+  namespace: longhorn
+spec:
+  name: encrypted-volume-trim
+  task: filesystem-trim
+  groups: [default]
+  cron: '0 3 * * *'
+  concurrency: 1
+  retain: 0

@@ -37,6 +37,8 @@ Longhorn marked both removed and completed its native purge/coalescing process (
 
 A filesystem trim of the exact PostgreSQL-1 global mount failed with **`the discard operation is not supported`**. Read-only `lsblk -D` showed discard support on its underlying iSCSI disk (512-byte granularity, 4GiB maximum), but zero discard capability on the LUKS mapping. `cryptsetup status` showed no `allow_discards` flag. This identifies a discard-propagation blocker in the encrypted mapping, not a reason to delete live data. No encryption mapping options, global Longhorn trim settings, or keys were modified/read to bypass it. Enabling discard can reveal allocation/free-space patterns through encryption and needs a separately reviewed, explicitly approved configuration path. Physical-reclamation acceptance remains open until purge completion and the discard limitation are resolved; do not equate 37GiB free inside the PVC with host-level recovery.
 
+The proposed GitOps/Bootstrap default and the exact, not-yet-executed live rollout are documented in [Encrypted Longhorn discard](longhorn-encrypted-discard.md). That proposal does not add a StorageClass or recreate volumes.
+
 ## WAL limit semantics
 
 The 10GB setting applies to WAL retained by replication slots at checkpoint/restartpoint processing. It is not a hard total cap on `pg_wal`, not a timed deletion policy, and not a cure for broken replication. Archive failures, recovery needs and other retention settings can retain additional WAL. A lagging slot can become invalid after required WAL is removed; the standby then needs archived WAL or a controlled rebuild from a healthy primary. Do not assume CNPG will automatically repair every invalidated slot; see upstream issue #11646.

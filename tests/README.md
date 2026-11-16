@@ -14,6 +14,7 @@ The runner does not contact hosts, Kubernetes, Git remotes, chart repositories, 
 - provider-vault's exact 16-type post-PKI activation contract and resource waves.
 - `longhorn-local` encryption/locality, PostgreSQL ClusterIP/Ambient-STRICT transport without duplicate client certificates, targeted default-deny, HA settings, static container hardening, Pi toleration scope, OpenBao policy boundaries, shared R2 source isolation, and restore-Lease access.
 - Official csi-driver-smb pin/API, dynamic SMB K8up repositories, the two-Application Istio layout, official component pins, native Gateway customization and restricted namespace seccomp, fail-closed Prometheus native-snapshot/one-shot-K8up support, Alertmanager VSO configuration, the Longhorn OIDC-proxy skeleton, and exactly the two existing Python adapters.
+- Encrypted Longhorn v1 discard defaults: actual ConfigMap program, device/iSCSI identity gates, persistent/live flags, key-safe command execution, memory admission, native recurring trim and the narrowly scoped privileged-node-helper exception. See `../docs/longhorn-encrypted-discard.md` for the separate live acceptance gates.
 - Parent Application health checks executed by the installed `argocd` CLI's offline Lua evaluator: current-revision drift, stale revisions/specs, running/failed operations, selective syncs, dry runs, errors, and real child health.
 - Offline `ansible-playbook --syntax-check` for all seven entrypoint playbooks, including recovery and maintenance.
 

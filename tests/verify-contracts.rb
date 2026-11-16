@@ -452,8 +452,15 @@ class PlatformContractTest < Minitest::Test
               assert container.dig("resources", "requests"), "missing requests for #{container['name']} in #{path}"
               assert container.dig("resources", "limits"), "missing limits for #{container['name']} in #{path}"
               security = container["securityContext"] || {}
-              assert_equal false, security["allowPrivilegeEscalation"], path.to_s
-              assert_includes security.dig("capabilities", "drop") || [], "ALL", path.to_s
+              if document["kind"] == "DaemonSet" && document.dig("metadata", "namespace") == "longhorn" &&
+                  document.dig("metadata", "name") == "longhorn-encrypted-discard" && container["name"] == "reconcile"
+                # Host dm-crypt ioctls require this narrowly named storage-admin exception.
+                assert_equal true, security["privileged"], path.to_s
+                assert_equal true, security["readOnlyRootFilesystem"], path.to_s
+              else
+                assert_equal false, security["allowPrivilegeEscalation"], path.to_s
+                assert_includes security.dig("capabilities", "drop") || [], "ALL", path.to_s
+              end
             end
           end
         end
