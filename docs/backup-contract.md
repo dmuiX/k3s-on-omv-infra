@@ -10,6 +10,8 @@
 
 All OMV storage is beneath the dedicated `k3s-cluster` Btrfs subvolume on the verified backup filesystem. The Live StorageClass source is exactly `//192.168.1.5/k3s-cluster`. Verify that the backing disk and SMB share are available; never create a substitute directory on the root filesystem. PostgreSQL/OpenBao PVCs are excluded from generic K8up backups. Longhorn replication is not backup.
 
+For the November 2026 WAL-retention incident, recovery gates and the planned December CNPG update follow-up, see [PostgreSQL WAL recovery](postgresql-wal-recovery.md).
+
 ## Credentials and bucket separation
 
 A single credential object at OpenBao `kv/platform/r2` is read through three separate Kubernetes auth roles and service accounts in `openbao`, `cloudnative-pg`, and `kube-system`. VSO creates distinct destination Secrets in each namespace. Bucket selection remains declarative and separate for each backup path. The canonical endpoint is private non-secret `r2.endpoint` in Live's Helm-compatible `infra/r2/values.yml`, not public Infra. Its empty `""` sentinel must be replaced by the operator with the real endpoint. The Barman `ObjectStore` API cannot reference a Secret for `endpointURL`, so the protected Bootstrap ceremony still owns exactly that create-once object and supplies the canonical endpoint without logging it. Its remaining fields reference the VSO-produced `postgresql-r2-credentials` Secret. `backup-validation` has no R2 policy, auth role, Secret, mount, or workload access.

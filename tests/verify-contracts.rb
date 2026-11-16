@@ -428,6 +428,7 @@ class PlatformContractTest < Minitest::Test
     refute postgresql.fetch("spec").key?("switchoverDelay")
     assert_equal "longhorn-local", postgresql.dig("spec", "storage", "storageClass")
     assert_equal "40Gi", postgresql.dig("spec", "storage", "size")
+    assert_equal "10GB", postgresql.dig("spec", "postgresql", "parameters", "max_slot_wal_keep_size")
     assert_equal 1, postgresql.dig("spec", "postgresql", "synchronous", "number")
     assert_equal true, postgresql.dig("spec", "postgresql", "synchronous", "failoverQuorum")
     refute postgresql.key?("certificates")
