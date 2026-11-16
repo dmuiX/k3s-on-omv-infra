@@ -33,6 +33,11 @@ budget for the pending 256Mi OpenBao server: approximately 166 MiB remains after
 it is admitted. Moving the SMB controller raises this to approximately 246 MiB.
 These are scheduling calculations, not a guarantee of sufficient physical RAM or
 complete reservations: several Longhorn components still have no memory request.
+The measured follow-up targets and their blocking budget calculation are defined
+in [the resource request profile](resource-request-profile.md). They are a proposal,
+not active values: the natively configurable additions alone exceed current Pi
+headroom by about 346Mi. Do not apply them as part of this rollout without first
+resolving that budget and the unsupported component overrides.
 
 CoreDNS and Metrics Server stay on their existing K3s configuration, each with a
 70Mi memory request. Their placement and consumption are not claimed as savings.
