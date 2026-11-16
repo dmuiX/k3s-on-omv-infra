@@ -1,31 +1,121 @@
-name: Bootstrap dependency order
+name: Repository workload contracts
 on:
+  pull_request:
+  push:
+    branches: [main]
   workflow_dispatch:
-  
+
 permissions:
   contents: read
+concurrency:
+  group: repo-contracts-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
-  offline:
+  repository:
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 15
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      KUBECONFIG: /dev/null
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           persist-credentials: false
-      - name: Archive exact source for cross-repository review
-        run: git archive --format=tar.gz --output="${RUNNER_TEMP}/infra-source.tar.gz" HEAD
-      - uses: actions/upload-artifact@v4
-        with:
-          name: infra-source
-          path: ${{ runner.temp }}/infra-source.tar.gz
-          retention-days: 3
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: '3.12'
-      - run: python -m pip install PyYAML
-      - run: python -m unittest discover -s tests -p 'test_*.py' -v
-      - name: Validate legacy runner and Ruby test syntax
+      - name: Install pinned test dependencies
+        run: python -m pip install -r tests/requirements-ci.txt
+      - name: Restore public dependency downloads only
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ runner.temp }}/infra-ci-downloads
+          key: ${{ runner.os }}-infra-ci-v1-${{ hashFiles('tests/ci-dependencies.json') }}
+      - name: Verify pinned tools and every official chart before running tests
+        id: dependencies
+        run: |
+          python tests/ci_dependencies.py \
+            --cache "$RUNNER_TEMP/infra-ci-downloads" \
+            --charts "$RUNNER_TEMP/infra-ci-charts" \
+            --bin "$RUNNER_TEMP/infra-ci-bin"
+          echo "PLATFORM_CHART_AUDIT=$RUNNER_TEMP/infra-ci-charts" >> "$GITHUB_ENV"
+          echo "$RUNNER_TEMP/infra-ci-bin" >> "$GITHUB_PATH"
+      - name: Check maintained CI helper types and style
+        run: |
+          files=(tests/ci_dependencies.py tests/repo_suite.py tests/workload_contracts.py
+                 tests/test_ci_dependencies.py tests/test_repo_suite.py
+                 tests/test_repo_workloads.py tests/test_workload_contracts.py)
+          python -m black --check "${files[@]}"
+          python -m ruff check "${files[@]}"
+          python -m mypy --strict --follow-imports=skip "${files[@]}"
+      - name: Run isolated repository workload tests (no private inputs)
+        run: python tests/repo_suite.py
+      - name: Execute native Argo application-health contracts offline
+        if: ${{ !cancelled() && steps.dependencies.conclusion == 'success' }}
+        run: ruby -EUTF-8 tests/test_application_health.rb
+      - name: Validate retained integration runner syntax without executing private checks
+        if: ${{ !cancelled() }}
         run: |
           sh -n tests/run-offline-tests.sh
           ruby -EUTF-8 -c tests/verify-contracts.rb
           ruby -EUTF-8 -c tests/verify-mesh-renders.rb
+      - name: Record validation boundary
+        if: ${{ !cancelled() }}
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<'SUMMARY'
+          ## Scope
+          Public repository contracts use verified pinned charts and synthetic values only.
+          Private Live/Apps/Bootstrap integration and production functional checks are **NOT RUN** here.
+          Native timezone admission executes in a separate isolated disposable API job.
+          See `tests/suites.json` and `tests/README.md`; a green check is not deployment acceptance.
+          SUMMARY
+  timezone-admission:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      KUBECONFIG: /dev/null
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - name: Install pinned test dependencies
+        run: python -m pip install -r tests/requirements-ci.txt
+      - name: Execute native admission against an owned isolated test API
+        run: |
+          set -euo pipefail
+          image='rancher/k3s:v1.37.1-k3s1@sha256:ca7f37d993d82ef0dcdcfecb2e0e2618ea541dbaffc620c8cedebe01a82acd0d'
+          test_id=$(docker run -d --name "timezone-policy-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
+            --label purpose=timezone-policy-test --label "owner=ci-${GITHUB_RUN_ID}" \
+            --network none --cap-drop ALL --security-opt no-new-privileges \
+            --memory 2g --cpus 2 --restart no \
+            --health-cmd='/bin/kubectl get --raw=/readyz' --health-interval=5s \
+            --health-start-period=15s --health-timeout=3s --health-retries=30 \
+            --entrypoint /bin/sh "$image" -c \
+            'exec timeout 900 /bin/k3s server --disable-agent --disable-cloud-controller --disable-helm-controller --disable-network-policy --disable=traefik,servicelb,local-storage,coredns,metrics-server --flannel-backend=none --egress-selector-mode=disabled --bind-address=127.0.0.1 --advertise-address=192.0.2.1 --node-ip=192.0.2.1 --node-name=timezone-policy-test')
+          cleanup() {
+            result=$?
+            trap - EXIT INT TERM
+            cleanup_result=0
+            docker stop -t 5 "$test_id" >/dev/null || cleanup_result=1
+            docker inspect --format 'Test API terminal state: {{.State.Status}} exit={{.State.ExitCode}}' "$test_id" || cleanup_result=1
+            docker rm -v "$test_id" >/dev/null || cleanup_result=1
+            if [ "$result" -ne 0 ]; then exit "$result"; fi
+            exit "$cleanup_result"
+          }
+          trap cleanup EXIT
+          trap 'exit 130' INT
+          trap 'exit 143' TERM
+          ready=false
+          for attempt in $(seq 1 45); do
+            state=$(docker inspect --format '{{.State.Status}}/{{.State.Health.Status}}' "$test_id")
+            if [ "$state" = running/healthy ]; then ready=true; break; fi
+            case "$state" in exited/*|dead/*|*/unhealthy) break ;; esac
+            sleep 3
+          done
+          if [ "$ready" != true ]; then echo 'Isolated test API did not become healthy'; exit 1; fi
+          TIMEZONE_TEST_CONTAINER="$test_id" python -m unittest discover -s tests -p test_timezone_defaults.py -v
+          echo 'Native timezone CREATE/UPDATE/deny tests passed in a network-isolated disposable API; no production access.' >> "$GITHUB_STEP_SUMMARY"

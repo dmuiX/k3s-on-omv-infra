@@ -1,0 +1,28 @@
+# SYNTHETIC CI ONLY: no private configuration or real credentials.
+openbaoOIDC:
+  providerConfigName: default
+  deletionPolicy: Orphan
+  groups:
+    - {name: ci-admins, externalName: ci-admins, type: internal, externalMemberEntityIds: true}
+  assignments:
+    - {name: ci-admins, groupRefs: [ci-admins]}
+  key:
+    name: ci-longhorn
+    algorithm: RS256
+    allowedClientIds: [ci-client]
+    rotationPeriod: 86400
+    verificationTtl: 86400
+  scopes:
+    - {name: ci-profile, template: '{"username":{{identity.entity.name}}}'}
+  client:
+    name: ci-longhorn
+    key: ci-longhorn
+    assignments: [ci-admins]
+    redirectUris: [https://longhorn.example.invalid/oauth2/callback]
+    idTokenTtl: 300
+    accessTokenTtl: 300
+  provider:
+    name: ci-longhorn
+    issuerURL: https://openbao.example.invalid/v1/identity/oidc/provider/ci-longhorn
+    clientRefs: [ci-longhorn]
+    scopeRefs: [ci-profile]

@@ -1,0 +1,13 @@
+# SYNTHETIC CI ONLY: no private configuration or real credentials.
+storageClasses:
+  - name: smb
+    parameters:
+      source: //files.example.invalid/backups
+      csi.storage.k8s.io/provisioner-secret-name: smb-credentials
+      csi.storage.k8s.io/provisioner-secret-namespace: kube-system
+      csi.storage.k8s.io/node-stage-secret-name: smb-credentials
+      csi.storage.k8s.io/node-stage-secret-namespace: kube-system
+    reclaimPolicy: Retain
+    volumeBindingMode: Immediate
+    allowVolumeExpansion: true
+    mountOptions: [dir_mode=0770, file_mode=0660, noperm, mfsymlinks, cache=strict, noserverino]

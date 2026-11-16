@@ -1,0 +1,96 @@
+{
+  "repository": [
+    "test_ci_dependencies",
+    "test_cloudnativepg_vso_account",
+    "test_credential_resource_ownership",
+    "test_longhorn_discard",
+    "test_longhorn_discard_processes",
+    "test_native_alert_rules",
+    "test_native_reader_accounts",
+    "test_openbao_network",
+    "test_retention",
+    "test_snapshot",
+    "test_smb_vso_account",
+    "test_repo_suite",
+    "test_repo_workloads",
+    "test_workload_contracts"
+  ],
+  "mixed": {
+    "test_backup_validation_templates": [
+      "RequiredValueContracts.test_single_source_only_helper_owned_by_early_operator",
+      "RequiredValueContracts.test_operator_chart_grants_global_transformation_lookup"
+    ],
+    "test_bootstrap_order": [
+      "BootstrapOrderTest.test_all_yaml_parses",
+      "BootstrapOrderTest.test_argocd_excludes_unused_vault_and_generated_crossplane_caches",
+      "BootstrapOrderTest.test_early_apps_do_not_require_the_later_backup_validation_namespace",
+      "BootstrapOrderTest.test_validation_kustomization_includes_its_openbao_access",
+      "BootstrapOrderTest.test_openbao_ambient_transport_preserves_peer_scope",
+      "BootstrapOrderTest.test_backup_validation_precedes_observability",
+      "BootstrapOrderTest.test_early_dependencies_are_strictly_ordered",
+      "BootstrapOrderTest.test_certificate_phase_has_no_openbao_or_istio_resource_dependency",
+      "BootstrapOrderTest.test_gateway_namespace_has_one_early_metadata_steward",
+      "BootstrapOrderTest.test_root_selects_every_application_once_at_both_directory_depths",
+      "BootstrapOrderTest.test_application_schema_options_and_infra_paths"
+    ],
+    "test_infra_root_values": [
+      "InfraRootValuesTest.test_root_selects_all_children_but_not_itself_or_resources"
+    ],
+    "test_inline_helm_values": [
+      "InlineHelmValuesTest.test_openbao_automatically_rolls_server_updates",
+      "InlineHelmValuesTest.test_namespace_metadata_has_exact_labels_and_one_steward",
+      "InlineHelmValuesTest.test_vso_native_monitor_preserves_authentication_and_mesh_transport"
+    ],
+    "test_native_chart_migrations": [
+      "NativeChartMigrations.test_k8up_leader_and_monitor",
+      "NativeChartMigrations.test_cert_manager_and_cnpg",
+      "NativeChartMigrations.test_longhorn_only_adds_restricted_scrape_rule",
+      "NativeChartMigrations.test_native_pdbs_preserve_replica_counts_and_protect_one_replica"
+    ],
+    "test_oidc_proxy": [
+      "OIDCProxy.test_urls_required_independently",
+      "OIDCProxy.test_credentials_remain_outside_chart"
+    ],
+    "test_openbao_metrics": [
+      "OpenBaoMetricsTests.test_separate_native_listeners_and_ha_preserved",
+      "OpenBaoMetricsTests.test_pinned_monitor_and_active_service_have_named_metrics_port",
+      "OpenBaoMetricsTests.test_l4_deny_is_port_scoped_and_persistent_before_workload_sync",
+      "OpenBaoMetricsTests.test_direct_network_peer_and_shared_hbone_are_distinct",
+      "OpenBaoMetricsTests.test_prometheus_identity_from_exact_monitoring_chart_with_live_inputs",
+      "OpenBaoMetricsTests.test_no_metrics_token_producers_or_provider_grants",
+      "OpenBaoMetricsTests.test_rollout_documents_security_and_orphan_retirement_gates"
+    ],
+    "test_postgres_api_network": [
+      "PostgresAPINetwork.test_only_approved_broad_api_rule_changed_from_published_baseline",
+      "PostgresAPINetwork.test_infra_has_no_unrestricted_api_egress"
+    ],
+    "test_postgres_consumer": [
+      "PostgresConsumerTests.test_exact_baseline_equality",
+      "PostgresConsumerTests.test_disabled_default_has_no_resources",
+      "PostgresConsumerTests.test_invalid_values_fail_closed",
+      "PostgresConsumerTests.test_templates_remain_vso_templates",
+      "PostgresConsumerTests.test_grafana_source_and_remaining_auth"
+    ],
+    "test_service_route": [
+      "ServiceRoute.test_native_openbao_route_disabled",
+      "ServiceRoute.test_optional_typed_fields_preserved",
+      "ServiceRoute.test_invalid_fields_rejected"
+    ],
+    "test_timezone_defaults": [
+      "TimezoneContractTest.test_native_mutation_and_deny_bindings_fail_closed",
+      "TimezoneContractTest.test_namespace_global_admission_scope",
+      "TimezoneContractTest.test_application_is_canonical_and_before_platform_controllers",
+      "TimezoneContractTest.test_berlin_trim_wall_time_in_winter_and_summer"
+    ],
+    "test_vso_connection": [
+      "SharedConnectionTests.test_infra_consumers_keep_isolated_identities",
+      "SharedConnectionTests.test_pinned_chart_renders_single_connection_and_no_default_auth"
+    ]
+  },
+  "integration": [
+    "test_grafana_admin",
+    "test_injector_network_policy",
+    "test_remaining_api_network",
+    "test_service_credentials"
+  ]
+}

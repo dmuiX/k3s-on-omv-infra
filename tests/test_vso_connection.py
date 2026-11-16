@@ -39,7 +39,16 @@ class SharedConnectionTests(unittest.TestCase):
             self.assertEqual(spec['vaultConnectionRef'], REF)
             self.assertEqual((spec['method'], spec['mount']), ('kubernetes', 'kubernetes'))
             role = spec['kubernetes']['role']
-            identity = {'role': role, 'serviceAccount': role}
+            # A native workload account can serve its isolated reader role;
+            # role names and transport sharing must not imply account-name equality.
+            native_accounts = {
+                'cert-manager-dns01': 'cert-manager',
+                'smb-vso': 'csi-smb-controller-sa',
+                'postgresql-vso': 'cloudnative-pg',
+                'grafana-vso': 'kube-prometheus-stack-grafana',
+                'alertmanager-vso': 'kube-prometheus-stack-alertmanager',
+            }
+            identity = {'role': role, 'serviceAccount': native_accounts.get(role, role)}
             if role in {'longhorn-oidc-proxy', 'smb-vso', 'platform-r2-vso',
                         'postgresql-vso', 'alertmanager-vso', 'prometheus-k8up-vso'}:
                 identity['tokenExpirationSeconds'] = 600

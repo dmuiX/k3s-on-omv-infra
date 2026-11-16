@@ -1,0 +1,9 @@
+# SYNTHETIC CI ONLY: no private configuration or real credentials.
+global:
+  domain: argocd.example.invalid
+configs:
+  cm:
+    url: https://argocd.example.invalid
+server:
+  httproute:
+    hostnames: [argocd.example.invalid]

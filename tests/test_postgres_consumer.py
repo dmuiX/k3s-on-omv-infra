@@ -190,6 +190,7 @@ class PostgresConsumerTests(unittest.TestCase):
         original = documents(FIXTURES / "grafana.yaml")
         expected = [d for d in original if d not in baseline("grafana")
                     and d["kind"] not in ("Namespace", "ServiceAccount")]
+        expected = shared_connection(expected)
         for doc in expected:
             if doc["kind"] == "VaultAuth":
                 doc["spec"]["kubernetes"]["serviceAccount"] = "kube-prometheus-stack-grafana"

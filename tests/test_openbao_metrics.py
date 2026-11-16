@@ -52,11 +52,16 @@ class OpenBaoMetricsTests(unittest.TestCase):
         pdb, = native.kind(self.docs, 'PodDisruptionBudget')
         self.assertEqual(pdb['spec']['maxUnavailable'], 1)
         sts, = native.kind(self.docs, 'StatefulSet')
-        self.assertEqual(sts['spec']['updateStrategy']['type'], 'OnDelete')
-        self.assertIn(':2.7.1', sts['spec']['template']['spec']['containers'][0]['image'])
+        self.assertEqual(sts['spec']['updateStrategy']['type'], 'RollingUpdate')
+        version = str(self.app['spec']['sources'][0]['targetRevision'])
+        defaults = native.load(native.CHARTS / f'openbao-{version}/openbao/values.yaml')
+        tag = server.get('image', {}).get('tag') or defaults['server']['image']['tag']
+        self.assertIn(':' + tag, sts['spec']['template']['spec']['containers'][0]['image'])
 
     def test_pinned_monitor_and_active_service_have_named_metrics_port(self):
-        self.assertEqual(self.app['spec']['sources'][0]['targetRevision'], '0.30.4')
+        version = str(self.app['spec']['sources'][0]['targetRevision'])
+        chart = native.load(native.CHARTS / f'openbao-{version}/openbao/Chart.yaml')
+        self.assertEqual(str(chart['version']), version)
         self.assertEqual(self.values['serverTelemetry']['serviceMonitor'], {
             'enabled': True, 'port': 'metrics'})
         monitor, = native.kind(self.docs, 'ServiceMonitor')

@@ -1,0 +1,2 @@
+# SYNTHETIC CI ONLY: no private configuration or real credentials.
+hostnames: [openbao.example.invalid]

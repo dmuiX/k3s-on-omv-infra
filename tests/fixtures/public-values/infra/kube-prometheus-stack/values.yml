@@ -1,0 +1,17 @@
+# SYNTHETIC CI ONLY: no private configuration or real credentials.
+grafana:
+  grafana.ini:
+    server:
+      domain: grafana.example.invalid
+      root_url: https://grafana.example.invalid
+    database:
+      type: postgres
+      host: k3s-postgres-rw.cloudnative-pg.svc.cluster.local:5432
+      name: grafana
+      user: $__env{GF_DATABASE_USER}
+      password: $__env{GF_DATABASE_PASSWORD}
+  envValueFrom:
+    GF_DATABASE_USER:
+      secretKeyRef: {name: grafana-db, key: username}
+    GF_DATABASE_PASSWORD:
+      secretKeyRef: {name: grafana-db, key: password}
