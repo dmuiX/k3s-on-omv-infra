@@ -1,4 +1,4 @@
-"""Offline contracts and opt-in admission tests against an isolated K3s API."""
+"""Offline contracts and opt-in enforcement tests against an isolated K3s API."""
 
 from __future__ import annotations
 
@@ -7,9 +7,10 @@ import os
 import subprocess
 import time
 import unittest
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 from zoneinfo import ZoneInfo
 
 import yaml
@@ -18,19 +19,16 @@ ROOT = Path(__file__).resolve().parents[1]
 COMPONENT = ROOT / "01-bootstrap/timezone-defaults"
 POLICY_FILE = COMPONENT / "resources/defaults.yaml"
 DOCUMENTS = list(yaml.safe_load_all(POLICY_FILE.read_text()))
-POLICIES = {
-    doc["metadata"]["name"]: doc
-    for doc in DOCUMENTS
-    if doc["kind"] == "MutatingAdmissionPolicy"
-}
 TEST_CONTAINER = os.environ.get("TIMEZONE_TEST_CONTAINER", "")
+BERLIN_ENV = [{"name": "TZ", "value": "Europe/Berlin"}]
 
 
 def pod(containers: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    """Build an unscheduled, tokenless Pod fixture; no image is executed."""
     return {
         "apiVersion": "v1",
         "kind": "Pod",
-        "metadata": {"name": "timezone-admission-probe"},
+        "metadata": {"generateName": "timezone-admission-probe-"},
         "spec": {
             "automountServiceAccountToken": False,
             "serviceAccountName": "timezone-admission-test",
@@ -42,6 +40,7 @@ def pod(containers: list[dict[str, Any]] | None = None) -> dict[str, Any]:
 
 
 def cronjob() -> dict[str, Any]:
+    """Build a suspended CronJob fixture that cannot start a workload."""
     return {
         "apiVersion": "batch/v1",
         "kind": "CronJob",
@@ -55,50 +54,60 @@ def cronjob() -> dict[str, Any]:
 
 
 def tz_entries(container: dict[str, Any]) -> list[dict[str, Any]]:
+    """Inspect only the fixture's TZ entries, never an actual environment."""
     return [entry for entry in container.get("env", []) if entry["name"] == "TZ"]
 
 
 class TimezoneContractTest(unittest.TestCase):
-    def test_only_native_policies_and_bindings(self) -> None:
-        self.assertEqual(len(DOCUMENTS), 4)
-        self.assertEqual(len(POLICIES), 2)
-        bindings = [
-            doc for doc in DOCUMENTS if doc["kind"] == "MutatingAdmissionPolicyBinding"
-        ]
-        self.assertEqual(len(bindings), 2)
-        self.assertEqual(
-            {binding["spec"]["policyName"] for binding in bindings}, set(POLICIES)
-        )
+    def test_native_mutation_and_deny_bindings_fail_closed(self) -> None:
+        self.assertEqual(len(DOCUMENTS), 8)
+        policies = {
+            d["metadata"]["name"]: d for d in DOCUMENTS if d["kind"].endswith("Policy")
+        }
+        bindings = [d for d in DOCUMENTS if d["kind"].endswith("PolicyBinding")]
+        self.assertEqual(len(policies), 4)
+        self.assertEqual(len(bindings), 4)
+        self.assertEqual({b["spec"]["policyName"] for b in bindings}, set(policies))
         for document in DOCUMENTS:
             self.assertEqual(document["apiVersion"], "admissionregistration.k8s.io/v1")
-        for policy in POLICIES.values():
-            self.assertEqual(policy["spec"]["failurePolicy"], "Ignore")
-            self.assertEqual(policy["spec"]["reinvocationPolicy"], "IfNeeded")
-            self.assertEqual(
-                policy["metadata"]["annotations"]["argocd.argoproj.io/sync-wave"], "-1"
-            )
-
-    def test_admission_scope(self) -> None:
-        for name, group, resource, operations in (
-            ("default-cronjob-timezone", "batch", "cronjobs", ["CREATE", "UPDATE"]),
-            ("default-container-timezone", "", "pods", ["CREATE"]),
-        ):
-            spec = POLICIES[name]["spec"]
-            self.assertEqual(
-                spec["matchConstraints"],
-                {
-                    "resourceRules": [
-                        {
-                            "apiGroups": [group],
-                            "apiVersions": ["v1"],
-                            "operations": operations,
-                            "resources": [resource],
-                        }
-                    ]
-                },
-            )
-        for binding in (d for d in DOCUMENTS if d["kind"].endswith("Binding")):
+        for policy in policies.values():
+            self.assertEqual(policy["spec"]["failurePolicy"], "Fail")
+            if policy["kind"] == "MutatingAdmissionPolicy":
+                self.assertEqual(policy["spec"]["reinvocationPolicy"], "IfNeeded")
+        for binding in bindings:
             self.assertNotIn("matchResources", binding["spec"])
+            if binding["kind"] == "ValidatingAdmissionPolicyBinding":
+                self.assertEqual(binding["spec"]["validationActions"], ["Deny"])
+
+    def test_namespace_global_admission_scope(self) -> None:
+        for document in (d for d in DOCUMENTS if d["kind"].endswith("Policy")):
+            rules = document["spec"]["matchConstraints"]
+            self.assertEqual(set(rules), {"resourceRules"})
+            if "cronjob" in document["metadata"]["name"]:
+                expected = [
+                    {
+                        "apiGroups": ["batch"],
+                        "apiVersions": ["v1"],
+                        "operations": ["CREATE", "UPDATE"],
+                        "resources": ["cronjobs"],
+                    }
+                ]
+            else:
+                expected = [
+                    {
+                        "apiGroups": [""],
+                        "apiVersions": ["v1"],
+                        "operations": ["CREATE"],
+                        "resources": ["pods"],
+                    },
+                    {
+                        "apiGroups": [""],
+                        "apiVersions": ["v1"],
+                        "operations": ["UPDATE"],
+                        "resources": ["pods/ephemeralcontainers"],
+                    },
+                ]
+            self.assertEqual(rules["resourceRules"], expected)
 
     def test_application_is_canonical_and_before_platform_controllers(self) -> None:
         app = yaml.safe_load((COMPONENT / "app.yml").read_text())
@@ -114,37 +123,14 @@ class TimezoneContractTest(unittest.TestCase):
             app["spec"]["syncPolicy"]["automated"],
             {"enabled": True, "prune": False, "selfHeal": True, "allowEmpty": False},
         )
-        resources = yaml.safe_load((ROOT / "kustomization.yaml").read_text())[
-            "resources"
-        ]
-        self.assertIn("01-bootstrap/timezone-defaults/app.yml", resources)
-
-    def test_git_owned_cronjobs_have_explicit_timezone_to_avoid_argo_drift(
-        self,
-    ) -> None:
-        found = []
-        for path in ROOT.glob("[0-9][0-9]-*/**/*"):
-            if path.suffix not in {".yaml", ".yml"}:
-                continue
-            for document in yaml.safe_load_all(path.read_text()):
-                if isinstance(document, dict) and document.get("kind") == "CronJob":
-                    found.append(document["metadata"]["name"])
-                    self.assertEqual(
-                        document["spec"]["timeZone"], "Europe/Berlin", str(path)
-                    )
-        self.assertEqual(
-            set(found),
-            {
-                "openbao-snapshot",
-                "postgresql-size-retention",
-                "postgresql-restore-validation",
-            },
+        self.assertIn(
+            "01-bootstrap/timezone-defaults/app.yml",
+            yaml.safe_load((ROOT / "kustomization.yaml").read_text())["resources"],
         )
 
     def test_berlin_trim_wall_time_in_winter_and_summer(self) -> None:
-        berlin = ZoneInfo("Europe/Berlin")
         for month, utc_hour in ((1, 17), (7, 16)):
-            local = datetime(2027, month, 16, 18, 35, tzinfo=berlin)
+            local = datetime(2027, month, 16, 18, 35, tzinfo=ZoneInfo("Europe/Berlin"))
             self.assertEqual(
                 local.astimezone(timezone.utc),
                 datetime(2027, month, 16, utc_hour, 35, tzinfo=timezone.utc),
@@ -189,9 +175,35 @@ class NativeTimezoneAdmissionTest(unittest.TestCase):
         return result
 
     @classmethod
+    def ephemeral(
+        cls, resource: dict[str, Any], dry_run: bool = True
+    ) -> dict[str, Any]:
+        patch = [
+            {
+                "op": "add",
+                "path": "/spec/ephemeralContainers",
+                "value": resource["spec"]["ephemeralContainers"],
+            }
+        ]
+        args = [
+            "patch",
+            "pod",
+            resource["metadata"]["name"],
+            "--subresource=ephemeralcontainers",
+            "--type=json",
+            "-p",
+            json.dumps(patch),
+            "-o",
+            "json",
+        ]
+        if dry_run:
+            args.append("--dry-run=server")
+        result: dict[str, Any] = json.loads(cls.kubectl(*args))
+        return result
+
+    @classmethod
     def setUpClass(cls) -> None:
-        # Never use the operator's kubectl context, mounted kubeconfig or a
-        # production API. These checks precede every mutating test command.
+        # Guard every API write: never use the host context or a mounted kubeconfig.
         result = subprocess.run(
             [
                 "docker",
@@ -212,8 +224,6 @@ class NativeTimezoneAdmissionTest(unittest.TestCase):
                 "Native tests require the owned, network-isolated test container"
             )
         cls.kubectl("apply", "-f", "-", text=POLICY_FILE.read_text())
-        # API readiness can precede the default-ServiceAccount controller.
-        # Use a dedicated, tokenless fixture rather than racing that controller.
         cls.kubectl(
             "apply",
             "-f",
@@ -229,33 +239,79 @@ class NativeTimezoneAdmissionTest(unittest.TestCase):
         while True:
             witness = cls.admit(pod())
             if (
-                tz_entries(witness["spec"]["containers"][0])
-                == [{"name": "TZ", "value": "Europe/Berlin"}]
+                tz_entries(witness["spec"]["containers"][0]) == BERLIN_ENV
                 and cls.admit(cronjob())["spec"].get("timeZone") == "Europe/Berlin"
             ):
                 break
             if time.monotonic() >= deadline:
                 raise AssertionError(
-                    "Native admission did not activate both timezone defaults"
+                    "Native admission did not activate timezone enforcement"
                 )
             time.sleep(0.2)
 
-    def test_pod_default_preserves_existing_fields_and_other_environment(self) -> None:
+    @contextmanager
+    def without_mutators(self, include_validation: bool = False) -> Iterator[None]:
+        bindings = [
+            d
+            for d in DOCUMENTS
+            if d["kind"].endswith("PolicyBinding")
+            and (include_validation or d["kind"] == "MutatingAdmissionPolicyBinding")
+        ]
+        try:
+            for binding in bindings:
+                self.kubectl(
+                    "delete", binding["kind"].lower(), binding["metadata"]["name"]
+                )
+            yield
+        finally:
+            self.kubectl("apply", "-f", "-", text=yaml.safe_dump_all(bindings))
+            deadline = time.monotonic() + 10
+            while True:
+                try:
+                    witness = self.admit(pod())
+                    self.assertEqual(
+                        tz_entries(witness["spec"]["containers"][0]), BERLIN_ENV
+                    )
+                    self.assertEqual(
+                        self.admit(cronjob())["spec"].get("timeZone"), "Europe/Berlin"
+                    )
+                    break
+                except AssertionError:
+                    if time.monotonic() >= deadline:
+                        raise
+                    time.sleep(0.2)
+
+    def assert_denied(self, resource: dict[str, Any], ephemeral: bool = False) -> None:
+        deadline = time.monotonic() + 10
+        while True:
+            try:
+                if ephemeral:
+                    self.ephemeral(resource)
+                else:
+                    self.admit(resource)
+            except AssertionError as error:
+                self.assertIn("Europe/Berlin", str(error))
+                break
+            if time.monotonic() >= deadline:
+                self.fail(
+                    "Admission accepted a non-Berlin configuration without mutation"
+                )
+            time.sleep(0.2)
+
+    def test_pod_mutation_preserves_other_fields_and_environment(self) -> None:
         container = {
             "name": "main",
             "image": "registry.k8s.io/pause:3.10",
             "args": ["original"],
             "env": [{"name": "KEEP", "value": "original"}],
         }
-        admitted = self.admit(pod([container]))["spec"]["containers"][0]
-        self.assertEqual(
-            tz_entries(admitted), [{"name": "TZ", "value": "Europe/Berlin"}]
-        )
-        self.assertEqual(admitted["args"], container["args"])
-        self.assertEqual(admitted["image"], container["image"])
-        self.assertIn(container["env"][0], admitted["env"])
+        actual = self.admit(pod([container]))["spec"]["containers"][0]
+        self.assertEqual(tz_entries(actual), BERLIN_ENV)
+        self.assertEqual(actual["args"], container["args"])
+        self.assertEqual(actual["image"], container["image"])
+        self.assertIn(container["env"][0], actual["env"])
 
-    def test_explicit_literal_empty_and_valuefrom_timezone_are_preserved(self) -> None:
+    def test_literal_empty_and_valuefrom_timezone_are_forced_to_berlin(self) -> None:
         for entry in (
             {"name": "TZ", "value": "UTC"},
             {"name": "TZ", "value": ""},
@@ -263,39 +319,32 @@ class NativeTimezoneAdmissionTest(unittest.TestCase):
                 "name": "TZ",
                 "valueFrom": {"secretKeyRef": {"name": "tz-reference", "key": "TZ"}},
             },
+            {
+                "name": "TZ",
+                "valueFrom": {"configMapKeyRef": {"name": "tz-reference", "key": "TZ"}},
+            },
         ):
             with self.subTest(entry=entry):
                 resource = pod()
                 resource["spec"]["containers"][0]["env"] = [entry]
-                actual = self.admit(resource)["spec"]["containers"][0]
-                # The API may omit an explicitly empty value; no default was added.
-                self.assertEqual(len(tz_entries(actual)), 1)
-                self.assertNotEqual(tz_entries(actual)[0].get("value"), "Europe/Berlin")
-                if "valueFrom" in entry:
-                    self.assertEqual(
-                        tz_entries(actual)[0]["valueFrom"], entry["valueFrom"]
-                    )
-
-    def test_envfrom_is_not_overridden_or_resolved(self) -> None:
-        for field in ("secretRef", "configMapRef"):
-            with self.subTest(field=field):
-                resource = pod()
-                resource["spec"]["containers"][0]["envFrom"] = [
-                    {field: {"name": "tz-reference"}}
-                ]
-                actual = self.admit(resource)["spec"]["containers"][0]
-                self.assertEqual(tz_entries(actual), [])
                 self.assertEqual(
-                    actual["envFrom"], resource["spec"]["containers"][0]["envFrom"]
+                    tz_entries(self.admit(resource)["spec"]["containers"][0]),
+                    BERLIN_ENV,
                 )
 
-    def test_empty_envfrom_still_gets_default(self) -> None:
-        resource = pod()
-        resource["spec"]["containers"][0]["envFrom"] = []
-        actual = self.admit(resource)["spec"]["containers"][0]
-        self.assertEqual(tz_entries(actual), [{"name": "TZ", "value": "Europe/Berlin"}])
+    def test_envfrom_gets_literal_override_without_reading_sources(self) -> None:
+        for field in ("secretRef", "configMapRef"):
+            resource = pod()
+            resource["spec"]["containers"][0]["envFrom"] = [
+                {field: {"name": "tz-reference"}}
+            ]
+            actual = self.admit(resource)["spec"]["containers"][0]
+            self.assertEqual(tz_entries(actual), BERLIN_ENV)
+            self.assertEqual(
+                actual["envFrom"], resource["spec"]["containers"][0]["envFrom"]
+            )
 
-    def test_mixed_containers_and_init_sidecars_preserve_order_and_explicit_choices(
+    def test_all_containers_and_init_sidecars_are_forced_without_reordering(
         self,
     ) -> None:
         resource = pod()
@@ -307,9 +356,14 @@ class NativeTimezoneAdmissionTest(unittest.TestCase):
                 "restartPolicy": "Always",
             },
             {
-                "name": "utc-init",
+                "name": "referenced-init",
                 "image": "registry.k8s.io/pause:3.10",
-                "env": [{"name": "TZ", "value": "UTC"}],
+                "env": [
+                    {
+                        "name": "TZ",
+                        "valueFrom": {"fieldRef": {"fieldPath": "metadata.namespace"}},
+                    }
+                ],
             },
             {
                 "name": "imported-init",
@@ -329,60 +383,202 @@ class NativeTimezoneAdmissionTest(unittest.TestCase):
             [c["name"] for c in actual["initContainers"]],
             [c["name"] for c in resource["spec"]["initContainers"]],
         )
-        for container in actual["initContainers"][:2] + actual["containers"][:1]:
-            self.assertEqual(
-                tz_entries(container), [{"name": "TZ", "value": "Europe/Berlin"}]
-            )
-        self.assertEqual(
-            tz_entries(actual["initContainers"][2]), [{"name": "TZ", "value": "UTC"}]
-        )
-        self.assertEqual(tz_entries(actual["initContainers"][3]), [])
-        self.assertEqual(
-            tz_entries(actual["containers"][1]), [{"name": "TZ", "value": "UTC"}]
-        )
+        for container in actual["initContainers"] + actual["containers"]:
+            self.assertEqual(tz_entries(container), BERLIN_ENV)
         self.assertEqual(actual["initContainers"][1]["restartPolicy"], "Always")
+
+    def test_other_environment_references_and_order_are_preserved(self) -> None:
+        resource = pod()
+        entries: list[dict[str, Any]] = [
+            {"name": "FIRST", "value": "original"},
+            {
+                "name": "REFERENCE",
+                "valueFrom": {
+                    "secretKeyRef": {"name": "opaque-reference", "key": "unused"}
+                },
+            },
+            {
+                "name": "TZ",
+                "valueFrom": {"configMapKeyRef": {"name": "tz-reference", "key": "TZ"}},
+            },
+            {"name": "LAST", "value": "original"},
+        ]
+        resource["spec"]["containers"][0]["env"] = entries
+        actual = self.admit(resource)["spec"]["containers"][0]
+        self.assertEqual(tz_entries(actual), BERLIN_ENV)
+        self.assertEqual(
+            [e for e in actual["env"] if e["name"] != "TZ"],
+            [e for e in entries if e["name"] != "TZ"],
+        )
 
     def test_reapplication_is_idempotent(self) -> None:
         resource = pod()
         resource["spec"] = self.admit(resource)["spec"]
-        actual = self.admit(resource)
         self.assertEqual(
-            tz_entries(actual["spec"]["containers"][0]),
-            [{"name": "TZ", "value": "Europe/Berlin"}],
+            tz_entries(self.admit(resource)["spec"]["containers"][0]), BERLIN_ENV
         )
 
-    def test_windows_pod_is_not_modified(self) -> None:
+    def test_windows_pod_also_declares_berlin(self) -> None:
         resource = pod()
         resource["spec"]["os"] = {"name": "windows"}
-        actual = self.admit(resource)["spec"]["containers"][0]
-        self.assertEqual(tz_entries(actual), [])
+        self.assertEqual(
+            tz_entries(self.admit(resource)["spec"]["containers"][0]), BERLIN_ENV
+        )
 
-    def test_cronjob_missing_or_empty_timezone_gets_berlin(self) -> None:
-        for value in (None, ""):
+    def test_all_cronjob_timezone_inputs_are_forced(self) -> None:
+        for value in (None, "", "UTC", "America/New_York", "Europe/Berlin"):
             resource = cronjob()
             if value is not None:
                 resource["spec"]["timeZone"] = value
             actual = self.admit(resource)["spec"]
             self.assertEqual(actual["timeZone"], "Europe/Berlin")
             self.assertEqual(actual["schedule"], resource["spec"]["schedule"])
-            self.assertNotIn(
-                "env",
-                actual["jobTemplate"]["spec"]["template"]["spec"]["containers"][0],
-            )
 
-    def test_explicit_cronjob_timezone_is_preserved(self) -> None:
-        for value in ("UTC", "America/New_York", "Europe/Berlin"):
-            resource = cronjob()
-            resource["spec"]["timeZone"] = value
-            self.assertEqual(self.admit(resource)["spec"]["timeZone"], value)
-
-    def test_cronjob_update_defaults_missing_timezone(self) -> None:
+    def test_cronjob_update_forces_even_an_explicit_timezone(self) -> None:
         resource = self.admit(cronjob(), dry_run=False)
-        resource["spec"].pop("timeZone")
+        resource["spec"]["timeZone"] = "UTC"
         self.assertEqual(
             self.admit(resource, operation="replace")["spec"]["timeZone"],
             "Europe/Berlin",
         )
+
+    def test_actual_git_owned_cronjobs_use_the_central_policy(self) -> None:
+        count = 0
+        for path in ROOT.glob("[0-9][0-9]-*/**/*.yaml"):
+            for resource in yaml.safe_load_all(path.read_text()):
+                if not isinstance(resource, dict) or resource.get("kind") != "CronJob":
+                    continue
+                namespace = resource["metadata"]["namespace"]
+                self.kubectl(
+                    "apply",
+                    "-f",
+                    "-",
+                    resource={
+                        "apiVersion": "v1",
+                        "kind": "Namespace",
+                        "metadata": {"name": namespace},
+                    },
+                )
+                actual = self.admit(resource)
+                self.assertEqual(actual["spec"]["timeZone"], "Europe/Berlin")
+                self.assertEqual(
+                    actual["spec"]["schedule"], resource["spec"]["schedule"]
+                )
+                count += 1
+        self.assertEqual(count, 3)
+
+    def test_new_ephemeral_container_is_forced(self) -> None:
+        resource = self.admit(pod(), dry_run=False)
+        resource["spec"]["ephemeralContainers"] = [
+            {
+                "name": "debug",
+                "image": "registry.k8s.io/pause:3.10",
+                "targetContainerName": "main",
+                "env": [
+                    {
+                        "name": "TZ",
+                        "valueFrom": {
+                            "configMapKeyRef": {"name": "tz-reference", "key": "TZ"}
+                        },
+                    }
+                ],
+            }
+        ]
+        actual = self.ephemeral(resource)
+        self.assertEqual(
+            tz_entries(actual["spec"]["ephemeralContainers"][0]), BERLIN_ENV
+        )
+        self.assertEqual(
+            actual["spec"]["ephemeralContainers"][0]["targetContainerName"], "main"
+        )
+
+    def test_existing_ephemeral_environment_is_not_rewritten(self) -> None:
+        resource = self.admit(pod(), dry_run=False)
+        resource["spec"]["ephemeralContainers"] = [
+            {
+                "name": "legacy",
+                "image": "registry.k8s.io/pause:3.10",
+                "env": [{"name": "TZ", "value": "UTC"}],
+            }
+        ]
+        # Seed a legacy debug container only in the isolated API, then restore
+        # every binding before testing a newly appended container.
+        with self.without_mutators(include_validation=True):
+            deadline = time.monotonic() + 10
+            while True:
+                try:
+                    witness = self.ephemeral(resource)
+                    if tz_entries(witness["spec"]["ephemeralContainers"][0]) == [
+                        {"name": "TZ", "value": "UTC"}
+                    ]:
+                        resource = self.ephemeral(resource, dry_run=False)
+                        break
+                except AssertionError as error:
+                    if "Europe/Berlin" not in str(error):
+                        raise
+                if time.monotonic() >= deadline:
+                    self.fail("Could not seed the isolated legacy fixture")
+                time.sleep(0.2)
+        resource["spec"]["ephemeralContainers"].append(
+            {
+                "name": "new-debug",
+                "image": "registry.k8s.io/pause:3.10",
+                "env": [{"name": "TZ", "value": "UTC"}],
+            }
+        )
+        actual = self.ephemeral(resource)["spec"]["ephemeralContainers"]
+        self.assertEqual(tz_entries(actual[0]), [{"name": "TZ", "value": "UTC"}])
+        self.assertEqual(tz_entries(actual[1]), BERLIN_ENV)
+
+    def test_final_validation_rejects_wrong_and_missing_tz_without_mutation(
+        self,
+    ) -> None:
+        with self.without_mutators():
+            for entries in (
+                [],
+                [{"name": "TZ", "value": "UTC"}],
+                [
+                    {
+                        "name": "TZ",
+                        "valueFrom": {
+                            "configMapKeyRef": {"name": "tz-reference", "key": "TZ"}
+                        },
+                    }
+                ],
+                BERLIN_ENV + BERLIN_ENV,
+            ):
+                resource = pod()
+                resource["spec"]["containers"][0]["env"] = entries
+                self.assert_denied(resource)
+            resource = cronjob()
+            resource["spec"]["timeZone"] = "UTC"
+            self.assert_denied(resource)
+            resource["spec"].pop("timeZone")
+            self.assert_denied(resource)
+            good_pod = pod()
+            good_pod["spec"]["containers"][0]["env"] = BERLIN_ENV
+            self.admit(good_pod)
+            good_cron = cronjob()
+            good_cron["spec"]["timeZone"] = "Europe/Berlin"
+            self.admit(good_cron)
+
+    def test_final_validation_checks_init_and_ephemeral_containers(self) -> None:
+        resource = self.admit(pod(), dry_run=False)
+        with self.without_mutators():
+            bad_init = pod()
+            bad_init["spec"]["containers"][0]["env"] = BERLIN_ENV
+            bad_init["spec"]["initContainers"] = [
+                {"name": "init", "image": "registry.k8s.io/pause:3.10"}
+            ]
+            self.assert_denied(bad_init)
+            resource["spec"]["ephemeralContainers"] = [
+                {
+                    "name": "debug",
+                    "image": "registry.k8s.io/pause:3.10",
+                    "env": [{"name": "TZ", "value": "UTC"}],
+                }
+            ]
+            self.assert_denied(resource, ephemeral=True)
 
 
 if __name__ == "__main__":

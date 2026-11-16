@@ -15,7 +15,7 @@ The runner does not contact hosts, Kubernetes, Git remotes, chart repositories, 
 - `longhorn-local` encryption/locality, PostgreSQL ClusterIP/Ambient-STRICT transport without duplicate client certificates, targeted default-deny, HA settings, static container hardening, Pi toleration scope, OpenBao policy boundaries, shared R2 source isolation, and restore-Lease access.
 - Official csi-driver-smb pin/API, dynamic SMB K8up repositories, the two-Application Istio layout, official component pins, native Gateway customization and restricted namespace seccomp, fail-closed Prometheus native-snapshot/one-shot-K8up support, Alertmanager VSO configuration, the Longhorn OIDC-proxy skeleton, and exactly the two existing Python adapters.
 - Encrypted Longhorn v1 discard defaults: actual ConfigMap program, device/iSCSI identity gates, persistent/live flags, key-safe command execution, memory admission, native recurring trim and the narrowly scoped privileged-node-helper exception. See `../docs/longhorn-encrypted-discard.md` for the separate live acceptance gates.
-- Native Kubernetes timezone defaulting contracts, explicit Git-owned CronJob timezones, and Berlin winter/summer wall-time conversion. Native admission execution is a separate opt-in test, never part of this offline runner.
+- Native Kubernetes timezone enforcement contracts and Berlin winter/summer wall-time conversion; application CronJobs use the central policy without duplicate timezone fields. Native admission execution is a separate opt-in test, never part of this offline runner.
 - Parent Application health checks executed by the installed `argocd` CLI's offline Lua evaluator: current-revision drift, stale revisions/specs, running/failed operations, selective syncs, dry runs, errors, and real child health.
 - Offline `ansible-playbook --syntax-check` for all seven entrypoint playbooks, including recovery and maintenance.
 
@@ -31,7 +31,7 @@ See `../docs/mesh-chart-evidence.md` for primary sources, artifact hashes, succe
 
 ## Native timezone admission tests
 
-`test_timezone_defaults.py` has five offline guards and ten opt-in native API tests. The latter cover missing/empty CronJob timezones, explicit overrides, UPDATE defaulting, additive container env merging, init/native sidecars, imported-env preservation, Windows exclusion and idempotence. They never invoke the host's kubectl context. No test image is scheduled or executed by the agentless test API.
+`test_timezone_defaults.py` has four offline guards and fourteen opt-in native API tests. These cover forced CronJob timezones (including actual Git-owned manifests), CREATE/UPDATE admission, literal/empty/valueFrom TZ replacement, envFrom overrides without source reads, unrelated env/reference preservation, init/native sidecars, Windows and new ephemeral containers, existing ephemeral immutability, idempotence and final rejection with mutation disabled. There are no per-application TZ exceptions. They never invoke the host's kubectl context. No test image is scheduled or executed by the agentless test API.
 
 For a disposable test API, use the same pinned K3s version as the platform. Docker owns the process/health state; the server has a 900-second lifetime, no network access, no host mounts and no privileges. Its automatically created anonymous data volumes belong only to this test. Run from the Infra checkout in a dedicated shell:
 
@@ -52,7 +52,7 @@ TIMEZONE_TEST_CONTAINER="$test_id" PYTHONDONTWRITEBYTECODE=1 \
   python3 -m unittest discover -s tests -p test_timezone_defaults.py -v
 ```
 
-`192.0.2.1` is a documentation-only advertised address needed by the API's endpoint validator. Test clients use loopback inside the network-isolated container. The suite requires the dedicated purpose label, private PID namespace, unprivileged container, no bind mounts and `network=none` before installing any policy. It creates a dedicated tokenless test ServiceAccount; its only persisted test workload is a suspended synthetic CronJob. No production resources or credentials are used. Closing the dedicated shell cleans up that exact container and its anonymous volumes. The lifetime also bounds the process if the client disappears; Docker retains terminal status for recovery.
+`192.0.2.1` is a documentation-only advertised address needed by the API's endpoint validator. Test clients use loopback inside the network-isolated container. The suite requires the dedicated purpose label, private PID namespace, unprivileged container, no bind mounts and `network=none` before installing any policy. It creates a dedicated tokenless test ServiceAccount, fixture namespaces, suspended synthetic CronJobs and unscheduled synthetic Pods/debug-container specifications. Its binding-disable tests run sequentially and restore bindings with verified mutation, not merely a successful apply. No production resources or credentials are used. Closing the dedicated shell cleans up that exact container and its anonymous volumes. The lifetime also bounds the process if the client disappears; Docker retains terminal status for recovery.
 
 ## Deployment-blocking checks not yet executable
 
