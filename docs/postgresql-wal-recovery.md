@@ -21,7 +21,21 @@ The archive-status directory contained `.done` markers and no `.ready` markers a
 - CNPG 1.30.1 returned at the full-WAL-disk guard before PVC reconciliation, so changing the Cluster size alone did not resize existing PVCs. After approval, only PostgreSQL-1's PVC request was manually patched to the already Git-owned 40Gi. Longhorn expanded the filesystem; PostgreSQL-1 restarted automatically and CNPG then expanded PostgreSQL-2 and -3. All three PVC capacities were verified as 40Gi.
 - After separate approval and fresh checks, only the inactive physical slot `_cnpg_k3s_postgres_2` on PostgreSQL-1 was dropped. PostgreSQL-1 was a standby, PostgreSQL-3 remained primary, and PostgreSQL-1 had no downstream sender connections. No other instance's slot, table data, or WAL file was manually removed. No checkpoint or restart was forced.
 - After PostgreSQL's own cleanup, PostgreSQL-1 WAL dropped from 24,830,280,928 bytes (~23.1GiB) to 624MiB. Its filesystem changed from approximately 25GiB used to 3.1GiB used, leaving approximately 37GiB free on the 40Gi volume. Slot absence and free space were independently verified. This resolves that retention blockage, not the archive-to-streaming problem.
-- `spec.postgresql.parameters.max_slot_wal_keep_size: 10GB` is added in the same change as this document. Verify its active runtime value after GitOps reconciliation; declaration alone is not proof of activation.
+- Infra commit `e87d512` added `spec.postgresql.parameters.max_slot_wal_keep_size: 10GB` and this runbook. Argo subsequently reached Synced/Succeeded, and read-only `SHOW`/`current_setting` queries verified **10GB active on all three instances**.
+- PostgreSQL-1 subsequently reached **streaming**, with its replay LSN equal to the primary's current LSN at inspection. The primary's corresponding slot was active and advancing. PostgreSQL-2 was still progressing through archive WAL, with no receiver; do not infer its completion from readiness.
+
+## Longhorn snapshot cleanup and the encrypted TRIM blocker
+
+After the slot cleanup, the mounted filesystem used approximately 3.2GiB, but Longhorn still reported approximately 32.49GiB allocated. These are different accounting layers, not 32GiB of live PostgreSQL tables. Two automatic expansion snapshots (27 October and 16 November) retained older blocks, including the former WAL backlog; deleted blocks in an encrypted thin volume also need discard propagation before the backing store can release them.
+
+After explicit approval, deletion was requested through the Longhorn Snapshot CR API for **only** these two PostgreSQL-1 snapshots:
+
+- `expand-21491613696-pvc-6548dde2-ecfa-4b00-a193-eced3b1f6fcf`
+- `expand-42966450176-pvc-6548dde2-ecfa-4b00-a193-eced3b1f6fcf`
+
+Longhorn marked both removed and completed its native purge/coalescing process (`state=complete`, progress 100%, no purge error). The October snapshot disappeared from the engine chain. Allocation fell from **34,889,916,416 bytes (32.49GiB) to 29,340,057,600 bytes (27.32GiB)**, reclaiming approximately **5.17GiB**. The November snapshot still exists marked removed immediately before `volume-head`; it was not physically purged. The volume remained healthy. Thus both historical rollback points were retired, but physical reclamation is only partial. A delete response is not proof that physical blocks have been reclaimed: finalizers and engine purge status must be checked, and allocation may temporarily grow while snapshot data is merged. Do not remove finalizers or replica files by hand.
+
+A filesystem trim of the exact PostgreSQL-1 global mount failed with **`the discard operation is not supported`**. Read-only `lsblk -D` showed discard support on its underlying iSCSI disk (512-byte granularity, 4GiB maximum), but zero discard capability on the LUKS mapping. `cryptsetup status` showed no `allow_discards` flag. This identifies a discard-propagation blocker in the encrypted mapping, not a reason to delete live data. No encryption mapping options, global Longhorn trim settings, or keys were modified/read to bypass it. Enabling discard can reveal allocation/free-space patterns through encryption and needs a separately reviewed, explicitly approved configuration path. Physical-reclamation acceptance remains open until purge completion and the discard limitation are resolved; do not equate 37GiB free inside the PVC with host-level recovery.
 
 ## WAL limit semantics
 
