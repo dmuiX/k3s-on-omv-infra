@@ -125,9 +125,6 @@ spec:
                 port: 53
               - protocol: TCP
                 port: 443
-            - ports:
-              - protocol: TCP
-                port: 6443
           extraPorts:
           - name: metrics
             containerPort: 9101
