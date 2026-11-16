@@ -44,6 +44,17 @@ class MeshRenderTest < Minitest::Test
     end
   end
 
+  def test_ztunnel_memory_request_preserves_limit_and_zero_unavailable_surge
+    documents = render("ztunnel", "ztunnel", "istio-system")
+    daemonset = documents.find { |document| document["kind"] == "DaemonSet" }
+    resources = daemonset.dig("spec", "template", "spec", "containers", 0, "resources")
+    assert_equal({"cpu" => "200m", "memory" => "128Mi"}, resources.fetch("requests"))
+    assert_equal "1", resources.dig("limits", "cpu").to_s
+    assert_equal "1Gi", resources.dig("limits", "memory")
+    assert_equal({"maxSurge" => 1, "maxUnavailable" => 0},
+      daemonset.dig("spec", "updateStrategy", "rollingUpdate"))
+  end
+
   def test_cni_and_ztunnel
     cni = render("cni", "istio-cni", "istio-system")
     ztunnel = render("ztunnel", "ztunnel", "istio-system")
