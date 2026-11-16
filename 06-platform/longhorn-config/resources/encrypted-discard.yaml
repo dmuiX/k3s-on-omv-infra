@@ -403,6 +403,6 @@ spec:
   name: encrypted-volume-trim
   task: filesystem-trim
   groups: [default]
-  cron: '30 18 * * *'
+  cron: '35 18 * * *'
   concurrency: 1
   retain: 0
