@@ -1,0 +1,18 @@
+# Resource-only SSA of the ObjectStore seeded by Bootstrap before wave 7.
+# Never add configuration/endpoint/credential fields or use replace/client-side apply.
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  name: k3s-postgres-backups
+  namespace: cloudnative-pg
+  annotations:
+    argocd.argoproj.io/sync-options: ServerSideApply=true,Validate=false,Prune=false,Delete=false
+spec:
+  instanceSidecarConfiguration:
+    resources:
+      requests:
+        cpu: 250m
+        memory: 192Mi
+      limits:
+        cpu: 250m
+        memory: 256Mi
