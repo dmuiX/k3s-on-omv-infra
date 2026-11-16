@@ -2,6 +2,9 @@
 
 from pathlib import Path
 from typing import Any
+import json
+import os
+import subprocess
 import unittest
 
 import yaml
@@ -61,6 +64,116 @@ class SmallNodePlacementTest(unittest.TestCase):
                 "limits": {"cpu": "1", "memory": "1Gi"},
             },
         )
+
+    def test_native_csi_requests_use_only_supported_components(self) -> None:
+        values = application("02-controllers/longhorn")["spec"]["sources"][0]["helm"][
+            "valuesObject"
+        ]
+        profile = json.loads(
+            values["defaultSettings"]["systemManagedCSIComponentsResourceLimits"]
+        )
+        controllers = {
+            "csi-attacher",
+            "csi-provisioner",
+            "csi-resizer",
+            "csi-snapshotter",
+        }
+        self.assertEqual(
+            set(profile),
+            controllers
+            | {
+                "longhorn-csi-plugin",
+                "node-driver-registrar",
+                "longhorn-liveness-probe",
+            },
+        )
+        for name in controllers:
+            self.assertEqual(
+                profile[name], {"requests": {"cpu": "10m", "memory": "80Mi"}}
+            )
+        for name, cpu in (
+            ("longhorn-csi-plugin", "125m"),
+            ("node-driver-registrar", "5m"),
+            ("longhorn-liveness-probe", "5m"),
+        ):
+            self.assertEqual(
+                profile[name], {"requests": {"cpu": cpu, "memory": "48Mi"}}
+            )
+        self.assertEqual(
+            values["longhornGlobalManager"]["resources"],
+            {"requests": {"cpu": "10m", "memory": "96Mi"}},
+        )
+
+    def test_request_profile_needs_the_paired_pi_budget_before_rollout(self) -> None:
+        # Baseline includes PostgreSQL's restartable Barman init sidecar.
+        values = application("02-controllers/longhorn")["spec"]["sources"][0]["helm"][
+            "valuesObject"
+        ]
+        profile = json.loads(
+            values["defaultSettings"]["systemManagedCSIComponentsResourceLimits"]
+        )
+        added = sum(
+            int(c["requests"]["memory"].removesuffix("Mi")) for c in profile.values()
+        )
+        target = 1756 - 384 - 80 + 256 + added + (192 - 64)
+        self.assertEqual(target, 2140)
+        capacity = 3868328 / 1024
+        self.assertLess(capacity - 1536 - 256 - 192 - target, 0)
+        self.assertGreaterEqual(capacity - 1024 - 256 - 192 - target, 128)
+
+    @unittest.skipUnless(
+        os.environ.get("LONGHORN_CHART_ARCHIVE"), "Pinned Longhorn chart is required"
+    )
+    def test_pinned_chart_consumes_native_resources_and_hard_affinity(self) -> None:
+        values = application("02-controllers/longhorn")["spec"]["sources"][0]["helm"][
+            "valuesObject"
+        ]
+        result = subprocess.run(
+            [
+                "helm",
+                "template",
+                "longhorn",
+                os.environ["LONGHORN_CHART_ARCHIVE"],
+                "--namespace",
+                "longhorn",
+                "--kube-version",
+                "1.37.1",
+                "-f",
+                "-",
+            ],
+            input=yaml.safe_dump(values),
+            text=True,
+            capture_output=True,
+            check=True,
+            timeout=15,
+        )
+        docs = [d for d in yaml.safe_load_all(result.stdout) if d]
+        (config,) = [
+            d
+            for d in docs
+            if d["kind"] == "ConfigMap"
+            and d["metadata"]["name"] == "longhorn-default-setting"
+        ]
+        native = yaml.safe_load(config["data"]["default-setting.yaml"])
+        self.assertEqual(
+            json.loads(native["system-managed-csi-components-resource-limits"]),
+            json.loads(
+                values["defaultSettings"]["systemManagedCSIComponentsResourceLimits"]
+            ),
+        )
+        deployments = {
+            d["metadata"]["name"]: d for d in docs if d["kind"] == "Deployment"
+        }
+        global_container = deployments["longhorn-global-manager"]["spec"]["template"][
+            "spec"
+        ]["containers"][0]
+        self.assertEqual(
+            global_container["resources"], values["longhornGlobalManager"]["resources"]
+        )
+        env = deployments["longhorn-driver-deployer"]["spec"]["template"]["spec"][
+            "containers"
+        ][0]["env"]
+        self.assertIn({"name": "CSI_POD_ANTI_AFFINITY_PRESET", "value": "hard"}, env)
 
     def test_dns_and_metrics_stay_out_of_the_gitops_root(self) -> None:
         paths = list(INFRA.glob("**/app.yml"))

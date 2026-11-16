@@ -36,6 +36,16 @@ spec:
           storageOverProvisioningPercentage: 100
           replicaAutoBalance: best-effort
           taintToleration: CriticalAddonsOnly=true:NoSchedule
+          # Requests only: preserve the current unbounded CSI burst limits.
+          # Activate only after the paired Pi reservation change is effective.
+          systemManagedCSIComponentsResourceLimits: >-
+            {"csi-attacher":{"requests":{"cpu":"10m","memory":"80Mi"}},
+            "csi-provisioner":{"requests":{"cpu":"10m","memory":"80Mi"}},
+            "csi-resizer":{"requests":{"cpu":"10m","memory":"80Mi"}},
+            "csi-snapshotter":{"requests":{"cpu":"10m","memory":"80Mi"}},
+            "longhorn-csi-plugin":{"requests":{"cpu":"125m","memory":"48Mi"}},
+            "node-driver-registrar":{"requests":{"cpu":"5m","memory":"48Mi"}},
+            "longhorn-liveness-probe":{"requests":{"cpu":"5m","memory":"48Mi"}}}
         persistence:
           createStorageClass: false
           defaultClass: false
@@ -58,6 +68,11 @@ spec:
               memory: 256Mi
             limits:
               memory: 1Gi
+        longhornGlobalManager:
+          resources:
+            requests:
+              cpu: 10m
+              memory: 96Mi
         preUpgradeChecker:
           jobEnabled: false
         csi:

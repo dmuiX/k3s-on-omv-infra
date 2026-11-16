@@ -1,9 +1,12 @@
 # Consumption-based resource request targets
 
-**Proposal only: not active Helm values, not deployed, and not rollout approval.**
-The existing small-node PR still changes only SMB placement, CSI anti-affinity and
-ztunnel's request. Do not silently add the requests below to that rollout: the
-current Pi scheduling budget cannot accommodate them alongside OpenBao.
+**Native request targets are authored in the paired PRs, not deployed.**
+CSI/global-manager requests now use the supported Longhorn chart fields. Barman
+sidecar requests are changed in Bootstrap's ObjectStore contract. Existing objects
+need the bounded maintenance path; existing database Pods may need a separately
+approved operator rollout. None of this is an automatic deployment or approval.
+The paired Bootstrap Pi reserve candidate must be effective before activating the
+native profile. Components without a native override remain planning targets.
 
 ## Measurement and method
 
@@ -36,6 +39,10 @@ controller leader or backup responsibility to move without a new profile.
 | CSI liveness probe | 34.2 | 35.3 | 2.2 | 5m | 48Mi |
 | Longhorn global manager | 67.5 | 67.9 | 3.8 | 10m | 96Mi |
 | Barman **instance sidecar** | 168.9 | 220.4 | 230.0 | 250m | 192Mi |
+
+The seven CSI rows and global-manager row are now in the Infra Application.
+The Barman row is in the paired Bootstrap contract; it is not a plugin-controller
+resource change and does not force database Pod restarts or a switchover.
 
 The CSI plugin's rare 305Mi peak is deliberately not its request; retain burst
 capacity and inspect it if it recurs. Barman's proposed CPU request stays at its
@@ -80,7 +87,7 @@ request. V2 memory/hugepage settings must not be repurposed for the V1 engine.
 The CSI resource map does not cover the instance manager or engine-image daemon.
 No ad-hoc Pod patches, new admission machinery, or storage-owner fork is included.
 
-## Pi budget gate
+## Pi budget gate and paired reserve
 
 Fresh read-only effective request calculation includes restartable init sidecars,
 ordinary init-container maxima and Pod overhead. Terminated Pods are excluded.
@@ -97,9 +104,13 @@ All figures below are MiB, rounded only for display.
 | Barman sidecar 64Mi -> 192Mi | +128 |
 | Total with these natively configurable targets | 2,140 |
 | **Deficit against unchanged allocatable memory** | **346.34** |
+| Paired Pi kubeReserved candidate: 1536Mi -> 1024Mi | +512 |
+| Allocatable with that candidate and unchanged system/eviction reserves | 2,305.66 |
+| **Native profile headroom after paired activation** | **165.66** |
 | Additional currently unsupported Pi targets: instance manager + engine + helper | +504 |
 | Total if all of the defined Pi targets were reservable | 2,644 |
-| **Full-target deficit** | **850.34** |
+| Full-target deficit against the original reserve | 850.34 |
+| **Full-target deficit even with the paired candidate** | **338.34** |
 
 This does **not** mean an extra 850Mi physical RAM is immediately consumed: the
 processes already run. It means their proposed scheduling guarantees do not fit
@@ -107,13 +118,21 @@ the current reservation model. Do not force requests below the measured normal
 load simply to make the arithmetic pass. Do not present the existing 246Mi
 request headroom as complete coverage for these previously unreserved consumers.
 
-Before activating a profile, explicitly decide how to reconcile the budget:
-validate the complete K3s service reservation against its history, find further
-legitimate placement/right-sizing opportunities, or change the Pi's retained
-workload/storage role. None of those host/HA changes is authorized by this
-request-definition document. Even reducing the K3s reserve by 512Mi would not by
-itself fit every target in the full profile. Recalculate against fresh live state
-and cover the unsupported owner-controlled components before claiming completion.
+The paired bounded Pi maintenance checks the complete live K3s service working
+set, requires at least 128Mi spare inside the 1024Mi candidate and at least 1Gi
+host MemAvailable, checks both remaining local API/etcd readiness gates, and
+verifies effective config, fresh worker lease, allocatable memory and unchanged DB
+primary afterwards. System reserve and all eviction protections stay unchanged.
+The observed whole-service working set was about 781Mi; full historical working
+set peaks are still unavailable. This is a guarded candidate, not proof that all
+future recovery spikes fit it. It changes scheduler accounting, not a hard
+process-memory limit or physical RAM consumption.
+
+The native profile fits this candidate; the complete profile still does not.
+Do not claim all missing requests are solved: unsupported components and the
+remaining 338Mi full-target deficit remain open. No storage-role or data-HA change
+is included. Inspect actual Pods after operator rollout, recalculate fresh
+memory/CPU headroom and complete the production tests before acceptance.
 
 ## Sources
 
