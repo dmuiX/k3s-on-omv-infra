@@ -157,6 +157,22 @@ class OpenBaoNetworkTests(unittest.TestCase):
                 # including the existing kube-system TCP 443 permission.
                 self.assertTrue(rule.get('to'), 'Chart must not grant unrestricted API egress')
 
+    def test_api_grant_removal_changes_only_native_network_policy(self) -> None:
+        """Removing the API wildcard must not roll Pods or alter other resources."""
+        original_values = copy.deepcopy(self.values)
+        original_values['server']['networkPolicy']['egress'] = (
+            copy.deepcopy(CHART_EGRESS) + [copy.deepcopy(REMOVED_SERVER_API_RULE)]
+        )
+        original = native.render(self.app, original_values)
+        expected = copy.deepcopy(original)
+        policy, = native.kind(expected, 'NetworkPolicy')
+        self.assertEqual(policy['spec']['egress'].count(REMOVED_SERVER_API_RULE), 1)
+        policy['spec']['egress'].remove(REMOVED_SERVER_API_RULE)
+        self.assertEqual(
+            self.docs, expected,
+            'Only the destination-free API grant may change; Pods and all other resources must remain identical',
+        )
+
     def test_live_values_are_only_used_by_route_chart(self):
         route, = [s for s in self.app['spec']['sources']
                   if s.get('path') == 'charts/service-route']
