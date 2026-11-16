@@ -6,6 +6,7 @@ resources:
 - 01-bootstrap/istio/app.yml
 - 01-bootstrap/istio-gateway/app.yml
 - 01-bootstrap/prometheus-operator-crds/app.yml
+- 01-bootstrap/timezone-defaults/app.yml
 - 02-controllers/barman-cloud/app.yml
 - 02-controllers/cert-manager/app.yml
 - 02-controllers/cloudnative-pg/app.yml

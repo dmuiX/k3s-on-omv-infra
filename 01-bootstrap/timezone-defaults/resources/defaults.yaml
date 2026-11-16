@@ -1,0 +1,188 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingAdmissionPolicy
+metadata:
+  name: default-cronjob-timezone
+  annotations:
+    argocd.argoproj.io/sync-wave: "-3"
+spec:
+  failurePolicy: Fail
+  reinvocationPolicy: IfNeeded
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [batch]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [cronjobs]
+  mutations:
+    - patchType: ApplyConfiguration
+      applyConfiguration:
+        expression: >-
+          Object{spec: Object.spec{timeZone: 'Europe/Berlin'}}
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingAdmissionPolicyBinding
+metadata:
+  name: default-cronjob-timezone
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  policyName: default-cronjob-timezone
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingAdmissionPolicy
+metadata:
+  name: default-container-timezone
+  annotations:
+    argocd.argoproj.io/sync-wave: "-3"
+spec:
+  failurePolicy: Fail
+  reinvocationPolicy: IfNeeded
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE]
+        resources: [pods]
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [UPDATE]
+        resources: [pods/ephemeralcontainers]
+  matchConditions:
+    # Node-authenticated mirror requests only describe static workloads; their
+    # actual containers bypass API admission and cannot be changed here.
+    - name: not-a-node-mirror-request
+      expression: "!request.userInfo.username.startsWith('system:node:')"
+  variables:
+    # Existing ephemeral containers, like existing normal containers, have
+    # immutable environments. Only mutate newly appended debug containers.
+    - name: newEphemeralNames
+      expression: >-
+        has(object.spec.ephemeralContainers) ?
+        object.spec.ephemeralContainers.filter(c,
+          oldObject == null || !has(oldObject.spec.ephemeralContainers) ||
+          oldObject.spec.ephemeralContainers.all(old, old.name != c.name)
+        ).map(c, c.name) : []
+  mutations:
+    # SSA merges env entries by name but cannot remove a valueFrom via null.
+    # Clear only TZ's source first; never copy or resolve unrelated env values.
+    - patchType: JSONPatch
+      jsonPatch:
+        expression: >-
+          has(request.subResource) && request.subResource == 'ephemeralcontainers' ?
+          object.spec.ephemeralContainers.transformList(i, c,
+            c.name in variables.newEphemeralNames && has(c.env) &&
+            c.env.exists(e, e.name == 'TZ' && has(e.valueFrom)),
+            JSONPatch{op: 'remove', path: '/spec/ephemeralContainers/' + string(i) +
+              '/env/' + string(c.env.map(e, e.name).indexOf('TZ')) + '/valueFrom'}
+          ) :
+          object.spec.containers.transformList(i, c,
+            has(c.env) && c.env.exists(e, e.name == 'TZ' && has(e.valueFrom)),
+            JSONPatch{op: 'remove', path: '/spec/containers/' + string(i) +
+              '/env/' + string(c.env.map(e, e.name).indexOf('TZ')) + '/valueFrom'}
+          ) + (has(object.spec.initContainers) ?
+          object.spec.initContainers.transformList(i, c,
+            has(c.env) && c.env.exists(e, e.name == 'TZ' && has(e.valueFrom)),
+            JSONPatch{op: 'remove', path: '/spec/initContainers/' + string(i) +
+              '/env/' + string(c.env.map(e, e.name).indexOf('TZ')) + '/valueFrom'}
+          ) : [])
+    - patchType: ApplyConfiguration
+      applyConfiguration:
+        expression: >-
+          has(request.subResource) && request.subResource == 'ephemeralcontainers' ?
+          Object{spec: Object.spec{
+            ephemeralContainers: variables.newEphemeralNames.map(name, Object.spec.ephemeralContainers{
+              name: name, env: [Object.spec.ephemeralContainers.env{name: 'TZ', value: 'Europe/Berlin'}]
+            })
+          }} :
+          Object{spec: Object.spec{
+            containers: object.spec.containers.map(c, Object.spec.containers{
+              name: c.name, env: [Object.spec.containers.env{name: 'TZ', value: 'Europe/Berlin'}]
+            }),
+            initContainers: has(object.spec.initContainers) ?
+            object.spec.initContainers.map(c, Object.spec.initContainers{
+              name: c.name, env: [Object.spec.initContainers.env{name: 'TZ', value: 'Europe/Berlin'}]
+            }) : []
+          }}
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingAdmissionPolicyBinding
+metadata:
+  name: default-container-timezone
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  policyName: default-container-timezone
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: enforce-cronjob-timezone
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [batch]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [cronjobs]
+  validations:
+    - expression: "has(object.spec.timeZone) && object.spec.timeZone == 'Europe/Berlin'"
+      message: "CronJobs must use spec.timeZone Europe/Berlin."
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: enforce-cronjob-timezone
+spec:
+  policyName: enforce-cronjob-timezone
+  validationActions: [Deny]
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: enforce-container-timezone
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE]
+        resources: [pods]
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [UPDATE]
+        resources: [pods/ephemeralcontainers]
+  matchConditions:
+    - name: not-a-node-mirror-request
+      expression: "!request.userInfo.username.startsWith('system:node:')"
+  variables:
+    - name: containers
+      expression: >-
+        has(request.subResource) && request.subResource == 'ephemeralcontainers' ?
+        (has(object.spec.ephemeralContainers) ?
+          object.spec.ephemeralContainers.filter(c,
+            oldObject == null || !has(oldObject.spec.ephemeralContainers) ||
+            oldObject.spec.ephemeralContainers.all(old, old.name != c.name)
+          ) : []) :
+        object.spec.containers + (has(object.spec.initContainers) ? object.spec.initContainers : [])
+  validations:
+    - expression: >-
+        variables.containers.all(c,
+          has(c.env) && c.env.filter(e, e.name == 'TZ').size() == 1 &&
+          c.env.exists(e, e.name == 'TZ' && has(e.value) &&
+            e.value == 'Europe/Berlin' && !has(e.valueFrom))
+        )
+      message: "Every new container must declare exactly one literal TZ=Europe/Berlin."
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: enforce-container-timezone
+spec:
+  policyName: enforce-container-timezone
+  validationActions: [Deny]

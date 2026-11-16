@@ -5,6 +5,8 @@ workspace=$(cd -- "$(dirname -- "$0")/../.." && pwd)
 bootstrap="$workspace/k3s-on-omv-bootstrap"
 infra="$workspace/k3s-on-omv-infra"
 export PYTHONDONTWRITEBYTECODE=1
+# Native admission tests are opt-in outside this strictly offline runner.
+unset TIMEZONE_TEST_CONTAINER
 
 python=${PYTHON:-python3}
 if ! "$python" -c 'import yaml' 2>/dev/null; then

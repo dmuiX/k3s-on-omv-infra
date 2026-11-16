@@ -15,6 +15,7 @@ BOOTSTRAP = ROOT / "k3s-on-omv-bootstrap"
 EXPECTED_INFRA = {
   "argocd-config" => 1,
   "prometheus-operator-crds" => 1,
+  "timezone-defaults" => 1,
   "cert-manager" => -5,
   "letsencrypt-dns01-issuer" => -4,
   "csi-driver-smb" => 2,
