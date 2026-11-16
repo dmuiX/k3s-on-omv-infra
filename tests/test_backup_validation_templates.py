@@ -25,7 +25,8 @@ def consumers(documents):
 
 
 def desired_documents():
-    for root in (ROOT, APPS, ROOT.parent / 'k3s-on-omv-live'):
+    live = Path(os.environ.get('PLATFORM_LIVE_REPO', ROOT.parent / 'k3s-on-omv-live'))
+    for root in (ROOT, APPS, live):
         for path in sorted(root.rglob('*')):
             if path.suffix not in ('.yaml', '.yml') or any(part in path.relative_to(root).parts
                     for part in ('fixtures', 'charts', 'chart', '.git')):

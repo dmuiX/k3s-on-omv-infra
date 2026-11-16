@@ -1,0 +1,14 @@
+# SYNTHETIC CI ONLY: no private configuration or real credentials.
+postgresConsumer:
+  enabled: true
+  name: grafana
+  databaseName: grafana
+  username: grafana
+  roleDisplayName: Grafana
+  databaseNamespace: cloudnative-pg
+  clusterName: k3s-postgres
+  providerConfigRef: default
+  vaultAuthRef: grafana-vso
+  secretName: grafana-db
+  deploymentName: kube-prometheus-stack-grafana
+  credentialFormat: split

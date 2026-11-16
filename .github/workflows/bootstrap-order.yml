@@ -1,31 +1,70 @@
-name: Bootstrap dependency order
+name: Repository workload contracts
 on:
+  pull_request:
+  push:
+    branches: [main]
   workflow_dispatch:
-  
+
 permissions:
   contents: read
+concurrency:
+  group: repo-contracts-${{ github.ref }}
+  cancel-in-progress: true
 jobs:
-  offline:
+  repository:
     runs-on: ubuntu-24.04
-    timeout-minutes: 5
+    timeout-minutes: 15
+    env:
+      PYTHONDONTWRITEBYTECODE: '1'
+      KUBECONFIG: /dev/null
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: Archive exact source for cross-repository review
-        run: git archive --format=tar.gz --output="${RUNNER_TEMP}/infra-source.tar.gz" HEAD
-      - uses: actions/upload-artifact@v4
-        with:
-          name: infra-source
-          path: ${{ runner.temp }}/infra-source.tar.gz
-          retention-days: 3
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: python -m pip install PyYAML
-      - run: python -m unittest discover -s tests -p 'test_*.py' -v
-      - name: Validate legacy runner and Ruby test syntax
+      - name: Install pinned test dependencies
+        run: python -m pip install -r tests/requirements-ci.txt
+      - name: Restore public dependency downloads only
+        uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/infra-ci-downloads
+          key: ${{ runner.os }}-infra-ci-v1-${{ hashFiles('tests/ci-dependencies.json') }}
+      - name: Verify pinned tools and every official chart before running tests
+        id: dependencies
+        run: |
+          python tests/ci_dependencies.py \
+            --cache "$RUNNER_TEMP/infra-ci-downloads" \
+            --charts "$RUNNER_TEMP/infra-ci-charts" \
+            --bin "$RUNNER_TEMP/infra-ci-bin"
+          echo "PLATFORM_CHART_AUDIT=$RUNNER_TEMP/infra-ci-charts" >> "$GITHUB_ENV"
+          echo "$RUNNER_TEMP/infra-ci-bin" >> "$GITHUB_PATH"
+      - name: Check maintained CI helper types and style
+        run: |
+          files=(tests/ci_dependencies.py tests/repo_suite.py tests/workload_contracts.py
+                 tests/test_ci_dependencies.py tests/test_repo_suite.py
+                 tests/test_repo_workloads.py tests/test_workload_contracts.py)
+          python -m black --check "${files[@]}"
+          python -m ruff check "${files[@]}"
+          python -m mypy --strict --follow-imports=skip "${files[@]}"
+      - name: Run isolated repository workload tests (no private inputs)
+        run: python tests/repo_suite.py
+      - name: Execute native Argo application-health contracts offline
+        if: ${{ !cancelled() && steps.dependencies.conclusion == 'success' }}
+        run: ruby -EUTF-8 tests/test_application_health.rb
+      - name: Validate retained integration runner syntax without executing private checks
+        if: ${{ !cancelled() }}
         run: |
           sh -n tests/run-offline-tests.sh
           ruby -EUTF-8 -c tests/verify-contracts.rb
           ruby -EUTF-8 -c tests/verify-mesh-renders.rb
+      - name: Record validation boundary
+        if: ${{ !cancelled() }}
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" <<'SUMMARY'
+          ## Scope
+          Public repository contracts use verified pinned charts and synthetic values only.
+          Private Live/Apps/Bootstrap integration and production functional checks are **NOT RUN** here.
+          See `tests/suites.json` and `tests/README.md`; a green check is not deployment acceptance.
+          SUMMARY

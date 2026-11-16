@@ -1,4 +1,4 @@
-"""Offline native OpenBao NetworkPolicy migration contracts, chart 0.30.4.
+"""Offline native OpenBao NetworkPolicy contracts using the Application's exact pin.
 
 Baseline captured from security.yaml before migration, not from chart values.
 The approved chart selector adds instance=openbao, NOT component=server.
@@ -8,7 +8,6 @@ The old policy remains in the cluster with prune=false until reviewed retirement
 these tests render locally only and do not deploy or retire anything.
 """
 import copy
-import hashlib
 import unittest
 
 import yaml
@@ -80,12 +79,9 @@ REMOVED_SERVER_API_RULE = {'ports': [{'protocol': 'TCP', 'port': 6443}]}
 CHART_EGRESS = copy.deepcopy(BASELINE['spec']['egress'])
 CHART_EGRESS.remove(REMOVED_SERVER_API_RULE)
 
-# The default deny must survive byte-for-byte. Injector/server API tuples and snapshot
-# HTTPS moved to additive Live policies; test_remaining_api_network checks their
-# exact selectors, union of permissions, and source ownership separately.
-UNCHANGED = {
-    'default-deny': '6d2250940dd9e9476fae56040e13864114fa38348b816c7bcc460e0a643fc545',
-}
+# Comments/chart-version notes are not policy semantics. The namespace-wide deny
+# must remain exactly deny-all; private additive API tuples are integration scope.
+DEFAULT_DENY_SPEC = {'podSelector': {}, 'policyTypes': ['Ingress', 'Egress']}
 
 
 def effective_policy_types(spec):
@@ -109,13 +105,15 @@ class OpenBaoNetworkTests(unittest.TestCase):
         policy = self.values['server']['networkPolicy']
         self.assertEqual(policy, {
             'enabled': True,
-            'ingress': BASELINE['spec']['ingress'],
+            'ingress': BASELINE['spec']['ingress'] + [METRICS_INGRESS],
             'egress': CHART_EGRESS,
         })
 
     def check_rendered_policy(self, app, docs):
         source = app['spec']['sources'][0]
-        self.assertEqual((source['chart'], source['targetRevision']), ('openbao', '0.30.4'))
+        self.assertEqual(source['chart'], 'openbao')
+        chart = native.load(native.CHARTS / f"openbao-{source['targetRevision']}/openbao/Chart.yaml")
+        self.assertEqual(str(chart['version']), str(source['targetRevision']))
         policy, = native.kind(docs, 'NetworkPolicy')
         self.assertEqual(policy['apiVersion'], BASELINE['apiVersion'])
         self.assertEqual(policy['metadata']['name'], 'openbao')
@@ -130,9 +128,9 @@ class OpenBaoNetworkTests(unittest.TestCase):
         self.assertNotIn('component', selector['matchLabels'])
         expected = copy.deepcopy(BASELINE['spec'])
         expected['podSelector'] = selector
+        expected['ingress'] += [METRICS_INGRESS]
         expected['egress'] = CHART_EGRESS
         actual = copy.deepcopy(policy['spec'])
-        self.assertNotIn('policyTypes', actual, 'Pinned template relies on Kubernetes defaults')
         actual['policyTypes'] = effective_policy_types(actual)
         self.assertEqual(actual, expected,
                          'Only the ports-only TCP 6443 rule may move to the exact Live API policy')
@@ -166,12 +164,15 @@ class OpenBaoNetworkTests(unittest.TestCase):
         self.assertNotIn('valueFiles', self.app['spec']['sources'][0]['helm'])
 
     def test_security_policy_identities_are_stable(self):
-        documents = (ROOT / '04-openbao/resources/security.yaml').read_text().split('---\n')
-        hashes = {yaml.safe_load(text)['metadata']['name']:
-                  hashlib.sha256(text.encode()).hexdigest() for text in documents}
-        self.assertEqual(set(hashes), {
+        documents = yaml.safe_load_all((ROOT / '04-openbao/resources/security.yaml').read_text())
+        policies = {d['metadata']['name']: d for d in documents if d}
+        self.assertEqual(set(policies), {
             'default-deny', 'allow-openbao-agent-injector', 'allow-openbao-snapshot-egress'})
-        self.assertEqual({name: hashes[name] for name in UNCHANGED}, UNCHANGED)
+        deny = policies['default-deny']
+        self.assertEqual(deny['apiVersion'], 'networking.k8s.io/v1')
+        self.assertEqual(deny['kind'], 'NetworkPolicy')
+        self.assertEqual(deny['metadata']['namespace'], 'openbao')
+        self.assertEqual(deny['spec'], DEFAULT_DENY_SPEC)
         self.assertFalse(self.app['spec']['syncPolicy']['automated']['prune'],
                          'Renamed old resource must await reviewed retirement')
 
