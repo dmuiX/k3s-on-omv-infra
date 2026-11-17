@@ -203,6 +203,10 @@ spec:
               cpu: 250m
               memory: 256Mi
         applicationSet:
+          resources:
+            requests:
+              cpu: 10m
+              memory: 96Mi
           metrics:
             enabled: true
             serviceMonitor:
@@ -217,6 +221,10 @@ spec:
               drop:
               - ALL
         notifications:
+          resources:
+            requests:
+              cpu: 10m
+              memory: 144Mi
           metrics:
             enabled: true
             serviceMonitor:
@@ -231,6 +239,15 @@ spec:
               drop:
               - ALL
         dex:
+          resources:
+            requests:
+              cpu: 10m
+              memory: 144Mi
+          initImage:
+            resources:
+              requests:
+                cpu: 100m
+                memory: 16Mi
           containerSecurityContext:
             runAsNonRoot: true
             allowPrivilegeEscalation: false
@@ -241,6 +258,10 @@ spec:
               drop:
               - ALL
         redis:
+          resources:
+            requests:
+              cpu: 10m
+              memory: 48Mi
           containerSecurityContext:
             runAsNonRoot: true
             allowPrivilegeEscalation: false

@@ -22,12 +22,29 @@ spec:
         # retain the old rule alongside a differently named native chart copy.
         crds:
           enabled: false
+        prometheusOperator:
+          resources:
+            requests:
+              cpu: 10m
+              memory: 128Mi
+          prometheusConfigReloader:
+            resources:
+              requests:
+                cpu: 10m
+                memory: 48Mi
         prometheus:
           podDisruptionBudget:
             enabled: true
             minAvailable: 1
             unhealthyPodEvictionPolicy: IfHealthyBudget
           prometheusSpec:
+            # The operator merges this resource-only override by container name.
+            initContainers:
+            - name: init-config-reloader
+              resources:
+                requests:
+                  cpu: 100m
+                  memory: 256Mi
             replicas: 2
             enableAdminAPI: true
             retention: 15d
@@ -74,6 +91,11 @@ spec:
                     requests:
                       storage: 1Gi
         grafana:
+          sidecar:
+            resources:
+              requests:
+                cpu: 10m
+                memory: 128Mi
           admin:
             existingSecret: grafana-admin
             userKey: admin-user
@@ -138,6 +160,10 @@ spec:
               regex: (apiserver_watch_events_dispatch_duration_seconds|apiserver_storage_list_duration_seconds|apiserver_watch_list_duration_seconds|apiserver_watch_cache_read_wait_seconds|apiserver_watch_cache_initialization_duration_seconds|etcd_request_duration_seconds)_(bucket|sum|count)
               action: drop
         kube-state-metrics:
+          resources:
+            requests:
+              cpu: 10m
+              memory: 224Mi
           customResourceState:
             enabled: true
             config:

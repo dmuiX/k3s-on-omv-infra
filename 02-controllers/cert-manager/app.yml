@@ -33,11 +33,19 @@ spec:
           enabled: true
           minAvailable: 1
         webhook:
+          resources:
+            requests:
+              cpu: 10m
+              memory: 96Mi
           replicaCount: 2
           podDisruptionBudget:
             enabled: true
             minAvailable: 1
         cainjector:
+          resources:
+            requests:
+              cpu: 10m
+              memory: 144Mi
           replicaCount: 2
           podDisruptionBudget:
             enabled: true

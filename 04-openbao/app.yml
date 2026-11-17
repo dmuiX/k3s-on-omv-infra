@@ -17,6 +17,11 @@ spec:
     targetRevision: 0.30.6
     helm:
       valuesObject:
+        injector:
+          resources:
+            requests:
+              cpu: 10m
+              memory: 80Mi
         server:
           # Replaces allow-openbao-raft-and-clients with the chart policy openbao.
           # Pruning is disabled: retain the old resource until reviewed retirement.

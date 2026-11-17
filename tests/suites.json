@@ -7,6 +7,7 @@
     "test_longhorn_discard",
     "test_longhorn_discard_processes",
     "test_native_alert_rules",
+    "test_native_request_profile",
     "test_native_reader_accounts",
     "test_openbao_network",
     "test_retention",
