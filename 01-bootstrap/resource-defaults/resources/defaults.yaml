@@ -118,7 +118,7 @@ spec:
              !('memory' in c.resources.requests))
           ).map(c, Object.spec.containers{
             name: c.name,
-            resources: Object.spec.containers.resources{requests: {'memory': '8Mi'}}
+            resources: Object.spec.containers.resources{requests: {'memory': '4Mi'}}
           })
         }}
 ---

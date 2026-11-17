@@ -30,8 +30,8 @@ spec:
           validationFailurePolicy: Fail
         resources:
           requests:
-            cpu: 100m
-            memory: 256Mi
+            cpu: 25m
+            memory: 224Mi
           limits:
             cpu: '1'
             memory: 512Mi
@@ -56,7 +56,7 @@ spec:
           platform: k3s
         resources:
           requests:
-            cpu: 100m
+            cpu: 25m
             memory: 100Mi
           limits:
             cpu: 500m
@@ -69,8 +69,8 @@ spec:
       valuesObject:
         resources:
           requests:
-            cpu: 200m
-            memory: 128Mi
+            cpu: 150m
+            memory: 64Mi
           limits:
             cpu: '1'
             memory: 1Gi

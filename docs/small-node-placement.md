@@ -15,7 +15,9 @@ no new system Application, APIService, skip marker or add-on handover is include
   registrar/liveness each 5m/48Mi; global manager 10m/96Mi. Use the native resource
   setting and preserve existing unbounded burst limits, rather than inventing a
   V1 instance-manager override. These targets come from measured consumption.
-- Reduce ztunnel memory request 512Mi -> 128Mi; keep CPU request and limits.
+- Reduce ztunnel memory request512Mi ->64Mi (previous target128Mi), CPU200m ->150m;
+  preserve all limits. [Measured follow-up](request-rightsizing.md) also reduces
+  OpenBao server requests256Mi ->224Mi, retaining3 replicas and512Mi limits.
 - GitOps owns Barman ObjectStore sidecar requests 250m/192Mi and unchanged
   250m/256Mi limits through a resource-only SSA manifest in the existing postgres
   Application. Endpoint and credential custody remain Bootstrap/OpenBao-owned.
@@ -26,19 +28,21 @@ no new system Application, APIService, skip marker or add-on handover is include
 
 [The measured resource profile](resource-request-profile.md) records P95, peaks,
 native support and limitations. With the original 1794Mi allocatable memory, the
-native profile including both Pending OpenBao and discard-helper Pods needs
-2204Mi and cannot fit. The paired candidate gives about 2338Mi allocatable and
-**134Mi request headroom**. The former 1024Mi candidate omitted the 64Mi helper;
-its complete headroom is only 102Mi, below the unchanged 128Mi gate. A 960Mi
-candidate fails the service-memory gate at a fresh ~851Mi working set, so it is
-not used. Recheck against fresh admitted Pods including init sidecars. Current
+native profile including OpenBao and discard-helper needs2108Mi and cannot fit.
+The paired992Mi reserve gives about2338Mi allocatable and **230Mi request headroom**
+after these reductions. It was observed effective with OpenBao3/3 Ready. The
+previous2204Mi profile left134Mi; the earlier1024Mi candidate then omitted the
+64Mi helper and missed the128Mi gate. These are historical selection reasons,
+not a request to change the now-effective992Mi reserve. A previous960Mi candidate
+failed the service-memory gate at~851Mi working set and remains outside scope. Recheck against fresh admitted Pods including init sidecars. Current
 CPU request projections fit the observed node capacities as well; recalculate
 before actual deployment.
 
-This is not 134Mi physical RAM newly available. Moving workloads changes Pi usage;
+This is not230Mi physical RAM newly available. Moving workloads changes Pi usage;
 requests change scheduler accounting. V1 instance-manager, engine/helper and
-UI/driver resource gaps remain explicit. Their full proposed profile still exceeds
-the new Pi budget by about 370Mi. No data-HA reduction is hidden in this change.
+UI/driver resource gaps remain explicit. The existing IM/ServiceLB admission
+profile still reaches2568Mi, exceeding allocatable by230Mi before extra spare;
+see scoped-resource-admission.md. No data-HA reduction is hidden in this change.
 
 ## Ordered activation, not automatic approval
 
@@ -57,7 +61,8 @@ the new Pi budget by about 370Mi. No data-HA reduction is hidden in this change.
    applications to exist. A necessary effective change requests explicit restart
    confirmation within the normal run, then checks whole-service working set
    <=864Mi, host MemAvailable >=1024Mi, peers/database/volumes and physical capacity
-   for the complete 2204Mi profile plus 128Mi and unchanged reserves before writing.
+   for its conservative2204Mi guard (reduced source now2108Mi) plus128Mi and unchanged
+   reserves before writing.
    Writers are serialized and observations refreshed under the lock. It applies
    a frozen canonical file, restarts only Pi K3s if needed, and verifies live
    config, a fresh lease, >=2332Mi allocatable, OpenBao/helper recovery and unchanged

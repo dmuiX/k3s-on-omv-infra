@@ -93,7 +93,16 @@ request. V2 memory/hugepage settings must not be repurposed for the V1 engine.
 The CSI resource map does not cover the instance manager or engine-image daemon.
 No ad-hoc Pod patches, new admission machinery, or storage-owner fork is included.
 
-## Pi budget gate and paired reserve
+## Current measured follow-up
+
+[The native reductions](request-rightsizing.md) lower the current native Pi target
+2204->2108Mi, preserving limits/HA. With effective992Mi kubeReserved, allocatable
+is~2337.664Mi and native spare~229.664Mi. Including the existing IM/ServiceLB
+admission source still reaches2568Mi and does NOT fit (230.336Mi deficit before
+128Mi spare). No further reserve/HA reduction is made. The budget below is the
+historical issue78 selection arithmetic, not the current reduced target.
+
+## Historical Pi budget gate and paired reserve (before request reductions)
 
 Fresh read-only effective request calculation includes restartable init sidecars,
 ordinary init-container maxima and Pod overhead. Terminated Pods are excluded.

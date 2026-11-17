@@ -172,7 +172,7 @@ class NativeResourceAdmissionTest(unittest.TestCase):
                 "requests"
             ) == {
                 "cpu": "5m",
-                "memory": "8Mi",
+                "memory": "4Mi",
             }:
                 break
             if time.monotonic() >= deadline:
@@ -215,7 +215,7 @@ class NativeResourceAdmissionTest(unittest.TestCase):
         actual = self.admit(resource)["spec"]["containers"]
         for c in actual[:2]:
             self.assertEqual(
-                c["resources"], {"requests": {"cpu": "5m", "memory": "8Mi"}}
+                c["resources"], {"requests": {"cpu": "5m", "memory": "4Mi"}}
             )
         self.assertEqual(actual[2].get("resources", {}), {})
 
@@ -243,7 +243,7 @@ class NativeResourceAdmissionTest(unittest.TestCase):
         ):
             resource = fixture("servicelb")
             resource["spec"]["containers"][0]["resources"] = {"requests": requests}
-            expected = {"cpu": "5m", "memory": "8Mi", **requests}
+            expected = {"cpu": "5m", "memory": "4Mi", **requests}
             self.assertEqual(
                 self.admit(resource)["spec"]["containers"][0]["resources"]["requests"],
                 expected,
