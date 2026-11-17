@@ -1,4 +1,4 @@
-# K3s on OpenMediaVault — GitOps infrastructure
+# 🏠 K3s on OpenMediaVault — GitOps infrastructure
 
 [![Repository workload contracts](https://github.com/dmuiX/k3s-on-omv-infra/actions/workflows/bootstrap-order.yml/badge.svg?branch=main)](https://github.com/dmuiX/k3s-on-omv-infra/actions/workflows/bootstrap-order.yml)
 
@@ -8,9 +8,9 @@ The focus is the work between installing Kubernetes and running applications: de
 
 > This repository is developed alongside **three private repositories** for bootstrap automation, site configuration and applications. It publishes the infrastructure definitions and public test fixtures, not a standalone installer or the complete live configuration.
 
-[Architecture](#architecture) · [Components](#platform-components) · [Repository layout](#repository-layout) · [Validation](#validation) · [Operational documentation](#operational-documentation)
+[🧱 Architecture](#-architecture) · [📦 Components](#-platform-components) · [📂 Repository layout](#-repository-layout) · [🧪 Validation](#-validation) · [📚 Operational documentation](#-operational-documentation)
 
-## Repository boundaries
+## 🔗 Repository boundaries
 
 | Repository | Visibility | Responsibility |
 | --- | --- | --- |
@@ -23,7 +23,7 @@ Bootstrap prepares and accepts the base cluster, seeds Argo CD and performs prot
 
 Private repository names are shown for context; their inventories, credentials and site configuration are not reproduced here.
 
-## Architecture
+## 🧱 Architecture
 
 The diagram shows repository ownership and the main platform components, not a statement that every runtime acceptance gate has passed.
 
@@ -85,7 +85,7 @@ flowchart LR
 
 **Longhorn replication is not a backup.** PostgreSQL and OpenBao use their own backup paths, not generic K8up PVC copies. Prometheus uses native snapshot-first backup, never a copy of its live TSDB. The Prometheus tool image and success-gated cleanup path still have unresolved deployment gates; the diagram describes the defined contract. See the [backup contract](docs/backup-contract.md) for destination, retention and restore requirements.
 
-## Platform components
+## 📦 Platform components
 
 | Area | Components and source | Role |
 | --- | --- | --- |
@@ -102,7 +102,7 @@ flowchart LR
 
 Chart versions and public overrides live in the Application manifests rather than a second version table in this README. Helm Applications use inline `helm.valuesObject` plus private `$live` value files. Controller Applications own controllers/CRDs; consumer resources stay with their applications.
 
-## Repository layout
+## 📂 Repository layout
 
 ```text
 infra.yml                         Argo CD Infra root
@@ -124,7 +124,7 @@ docs/                             Architecture decisions, migrations and runbook
 
 Numbered directories make the phases readable; Application `sync-wave` annotations remain authoritative. Automatic pruning is disabled, so removing a manifest from Git is **not** a resource-retirement procedure.
 
-## Validation
+## 🧪 Validation
 
 The [Repository workload contracts workflow](.github/workflows/bootstrap-order.yml) runs on pull requests and pushes to `main`:
 
@@ -138,7 +138,7 @@ See [tests/README.md](tests/README.md) for commands, prerequisites and the exact
 
 **A green public build is not deployment or recovery acceptance.** Private integration, live connectivity, storage behavior, credential rotation, backup restores and the [compatibility gate](COMPATIBILITY.md) remain separate checks. Unresolved `REQUIRED_*` inputs intentionally block deployment. There is no standalone `kubectl apply` quickstart for this four-repository platform.
 
-## Operational documentation
+## 📚 Operational documentation
 
 - [Platform contracts and migration notes](docs/platform-contracts.md) — implementation detail retained from the original README.
 - [Infra root and private-value migration](docs/infra-root-migration.md).
