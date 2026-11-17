@@ -14,6 +14,7 @@ BOOTSTRAP = ROOT / "k3s-on-omv-bootstrap"
 
 EXPECTED_INFRA = {
   "argocd-config" => 1,
+  "metrics-server" => -6,
   "prometheus-operator-crds" => 1,
   "timezone-defaults" => 1,
   "cert-manager" => -5,
@@ -189,7 +190,7 @@ class RepositoryContractTest < Minitest::Test
     (application_files(INFRA) + application_files(APPS)).each do |path|
       app = application(path)
       sources = app.dig("spec", "sources")
-      next if app.dig("metadata", "name") == "prometheus-operator-crds"
+      next if %w[prometheus-operator-crds metrics-server].include?(app.dig("metadata", "name"))
 
       assert_kind_of Array, sources, path.to_s
       refs = sources.each_index.select { |index| sources[index].key?("ref") }

@@ -33,7 +33,7 @@ The diagram shows repository ownership and the main platform components, not a s
 
 The [architecture and decision record](docs/architecture.md) explains why these mechanisms were chosen, where imperative work remains and how the current implementation differs from the original specification. OpenBao provides KV, database credentials and OIDC; **it does not operate a PKI**.
 
-Istio is the sole Ambient/Gateway controller; packaged Traefik is disabled. Its CNI integrates the mesh with the **K3s-owned Flannel network** rather than replacing the base CNI. K3s-owned services remain outside the Infra root. Host/workload logging is separate infrastructure and is not configured by this repository.
+Istio is the sole Ambient/Gateway controller; packaged Traefik is disabled. Its CNI integrates the mesh with the **K3s-owned Flannel network** rather than replacing the base CNI. CoreDNS and ServiceLB remain K3s-owned. The [Metrics Server handoff](docs/metrics-server-gitops.md) moves only resource metrics into Infra; existing clusters require an attended transition before activation. Host/workload logging is separate infrastructure and is not configured by this repository.
 
 ### Backup paths
 
@@ -52,6 +52,7 @@ Istio is the sole Ambient/Gateway controller; packaged Traefik is disabled. Its 
 | Block storage | [Longhorn](02-controllers/longhorn/app.yml), [late configuration](06-platform/longhorn-config/app.yml) | Encrypted storage classes and consumer-owned UI/OIDC integration; proxy compatibility remains gated |
 | Databases | [CloudNativePG](02-controllers/cloudnative-pg/app.yml), [Barman Cloud](02-controllers/barman-cloud/app.yml), [database cluster](07-k3s-postgres/app.yml) | PostgreSQL reconciliation, replication, object-store backups and bounded retention support |
 | Backup and restore | [K8up](02-controllers/k8up/app.yml), [SMB CSI](02-controllers/csi-driver-smb/app.yml), [OpenBao snapshots](06-platform/openbao-backups/app.yml), [validation](08-backup-validation/app.yml) | Separate backup transports and restore-validation contracts; actual recovery requires runtime evidence |
+| Resource metrics | [Metrics Server](01-bootstrap/metrics-server/app.yml) | Official chart on standard nodes; resource Metrics API for `kubectl top` and HPA, before Istiod |
 | Observability | [Prometheus Operator CRDs](01-bootstrap/prometheus-operator-crds/app.yml), [kube-prometheus-stack](09-kube-prometheus-stack/app.yml) | Prometheus, Grafana, exporters and platform alerts; Alertmanager configuration exists, but public defaults set its replicas to zero |
 | Admission defaults | [Timezone defaults](01-bootstrap/timezone-defaults/app.yml), [resource defaults](01-bootstrap/resource-defaults/app.yml) | Native Kubernetes policies with isolated admission tests |
 | Application integration | [Integration charts](charts/), [credential custody](adapters/credential-custody/) | Reusable routing, network-policy, OIDC and PostgreSQL-consumer resources without moving application ownership into Infra |
@@ -63,7 +64,7 @@ Chart versions and public overrides live in the Application manifests rather tha
 ```text
 infra.yml                         Argo CD Infra root
 00-letsencrypt-dns01-issuer/       Early issuer application
-01-bootstrap/                     Argo CD, Istio, CRDs and native defaults
+01-bootstrap/                     Argo CD, resource metrics, Istio, CRDs and native defaults
 02-controllers/                   Platform operators and storage controllers
 03-provider-vault/                Provider package and explicit API allowlist
 04-openbao/                       OpenBao workload and access boundaries
