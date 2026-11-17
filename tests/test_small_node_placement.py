@@ -54,14 +54,14 @@ class SmallNodePlacementTest(unittest.TestCase):
             "CriticalAddonsOnly=true:NoSchedule",
         )
 
-    def test_ztunnel_measured_requests_preserve_existing_limits(self) -> None:
+    def test_ztunnel_measured_requests_and_bounded_memory_limit(self) -> None:
         app = application("01-bootstrap/istio")
         (source,) = [s for s in app["spec"]["sources"] if s.get("chart") == "ztunnel"]
         self.assertEqual(
             source["helm"]["valuesObject"]["resources"],
             {
                 "requests": {"cpu": "150m", "memory": "64Mi"},
-                "limits": {"cpu": "1", "memory": "1Gi"},
+                "limits": {"cpu": "1", "memory": "256Mi"},
             },
         )
 

@@ -1,10 +1,12 @@
 # Measured native request reductions — no automatic sizing
 
-This follow-up reduces only CPU/RAM **requests** through existing chart fields
+This request-only stage (PR90) reduced only CPU/RAM **requests** through existing chart fields
 and the existing missing-only ServiceLB policy. All limits, chart versions,
 replicas, placement/anti-affinity, storage membership, identities, networking,
 credentials and endpoint custody remain unchanged. No VPA, new controller,
 namespace default, live-Pod patch or additional monitoring stack is introduced.
+The later [native RAM-limit profile](memory-limit-profile.md) changes caps
+separately without changing these requests; its own startup/lifecycle gates apply.
 
 ## Profiles (per container)
 
@@ -50,10 +52,11 @@ This is not uninterrupted seven-day recovery/failover or a hard high-water bound
 | OpenBao server |180.9 /196.2|224Mi|
 | ServiceLB, highest TCP family |2.03 /2.72|4Mi|
 
-Requests are reservations, not hard caps; existing burst limits/no-limit behavior
-stay intact. Crossplane64Mi also changes its init request: sparse historical
-samples do not prove its worst-case startup high-water. Keep its512Mi limit and
-validate init readiness on an approved rollout. OpenBao needs serial raft/unseal/
+Requests are reservations, not hard caps; this request-only stage retained burst
+limits/no-limit behavior. Crossplane64Mi also changes its init request: sparse
+historical samples do not prove its worst-case startup high-water. The separate
+[RAM-limit profile](memory-limit-profile.md) bounds RBAC main/init to128Mi and
+requires init readiness/startup acceptance, not a generic64Mi cap. OpenBao needs serial raft/unseal/
 snapshot recovery acceptance. The current third-server recovery after the user's
 Pi reserve activation is NOT proof that this reduced224Mi profile is adopted.
 

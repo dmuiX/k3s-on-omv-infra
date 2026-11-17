@@ -27,24 +27,30 @@ spec:
             requests:
               cpu: 10m
               memory: 128Mi
+            limits:
+              memory: 256Mi
           prometheusConfigReloader:
             resources:
               requests:
                 cpu: 10m
                 memory: 48Mi
+              limits:
+                memory: 128Mi
         prometheus:
           podDisruptionBudget:
             enabled: true
             minAvailable: 1
             unhealthyPodEvictionPolicy: IfHealthyBudget
           prometheusSpec:
-            # The operator merges this resource-only override by container name.
+            # Named init cap must exceed its 256Mi request, not inherit 128Mi.
             initContainers:
             - name: init-config-reloader
               resources:
                 requests:
                   cpu: 100m
                   memory: 256Mi
+                limits:
+                  memory: 512Mi
             replicas: 2
             enableAdminAPI: true
             retention: 15d
@@ -96,6 +102,8 @@ spec:
               requests:
                 cpu: 10m
                 memory: 128Mi
+              limits:
+                memory: 256Mi
           admin:
             existingSecret: grafana-admin
             userKey: admin-user
@@ -164,6 +172,8 @@ spec:
             requests:
               cpu: 10m
               memory: 224Mi
+            limits:
+              memory: 384Mi
           customResourceState:
             enabled: true
             config:

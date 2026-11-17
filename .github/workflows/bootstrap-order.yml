@@ -46,7 +46,7 @@ jobs:
                  tests/test_ci_dependencies.py tests/test_repo_suite.py
                  tests/test_repo_workloads.py tests/test_workload_contracts.py
                  tests/test_native_request_profile.py tests/test_request_rightsizing.py
-                 tests/test_small_node_placement.py)
+                 tests/test_small_node_placement.py tests/test_memory_limits.py)
           python -m black --check "${files[@]}"
           python -m ruff check "${files[@]}"
           python -m mypy --strict --follow-imports=skip "${files[@]}"
@@ -89,9 +89,9 @@ jobs:
       - name: Execute native admission against an owned isolated test API
         run: |
           set -euo pipefail
-          python -m black --check tests/test_resource_admission.py
-          python -m ruff check tests/test_resource_admission.py
-          python -m mypy --strict --follow-imports=skip tests/test_resource_admission.py
+          python -m black --check tests/test_resource_admission.py tests/test_memory_limits.py
+          python -m ruff check tests/test_resource_admission.py tests/test_memory_limits.py
+          python -m mypy --strict --follow-imports=skip tests/test_resource_admission.py tests/test_memory_limits.py
           image='rancher/k3s:v1.37.1-k3s1@sha256:ca7f37d993d82ef0dcdcfecb2e0e2618ea541dbaffc620c8cedebe01a82acd0d'
           test_id=$(docker run -d --name "timezone-policy-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
             --label purpose=timezone-policy-test --label "owner=ci-${GITHUB_RUN_ID}" \
@@ -124,4 +124,5 @@ jobs:
           if [ "$ready" != true ]; then echo 'Isolated test API did not become healthy'; exit 1; fi
           TIMEZONE_TEST_CONTAINER="$test_id" python -m unittest discover -s tests -p test_timezone_defaults.py -v
           TIMEZONE_TEST_CONTAINER="$test_id" python -m unittest discover -s tests -p test_resource_admission.py -v
-          echo 'Native timezone and scoped resource admission tests passed in a network-isolated disposable API; no production access.' >> "$GITHUB_STEP_SUMMARY"
+          PYTHONPATH=tests TIMEZONE_TEST_CONTAINER="$test_id" python -m unittest test_memory_limits.NativeMemoryLimitApiTest -v
+          echo 'Native timezone, scoped resource admission, and RAM cap/init merge API tests passed in a network-isolated disposable API; no production access or actual Prometheus Operator execution.' >> "$GITHUB_STEP_SUMMARY"

@@ -137,12 +137,10 @@ class NativeRequestProfileTest(unittest.TestCase):
             with self.subTest(application=app, container=name):
                 expected = {"cpu": cpu, "memory": memory}
                 owner, key = parent(values(repo, app), path)
-                self.assertEqual(owner[key], {"requests": expected})
+                self.assertEqual(owner[key]["requests"], expected)
                 self.assertEqual(
-                    container(repo.render(app), workload, name)["resources"][
-                        "requests"
-                    ],
-                    expected,
+                    container(repo.render(app), workload, name)["resources"],
+                    owner[key],
                 )
 
     def test_init_reloader_is_overridden_without_enlarging_the_steady_default(
@@ -161,7 +159,10 @@ class NativeRequestProfileTest(unittest.TestCase):
             [
                 {
                     "name": "init-config-reloader",
-                    "resources": {"requests": {"cpu": "100m", "memory": "256Mi"}},
+                    "resources": {
+                        "requests": {"cpu": "100m", "memory": "256Mi"},
+                        "limits": {"memory": "512Mi"},
+                    },
                 }
             ],
         )
@@ -178,10 +179,17 @@ class NativeRequestProfileTest(unittest.TestCase):
         paths.add(("kube-prometheus-stack", RELOADER))
         for app, path in paths:
             owner, key = parent(values(baseline, app), path)
-            del owner[key]
-        del values(baseline, "kube-prometheus-stack")["prometheus"]["prometheusSpec"][
+            if path == "dex.initImage.resources":
+                # Keep dedicated init selection: deleting this block would now
+                # inherit the independent Dex SERVER cap via Helm's default().
+                owner[key]["requests"] = {"cpu": "0", "memory": "0"}
+            else:
+                owner[key].pop("requests")
+                if not owner[key]:
+                    del owner[key]
+        values(baseline, "kube-prometheus-stack")["prometheus"]["prometheusSpec"][
             "initContainers"
-        ]
+        ][0]["resources"].pop("requests")
         for app in sorted({row[0] for row in PROFILES}):
             with self.subTest(application=app):
                 before = baseline.render(app)
@@ -212,7 +220,9 @@ class NativeRequestProfileTest(unittest.TestCase):
                             )
                         ]
                         (prometheus,) = [d for d in docs if d["kind"] == "Prometheus"]
-                        prometheus["spec"].pop("initContainers", None)
+                        prometheus["spec"]["initContainers"][0]["resources"].pop(
+                            "requests", None
+                        )
                 self.assertEqual(
                     after,
                     before,

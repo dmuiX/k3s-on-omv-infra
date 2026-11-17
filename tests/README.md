@@ -85,6 +85,24 @@ TIMEZONE_TEST_CONTAINER="$test_id" PYTHONDONTWRITEBYTECODE=1 \
 
 `192.0.2.1` is a documentation-only advertised address needed by the API's endpoint validator. Test clients use loopback inside the network-isolated container. The suite requires the dedicated purpose label, private PID namespace, unprivileged container, no bind mounts and `network=none` before installing any policy. It creates a dedicated tokenless test ServiceAccount, fixture namespaces, suspended synthetic CronJobs and unscheduled synthetic Pods/debug-container specifications. Its binding-disable tests run sequentially and restore bindings with verified mutation, not merely a successful apply. No production resources or credentials are used. Closing the dedicated shell cleans up that exact container and its anonymous volumes. The lifetime also bounds the process if the client disappears; Docker retains terminal status for recovery.
 
+## Native RAM-limit contracts and API checks
+
+`test_memory_limits.MemoryLimitsContractTest` is explicitly selected in the
+public suite. Four actual-chart contracts check every allowlisted RAM cap,
+shared RBAC init/Grafana sidecars, the coupled reloader/init profile, a typo
+negative control and whole-document memory-only deltas. Requests, CPU caps,
+HA/security and unrelated resources remain compared. See
+[the profile and acceptance boundary](../docs/memory-limit-profile.md).
+
+The existing owned API job explicitly runs only
+`test_memory_limits.NativeMemoryLimitApiTest` (three tests), without private
+inputs or Helm preparation in that job. It uses the guarded test API's actual
+Kubernetes strategic-merge engine and dry-run Pod admission: paired init512Mi
+is accepted, inheriting steady128Mi with request256Mi is rejected, generated
+synthetic init image/args survive, and explicit requests/CPU caps stay unchanged.
+No fixture image executes; no production context or actual Prometheus Operator
+is used. Native merge/admission is NOT full operator/runtime acceptance.
+
 ## Per-Application coverage
 
 | Infra child | Public contract / actual interface | Separate acceptance not proved here |

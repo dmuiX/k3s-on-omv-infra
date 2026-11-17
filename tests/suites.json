@@ -20,6 +20,12 @@
     "test_workload_contracts"
   ],
   "mixed": {
+    "test_memory_limits": [
+      "MemoryLimitsContractTest.test_every_cap_reaches_its_named_container_including_shared_init",
+      "MemoryLimitsContractTest.test_reloader_default_is_paired_with_the_larger_named_init_cap",
+      "MemoryLimitsContractTest.test_whole_rendered_delta_is_only_the_allowlisted_memory_caps",
+      "MemoryLimitsContractTest.test_misspelled_native_resources_key_does_not_count_as_a_cap"
+    ],
     "test_resource_admission": [
       "ResourceAdmissionContractTest.test_only_two_namespaced_create_policies_and_their_bindings",
       "ResourceAdmissionContractTest.test_application_is_registered_and_does_not_own_workload_pods"

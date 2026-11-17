@@ -16,7 +16,8 @@ no new system Application, APIService, skip marker or add-on handover is include
   setting and preserve existing unbounded burst limits, rather than inventing a
   V1 instance-manager override. These targets come from measured consumption.
 - Reduce ztunnel memory request512Mi ->64Mi (previous target128Mi), CPU200m ->150m;
-  preserve all limits. [Measured follow-up](request-rightsizing.md) also reduces
+  retain CPU limits; [separate RAM sizing](memory-limit-profile.md) caps ztunnel
+  at256Mi without changing these requests. [Measured follow-up](request-rightsizing.md) also reduces
   OpenBao server requests256Mi ->224Mi, retaining3 replicas and512Mi limits.
 - GitOps owns Barman ObjectStore sidecar requests 250m/192Mi and unchanged
   250m/256Mi limits through a resource-only SSA manifest in the existing postgres

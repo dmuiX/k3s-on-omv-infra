@@ -199,18 +199,12 @@ class RequestRightsizingTest(unittest.TestCase):
     def test_exact_chart_delta_is_requests_only_not_limits_ha_or_security(self) -> None:
         actual, baseline = Repository(), Repository()
         for app, chart, path, _, _, cpu, memory, _, _ in CHANGES:
-            if path == "resourcesRBACManager":
-                source = next(
-                    s
-                    for s in baseline.apps[app]["spec"]["sources"]
-                    if s.get("chart") == chart
-                )
-                source["helm"]["valuesObject"].pop(path, None)
-            else:
-                resources(baseline, app, chart, path)["requests"] = {
-                    "cpu": cpu,
-                    "memory": memory,
-                }
+            # Historical requests are a render-only counterfactual, not a Pod
+            # admission fixture. Keep today's independent caps (including RBAC).
+            resources(baseline, app, chart, path)["requests"] = {
+                "cpu": cpu,
+                "memory": memory,
+            }
         for app in sorted({row[0] for row in CHANGES}):
             with self.subTest(application=app):
                 before, after = baseline.render(app), actual.render(app)
@@ -244,7 +238,7 @@ class RequestRightsizingTest(unittest.TestCase):
         init = target(docs, "crossplane-rbac-manager", "crossplane-init")
         self.assertEqual(main["resources"], init["resources"])
         self.assertEqual(
-            main["resources"]["limits"], {"cpu": "100m", "memory": "512Mi"}
+            main["resources"]["limits"], {"cpu": "100m", "memory": "128Mi"}
         )
         self.assertEqual(main["resources"]["requests"]["memory"], "64Mi")
         controller = target(docs, "crossplane", "crossplane")

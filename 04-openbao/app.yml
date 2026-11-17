@@ -22,6 +22,8 @@ spec:
             requests:
               cpu: 10m
               memory: 80Mi
+            limits:
+              memory: 128Mi
         server:
           # Replaces allow-openbao-raft-and-clients with the chart policy openbao.
           # Pruning is disabled: retain the old resource until reviewed retirement.
