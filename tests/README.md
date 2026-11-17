@@ -120,7 +120,7 @@ is used. Native merge/admission is NOT full operator/runtime acceptance.
 | `k8up` | Two real controllers, enabled leader election and native monitor | Real repository access/backup/restore |
 | `longhorn` | Real chart/PDB, three CSI replica settings, encrypted local storage class | Operator-generated CSI placement, attachment, storage health and data replicas |
 | `vault-secrets-operator` | Native chart/shared transport, no default authentication, required-value transformation, identity isolation | Live OpenBao authentication, secret refresh and consumer adoption |
-| `provider-vault` | Pinned Provider, linked runtime config, exactly 16 explicitly activated resource types | Provider reconciliation and real PKI/OpenBao changes |
+| `provider-vault` | Pinned Provider, linked runtime config, exactly 16 explicitly activated resource types | Provider reconciliation and real OpenBao policy/identity changes |
 | `provider-vault-connection` | Public resources render; dependency/credential ownership contracts | Private connection/custody and applied provider credentials |
 | `platform-credentials` | Public resources render; credential ownership and isolated native reader accounts | Private role bindings, real values and rotations |
 | `letsencrypt-dns01-credentials` | Public resources render; native cert-manager reader identity and waves | DNS provider credential and actual OpenBao policy |
@@ -128,7 +128,7 @@ is used. Native merge/admission is NOT full operator/runtime acceptance.
 | `openbao` | Exact chart, three-server HA/PDB, rolling strategy, protected metrics listener/identity, named monitor port and network-policy invariants | Quorum, unseal, authentication, real metrics traffic and orphan retirement |
 | `longhorn-config` | Public trim-only RecurringJob and encrypted-discard DaemonSet; actual ConfigMap program/process/lease fixture tests; synthetic OIDC/proxy render | Real block devices/discard, private OIDC and CSI/node-plugin lifecycle |
 | `openbao-backups` | Bounded exclusive CronJob/account and executable snapshot adapter transitions with fake endpoints | Real backup integrity, credentials, retention and recovery |
-| `openbao-config` | Public render, prerequisite waves and credential ownership | Identity/PKI operations and real policies |
+| `openbao-config` | Public render, prerequisite waves and credential ownership | Mount/auth/identity operations and real policies |
 | `k3s-postgres` | Three-instance CNPG CR, required anti-affinity, supervised primary updates, encrypted local class, synchronous failover quorum, Barman plugin/ScheduledBackup; executable retention fixtures | Generated Pods, physical data health, actual sidecars, backup/restore and private ObjectStore |
 | `backup-validation` | Bounded exclusive restore-validation CronJob/account, shared required-value transformation; public references | Private application chart consumers and actual database/application restores |
 | `kube-prometheus-stack` | Real chart, two-replica Prometheus with hard host anti-affinity, native alert rules, two-replica Grafana with secret refs and bounded rollout, disabled Alertmanager | Private dashboards/SSO/credentials, real scrape delivery and alert notification |
