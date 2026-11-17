@@ -96,7 +96,8 @@ No ad-hoc Pod patches, new admission machinery, or storage-owner fork is include
 ## Current measured follow-up
 
 [The native reductions](request-rightsizing.md) lower the current native Pi target
-2204->2108Mi, preserving limits/HA. With effective992Mi kubeReserved, allocatable
+2204->2108Mi, preserving HA. The separate [RAM-limit profile](memory-limit-profile.md)
+changes caps without changing these requests. With effective992Mi kubeReserved, allocatable
 is~2337.664Mi and native spare~229.664Mi. Including the existing IM/ServiceLB
 admission source still reaches2568Mi and does NOT fit (230.336Mi deficit before
 128Mi spare). No further reserve/HA reduction is made. The budget below is the
