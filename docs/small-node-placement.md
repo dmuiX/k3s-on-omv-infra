@@ -49,15 +49,21 @@ the new Pi budget by about 370Mi. No data-HA reduction is hidden in this change.
    child state: Pi recovery can release the old operation and then automatically
    start newer CSI/ObjectStore changes. Approve that continuation or explicitly
    arrange an operator hold before restarting; no automatic hold is assumed.
-2. From the reviewed Bootstrap revision run only bounded `configure-pi-memory`
-   maintenance. It checks complete current K3s service working set <=864Mi and host
-   MemAvailable >=1024Mi, peers, database/volume health and physical capacity for
-   the full 2204Mi profile plus 128Mi and unchanged reserves before writing. It
-   installs the canonical file and restarts only Pi K3s if needed, then verifies
-   live config, a new lease, >=2332Mi actual allocatable, OpenBao/helper recovery
-   and unchanged primary. On failure it restores
-   the prior file when backed up, stops and does not blindly restart again. File
-   restoration is not a guarantee that the running configuration was reverted.
+2. Use the ordinary reviewed Bootstrap `ansible/deploy.py` run. It recognizes an
+   accepted base without reinstalling it and automatically reconciles managed Pi
+   memory after base validation, before DNS/GitOps/OpenBao. There is no separate
+   Pi memory maintenance command or rollout flag. An already converged setting is
+   a no-op; file-only drift is repaired without restarting or requiring platform
+   applications to exist. A necessary effective change requests explicit restart
+   confirmation within the normal run, then checks whole-service working set
+   <=864Mi, host MemAvailable >=1024Mi, peers/database/volumes and physical capacity
+   for the complete 2204Mi profile plus 128Mi and unchanged reserves before writing.
+   Writers are serialized and observations refreshed under the lock. It applies
+   a frozen canonical file, restarts only Pi K3s if needed, and verifies live
+   config, a fresh lease, >=2332Mi allocatable, OpenBao/helper recovery and unchanged
+   primary. Failure restores the prior file if backed up and stops without blind
+   restart retries; restoring a file is not proof of running rollback. Check mode
+   never locks, writes or restarts. Failed convergence never authorizes base reset.
    Independently verify the actual Pod/parent cgroup limit and no new OOM kills;
    effective-config/allocatable metadata alone is not runtime-memory acceptance.
 3. Require all nodes, etcd/storage and OpenBao healthy before reconciling the Infra

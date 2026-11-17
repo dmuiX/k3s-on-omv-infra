@@ -1,10 +1,12 @@
 # Consumption-based resource request targets
 
 **Native request targets are authored in the paired PRs, not deployed.**
-CSI/global-manager requests now use the supported Longhorn chart fields. Barman
-sidecar requests are changed in Bootstrap's ObjectStore contract. Existing objects
-need the bounded maintenance path; existing database Pods may need a separately
-approved operator rollout. None of this is an automatic deployment or approval.
+CSI/global-manager requests use the supported Longhorn chart fields; Barman
+sidecar resources are owned by the resource-only GitOps ObjectStore manifest.
+Argo/operator reconciliation owns Kubernetes objects. Only the host-level Pi
+kubelet reserve converges through the normal idempotent Bootstrap deployment.
+Existing database Pods may need a separately approved operator rollout. Source
+changes and tests alone are not deployment or approval.
 The paired Bootstrap Pi reserve candidate must be effective before activating the
 native profile. Components without a native override remain planning targets.
 
@@ -130,12 +132,16 @@ fit requests, but a fresh whole-service working set of about 851Mi exceeds its
 service working set and at least 128Mi request headroom. It is not a blind request
 reduction or removal of daemon protection.
 
-The paired bounded Pi maintenance checks physical capacity for the complete
-profile and reserves before installation, requires at least 128Mi spare inside
-the 992Mi candidate and at least 1Gi host MemAvailable, checks both remaining local
-API/etcd readiness gates, and verifies effective config, fresh worker lease,
-at least 2332Mi allocatable memory, OpenBao/helper recovery and unchanged DB primary
-afterwards. System reserve and all eviction protections stay unchanged. Full
+The normal paired Bootstrap deployment automatically reconciles this managed
+host setting after accepted-base validation and before GitOps. No separate memory
+maintenance invocation is required. Already converged configuration is a no-op;
+file-only drift does not restart K3s. A necessary effective change requests explicit
+confirmation inside the normal run, serializes writers and rechecks under the lock.
+It checks physical capacity for the complete profile and reserves before writing,
+requires at least 128Mi spare inside the 992Mi candidate and at least 1Gi host
+MemAvailable, checks both remaining local API/etcd readiness gates, then verifies
+effective config, a fresh worker lease, >=2332Mi allocatable, OpenBao/helper recovery
+and unchanged DB primary. The installer/reset is never called on accepted resume. System reserve and all eviction protections stay unchanged. Full
 historical service working-set peaks remain unavailable. This is a tight guarded
 candidate, not proof that all future recovery spikes fit it. It changes scheduler
 accounting, not a hard process-memory limit or physical RAM consumption.
