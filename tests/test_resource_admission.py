@@ -344,6 +344,7 @@ class NativeResourceAdmissionTest(unittest.TestCase):
                 "kube-system",
                 "--wait=true",
                 "--timeout=5s",
+                "--ignore-not-found",
             )
             self.assertEqual(
                 timezone.NativeTimezoneAdmissionTest.kubectl(
