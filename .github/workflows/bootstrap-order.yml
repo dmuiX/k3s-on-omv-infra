@@ -44,7 +44,8 @@ jobs:
         run: |
           files=(tests/ci_dependencies.py tests/repo_suite.py tests/workload_contracts.py
                  tests/test_ci_dependencies.py tests/test_repo_suite.py
-                 tests/test_repo_workloads.py tests/test_workload_contracts.py)
+                 tests/test_repo_workloads.py tests/test_workload_contracts.py
+                 tests/test_native_request_profile.py)
           python -m black --check "${files[@]}"
           python -m ruff check "${files[@]}"
           python -m mypy --strict --follow-imports=skip "${files[@]}"
