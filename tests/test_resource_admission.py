@@ -257,10 +257,13 @@ class NativeResourceAdmissionTest(unittest.TestCase):
                 "namespace",
                 "account",
                 "owner",
+                "owner-kind",
+                "owner-api",
+                "owner-name",
                 "controller",
                 "labels",
                 "container",
-            ) + (("engine",) if family == "longhorn" else ())
+            ) + (("engine", "node") if family == "longhorn" else ("empty-label",))
             for case in cases:
                 with self.subTest(family=family, case=case):
                     resource = fixture(family)
@@ -270,6 +273,22 @@ class NativeResourceAdmissionTest(unittest.TestCase):
                         resource["spec"]["serviceAccountName"] = "unrelated"
                     elif case == "owner":
                         resource["metadata"].pop("ownerReferences")
+                    elif case == "owner-kind":
+                        resource["metadata"]["ownerReferences"][0][
+                            "kind"
+                        ] = "Deployment"
+                    elif case == "owner-api":
+                        resource["metadata"]["ownerReferences"][0][
+                            "apiVersion"
+                        ] = "batch/v1"
+                    elif case == "owner-name":
+                        resource["metadata"]["ownerReferences"][0]["name"] = "unrelated"
+                    elif case == "node":
+                        resource["spec"]["nodeName"] = "unmeasured-node"
+                    elif case == "empty-label":
+                        resource["metadata"]["labels"][
+                            "svccontroller.k3s.cattle.io/svcname"
+                        ] = ""
                     elif case == "controller":
                         resource["metadata"]["ownerReferences"][0]["controller"] = False
                     elif case == "labels":
@@ -295,6 +314,9 @@ class NativeResourceAdmissionTest(unittest.TestCase):
 
     def test_update_does_not_retroactively_default_a_matching_pod(self) -> None:
         resource = fixture("servicelb")
+        # Keep the persisted UPDATE witness separate from dry-run fixture names.
+        resource["metadata"]["name"] = "svclb-update-probe"
+        resource["spec"]["terminationGracePeriodSeconds"] = 0
         owners = resource["metadata"].pop("ownerReferences")
         created = timezone.NativeTimezoneAdmissionTest.admit(resource, dry_run=False)
         try:
@@ -320,7 +342,21 @@ class NativeResourceAdmissionTest(unittest.TestCase):
                 created["metadata"]["name"],
                 "-n",
                 "kube-system",
-                "--wait=false",
+                "--wait=true",
+                "--timeout=5s",
+            )
+            self.assertEqual(
+                timezone.NativeTimezoneAdmissionTest.kubectl(
+                    "get",
+                    "pod",
+                    created["metadata"]["name"],
+                    "-n",
+                    "kube-system",
+                    "--ignore-not-found",
+                    "-o",
+                    "name",
+                ).strip(),
+                "",
             )
 
     def test_without_bindings_native_api_does_not_invent_the_defaults(self) -> None:
@@ -356,9 +392,11 @@ class NativeResourceAdmissionTest(unittest.TestCase):
     def test_init_containers_are_not_accidentally_defaulted(self) -> None:
         for family in ("longhorn", "servicelb"):
             resource = fixture(family)
+            init_name = resource["spec"]["containers"][0]["name"]
+            resource["spec"]["containers"][0]["name"] = "unrelated"
             resource["spec"]["initContainers"] = [
                 {
-                    "name": resource["spec"]["containers"][0]["name"],
+                    "name": init_name,
                     "image": "registry.k8s.io/pause:3.10",
                 }
             ]
