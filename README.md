@@ -1,43 +1,151 @@
-# k3s-on-omv-infra
+# 🏠 K3s on OpenMediaVault — GitOps infrastructure
 
-Backup contract: PostgreSQL/OpenBao use distinct buckets with one shared `kv/platform/r2` credential plus OMV; native K3s etcd snapshots use the third R2 bucket plus OMV; K8up and Prometheus use OMV only. Official `csi-driver-smb` 1.20.3 dynamically provisions retained local-repository PVCs from `//192.168.1.5/k3s-cluster`. See [backup destinations, native K8up evidence, and remaining gates](docs/backup-contract.md).
+[![Repository workload contracts](https://github.com/dmuiX/k3s-on-omv-infra/actions/workflows/bootstrap-order.yml/badge.svg?branch=main)](https://github.com/dmuiX/k3s-on-omv-infra/actions/workflows/bootstrap-order.yml)
 
-Publishable SPEC v6.2 platform draft. `infra.yml` is the sole Infra root; Apps is activated separately. Controller Applications own controllers/CRDs and consumer CRs remain with consumers. Istio is the sole Ambient and Gateway API controller. Traefik is absent. Four official `base`, `istiod`, `cni`, and `ztunnel` Helm chart sources (all 1.31.2) are grouped in the `istio-core` Argo CD Application in `istio-system`. The existing `istio-ambient` Application owns the Gateway contract and the private Live Gateway in `istio-gateway`. The Istio footprint is now two Applications and two namespaces. Individual Helm releases retain their original names. Inside `istio-core`, Argo CD applies chart resources together rather than enforcing a health-gated phase for each Helm chart. The shared `istio-gateway/istio-gateway` resource is supplied by Live to that Application so private listeners and hostnames do not enter Infra. Native Gateway API `infrastructure.parametersRef` configures automated gateway deployment; no separate gateway chart is needed. Static evidence and remaining runtime/version blockers are in [mesh chart evidence](docs/mesh-chart-evidence.md).
+The public infrastructure layer of my **K3s homelab on Debian and OpenMediaVault**. Argo CD manages a platform built around Istio Ambient, OpenBao, Crossplane, Longhorn, CloudNativePG and Prometheus/Grafana.
 
-`cloudnative-pg` installs the PostgreSQL operator; `k3s-postgres` owns the concrete database Cluster in the unchanged `cloudnative-pg` namespace. It uses `longhorn-local`, ClusterIP services, Ambient `STRICT`, and targeted NetworkPolicies. Barman is its only backup path. `smartShutdownTimeout: 15` limits the initial wait for existing database sessions to 15 seconds before CNPG uses a clean fast shutdown (disconnecting sessions and rolling back active transactions, not SIGKILL). Overall `stopDelay`, `switchoverDelay`, synchronous replication, and failover quorum are unchanged. This removes the default 180-second smart wait that exceeded the hosts' 120-second application shutdown group, but is not an end-to-end storage teardown guarantee: WAL/archive delays can still exceed that group, and the observed Longhorn CSI teardown issue remains a separate follow-up. No host reboot is performed by this configuration change. No extra app-client certificate is layered over Ambient transport. Default-deny is limited to the sensitive namespaces named by the specification.
+The focus is the work between installing Kubernetes and running applications: dependency ordering, secret delivery, identity integration, stateful storage, backup contracts and tests against real Helm charts.
 
-Service integrations belong to consumers: `longhorn-config` owns late Longhorn OIDC/proxy setup, the Apps-owned `radar` Application owns all Radar identity and credential resources, and `platform-credentials` owns shared R2/SMB delivery. `openbao-config` contains general mounts, the userpass backend and the shared standard OIDC `profile` scope. Consumer-specific OIDC clients/providers and role claims remain with their applications. Argo's local account/RBAC configuration stays in `argocd-config`; Radar owns issuance and consumption of its account token. See [ownership, credential safety and existing-cluster cutover](docs/service-credentials.md).
+> This repository is developed alongside **three private repositories** for bootstrap automation, site configuration and applications. It publishes the infrastructure definitions and public test fixtures, not a standalone installer or the complete live configuration.
 
-Backup/restore validation is in `08-backup-validation` at wave 8, after the wave-7 database cluster. Observability is in `09-kube-prometheus-stack` at wave 9. Application and namespace identities are unchanged; Apps activation still waits for the complete Infra acceptance.
+[🧱 Architecture](#-architecture) · [📦 Components](#-platform-components) · [📂 Repository layout](#-repository-layout) · [🧪 Validation](#-validation) · [📚 Operational documentation](#-operational-documentation)
 
-Host and workload logging are independent infrastructure and are not selected by the Infra root. Infra does not configure host journal upload, external receivers, certificates, export, backup, or retention. Monitoring includes an OpenBao/VSO Alertmanager configuration contract and native Prometheus snapshot-first, one-shot K8up support for replica 0 with 7-daily/4-weekly OMV retention. The tool image and success-gated cleanup adapter remain explicitly blocked; direct live-TSDB copying is forbidden.
+## 🔗 Repository boundaries
 
-The Longhorn UI can only be routed through the native oauth2-proxy resource skeleton. Its upstream image pin and OpenBao OIDC compatibility remain deployment blockers; no custom proxy code exists.
+| Repository | Visibility | Responsibility |
+| --- | --- | --- |
+| **`k3s-on-omv-infra`** — this repository | Public | Argo CD Applications, public Helm values, platform resources, integration charts and contract tests |
+| `k3s-on-omv-bootstrap` | Private | Ansible-based host/K3s preparation, initial Argo CD installation, repository registration, create-once encryption material and protected OpenBao initialization |
+| `k3s-on-omv-live` | Private | Site-specific Helm values, endpoints, routes and resources referenced by Infra and Apps |
+| `k3s-on-omv-apps` | Private | Application definitions and their database, identity and credential integrations |
 
-Each public Helm Application declares public overrides in `helm.valuesObject`. The Infra root reads Application definitions directly from this repository; applications reference private Helm value files in Live through `$live/infra/<application>/values.yml`. Raw authored Infra resources and expressly required Live resources remain separate Application sources. The legacy Live Kustomize wrapper remains only for staged migration and rollback. See `docs/infra-root-migration.md` for publication and root activation order. There are no rendered charts or secrets. Automatic pruning is disabled. Deployment remains blocked while any `REQUIRED_*` marker or compatibility item is unresolved. Custom Python remains limited to demonstrated API gaps: the existing retention adapters and bounded consumer-owned credential issuance with a shared custody helper.
+Bootstrap prepares and accepts the base cluster, seeds Argo CD and performs protected initialization as the infrastructure becomes ready: encryption-key custody, OpenBao initialization/provider trust, attended identity/MFA setup and shared backup credentials. Argo CD owns steady-state reconciliation. **Full Apps acceptance waits for Infra acceptance; Apps-owned identity prerequisites can be reconciled earlier for the protected ceremony.** Host preparation, platform controllers and application resources have separate owners.
 
-## Node-exporter isolation
+Private repository names are shown for context; their inventories, credentials and site configuration are not reproduced here.
 
-The bundled prometheus-node-exporter chart uses its supported `namespaceOverride: node-exporter`. Its DaemonSet runs once on every Linux Kubernetes node, including the Pi. Only this dedicated namespace permits the host namespaces and read-only hostPath mounts required for host metrics; `kube-prometheus-stack` remains Pod Security `restricted`. The exporter itself stays non-root, drops all capabilities, forbids privilege escalation, and uses RuntimeDefault seccomp. A 32Mi request fits the Pi's observed 33Mi scheduling headroom; recheck allocatable/request totals before adding further Pi workloads.
+## 🧱 Architecture
 
-For an existing-cluster namespace migration, first reconcile the new Namespace, DaemonSet, ServiceAccount, Service, and ServiceMonitor. Verify three Ready exporter pods and three healthy Prometheus scrape targets. Automatic pruning is disabled: explicitly retire only the old exporter DaemonSet, ServiceAccount, Service, and ServiceMonitor in `kube-prometheus-stack` after confirming the replacement identities and Argo ownership. Keep the node-exporter PrometheusRules in the monitoring namespace. An old sync waiting forever on the admission-blocked DaemonSet must be terminated using Argo's native operation controls before starting the new desired-state sync.
+The diagram shows repository ownership and the main platform components, not a statement that every runtime acceptance gate has passed.
 
-## Directory responsibilities
+```mermaid
+flowchart TB
+    subgraph Sources["Repository boundaries"]
+        Bootstrap["Bootstrap · private<br/>Ansible + protected initialization"]
+        Infra["Infra · public<br/>Applications + platform resources"]
+        Live["Live · private<br/>Site values + routes"]
+        Apps["Apps · private<br/>Application definitions"]
+    end
 
-Numbered directories retain their existing deployment phases; `sync-wave` in each Application remains authoritative. `00-letsencrypt-dns01-issuer` owns the early issuers. `01-bootstrap/istio` contains the Istio installation, while `01-bootstrap/istio-gateway` owns its Gateway configuration. The late `06-platform/letsencrypt-dns01-credentials`, `longhorn-config`, and `backup-credentials` directories describe their actual responsibilities. The Istio base namespace is stored with the Istio installation rather than Gateway resources.
+    Bootstrap -->|"prepare and accept"| Hosts["Debian / OpenMediaVault + K3s<br/>etcd · encrypted Secrets · API audit<br/>kubelet memory and shutdown settings"]
+    Bootstrap -->|"initial install + repository registration"| Argo["Argo CD<br/>Infra before full Apps acceptance"]
+    Hosts --> Bundled["K3s-owned services<br/>Flannel VXLAN + NetworkPolicy<br/>CoreDNS · Metrics Server · ServiceLB"]
+    Infra --> Argo
+    Live -.->|"private Helm values and resources"| Argo
+    Apps --> Argo
 
-These directory changes do not rename namespaces, Helm releases, Secret/KV paths, or database resources. Existing Argo identities `istio-core`, `istio-ambient`, and `platform-credentials` remain unchanged; the separately agreed issuer/credential Applications are named `letsencrypt-dns01-issuer` and `letsencrypt-dns01-credentials`.
+    subgraph Platform["GitOps-managed platform"]
+        Mesh["Istio Ambient + Gateway API<br/>base · istiod · CNI · ztunnel"]
+        Certificates["cert-manager<br/>Let's Encrypt DNS-01 / Cloudflare"]
+        Crossplane["Crossplane + provider-vault<br/>Declarative OpenBao configuration"]
+        Bao["OpenBao<br/>KV · PKI · OIDC"]
+        VSO["Vault Secrets Operator<br/>Consumer credential delivery"]
+        Storage["Longhorn<br/>Encrypted block storage"]
+        Database["CloudNativePG + Barman Cloud<br/>PostgreSQL + WAL/archive backups"]
+        Monitoring["kube-prometheus-stack<br/>Prometheus · Grafana<br/>kube-state-metrics · node-exporter"]
+        Backups["K8up + SMB CSI<br/>Local repositories + restore validation"]
+        Defaults["Native admission policies<br/>Timezone + scoped resource defaults"]
+    end
 
-## Crossplane API activation
+    Argo --> Mesh & Certificates & Crossplane & Bao & VSO
+    Argo --> Storage & Database & Monitoring & Backups & Defaults
+    Crossplane --> Bao
+    Bao --> VSO
+    Bootstrap -.->|"create-once keys + initialization"| Bao
+    Bootstrap -.->|"early DNS-01 prerequisites"| Certificates
+    VSO -.->|"scoped credentials"| Database & Monitoring & Backups
+    Storage --> Database & Bao & Monitoring
+    Argo --> Workloads["Application workloads<br/>Consumer-owned routes, identity and database access"]
+    Mesh --> Workloads
+```
 
-The sole reviewed Vault API allowlist is `03-provider-vault/resources/activation-policy.yaml`, named `provider-vault-allowlist`. Argo continuously reconciles this policy before installing the provider. Crossplane Helm uses `provider.defaultActivations: []` so its initializer does not create an additive `default` policy. Activation policies are additive, so no second policy or wildcard is permitted. A change that authors a new Vault managed resource must extend this single allowlist in the same pull request; offline tests enforce coverage. Argo excludes inactive Vault API groups and generated managed-resource definitions from its cache, but never excludes an authored managed resource.
+Istio is the sole Ambient/Gateway controller; packaged Traefik is disabled. Its CNI integrates the mesh with the **K3s-owned Flannel network** rather than replacing the base CNI. K3s-owned services remain outside the Infra root. Host/workload logging is separate infrastructure and is not configured by this repository.
 
-The count-independent name replaces the legacy `provider-vault-exact-16` name. For an existing-cluster rename, first reconcile the new policy with an identical `spec.activate` list and require its `status.activated` to cover the complete list. Only then retire the old policy while retaining the new one, and verify that exactly the intended APIs remain active. Do not use MRD/CRD withdrawal or deletion to rename an activation policy. Automatic pruning is disabled, so removing the old manifest from Git alone will not retire the old live object. Final Bootstrap acceptance requires the single new named policy; its guard intentionally rejects the temporary overlap during cutover.
+### Backup paths
 
-Verified native behavior: the Crossplane 2.4.2 Helm chart renders no `--activation` arguments for an empty list. Its [initializer](https://github.com/crossplane/crossplane/blob/v2.4.2/internal/initializer/managed_resource_activation_policy.go) skips creating `default` when no activations are supplied. Existing clusters must retire the old `default` policy separately after the named policy is present; this does not delete MRDs or CRDs.
+```mermaid
+flowchart LR
+    PostgreSQL["PostgreSQL<br/>Barman Cloud"] --> R2["Cloudflare R2<br/>Separate PostgreSQL / OpenBao / etcd buckets"]
+    OpenBao["OpenBao<br/>Raft snapshot adapter"] --> R2
+    Etcd["K3s etcd<br/>Native scheduled snapshots"] --> R2
+    R2 -->|"Bootstrap-configured rclone copy + check"| OMV["Verified OMV backup filesystem"]
+    K8up["K8up / Restic<br/>Application PVCs + validation"] --> SMB["SMB CSI<br/>Retained repository PVCs"]
+    Prometheus["Prometheus native TSDB snapshot<br/>then one-shot K8up backup"] --> SMB
+    SMB --> OMV
+```
 
-Reducing the allowlist does not deactivate an API that Crossplane has already activated. Retiring one therefore requires a separately reviewed inventory and cleanup operation that proves the managed-resource type is empty and not referenced by desired state. Normal deployment must not delete MRDs, CRDs, or external resources.
+**Longhorn replication is not a backup.** PostgreSQL and OpenBao use their own backup paths, not generic K8up PVC copies. Prometheus uses native snapshot-first backup, never a copy of its live TSDB. The Prometheus tool image and success-gated cleanup path still have unresolved deployment gates; the diagram describes the defined contract. See the [backup contract](docs/backup-contract.md) for destination, retention and restore requirements.
 
-## Self-managed Argo CD
+## 📦 Platform components
 
-Bootstrap renders the exact pinned `argo-cd` Helm chart (10.10.3 / Argo CD v3.5.5) using the inline `helm.valuesObject` from `01-bootstrap/argocd-config/app.yml`, and server-side applies the result once on a clean cluster. The `argocd-config` Application then renders the same Helm chart and values from Git, retaining private Live resources. The Argo CD health customization and native HTTPS server setting are part of the same Helm values; separate ConfigMap sources were removed to avoid duplicate GitOps owners. The first chart install is greenfield-only. For existing installations, Bootstrap advances an already owned Infra root from either the public source or legacy private Live overlay to the public Infra directory source. Resource adoption and retirement of legacy Application identities still require the controlled cutover described in `docs/service-credentials.md`.
+| Area | Components and source | Role |
+| --- | --- | --- |
+| Reconciliation | [Argo CD](01-bootstrap/argocd-config/app.yml), [Infra root](infra.yml) | Initial bootstrap hands off to chart-based self-management; sync waves order dependencies |
+| Networking | [Istio](01-bootstrap/istio/app.yml), [Gateway configuration](01-bootstrap/istio-gateway/app.yml) | Ambient mesh and native Gateway API deployment; private listeners/routes come from Live |
+| Certificates | [cert-manager](02-controllers/cert-manager/app.yml), [issuers](00-letsencrypt-dns01-issuer/app.yml), [DNS credentials](06-platform/letsencrypt-dns01-credentials/app.yml) | ACME DNS-01 certificate integration with Cloudflare |
+| Secrets and identity | [OpenBao](04-openbao/app.yml), [Crossplane](02-controllers/crossplane/app.yml), [provider-vault](03-provider-vault/app.yml), [VSO](02-controllers/vault-secrets-operator/app.yml) | Declarative policies/auth/identity resources and scoped delivery of Kubernetes Secrets |
+| Block storage | [Longhorn](02-controllers/longhorn/app.yml), [late configuration](06-platform/longhorn-config/app.yml) | Encrypted storage classes and consumer-owned UI/OIDC integration; proxy compatibility remains gated |
+| Databases | [CloudNativePG](02-controllers/cloudnative-pg/app.yml), [Barman Cloud](02-controllers/barman-cloud/app.yml), [database cluster](07-k3s-postgres/app.yml) | PostgreSQL reconciliation, replication, object-store backups and bounded retention support |
+| Backup and restore | [K8up](02-controllers/k8up/app.yml), [SMB CSI](02-controllers/csi-driver-smb/app.yml), [OpenBao snapshots](06-platform/openbao-backups/app.yml), [validation](08-backup-validation/app.yml) | Separate backup transports and restore-validation contracts; actual recovery requires runtime evidence |
+| Observability | [Prometheus Operator CRDs](01-bootstrap/prometheus-operator-crds/app.yml), [kube-prometheus-stack](09-kube-prometheus-stack/app.yml) | Prometheus, Grafana, exporters and platform alerts; Alertmanager configuration exists, but public defaults set its replicas to zero |
+| Admission defaults | [Timezone defaults](01-bootstrap/timezone-defaults/app.yml), [resource defaults](01-bootstrap/resource-defaults/app.yml) | Native Kubernetes policies with isolated admission tests |
+| Application integration | [Integration charts](charts/), [credential custody](adapters/credential-custody/) | Reusable routing, network-policy, OIDC and PostgreSQL-consumer resources without moving application ownership into Infra |
+
+Chart versions and public overrides live in the Application manifests rather than a second version table in this README. Helm Applications use inline `helm.valuesObject` plus private `$live` value files. Controller Applications own controllers/CRDs; consumer resources stay with their applications.
+
+## 📂 Repository layout
+
+```text
+infra.yml                         Argo CD Infra root
+00-letsencrypt-dns01-issuer/       Early issuer application
+01-bootstrap/                     Argo CD, Istio, CRDs and native defaults
+02-controllers/                   Platform operators and storage controllers
+03-provider-vault/                Provider package and explicit API allowlist
+04-openbao/                       OpenBao workload and access boundaries
+05-provider-vault-connection/      Provider authentication contract
+06-platform/                     Shared credentials and late platform integration
+07-k3s-postgres/                   Concrete PostgreSQL cluster
+08-backup-validation/              Restore-validation resources
+09-kube-prometheus-stack/          Monitoring, alerts and snapshot contracts
+charts/                           Consumer integration charts
+adapters/                         Bounded helpers for demonstrated API gaps
+tests/                            Public fixtures, render and workload contracts
+docs/                             Architecture decisions, migrations and runbooks
+```
+
+Numbered directories make the phases readable; Application `sync-wave` annotations remain authoritative. Automatic pruning is disabled, so removing a manifest from Git is **not** a resource-retirement procedure.
+
+## 🧪 Validation
+
+The [Repository workload contracts workflow](.github/workflows/bootstrap-order.yml) runs on pull requests and pushes to `main`:
+
+- Downloads exact tools and official chart archives with SHA-256 verification.
+- Renders real Helm/Kustomize inputs with **synthetic public values**, without private checkouts or a production kubeconfig.
+- Checks workload, credential-ownership, network-policy, chart and Argo Application-health contracts.
+- Exercises native timezone and scoped resource admission against an isolated, agentless K3s API.
+- Runs formatting, Ruff and strict mypy checks for the maintained CI helpers.
+
+See [tests/README.md](tests/README.md) for commands, prerequisites and the exact coverage boundary. The broader integration runner requires private Bootstrap/Live/Apps siblings and is separate from public CI.
+
+**A green public build is not deployment or recovery acceptance.** Private integration, live connectivity, storage behavior, credential rotation, backup restores and the [compatibility gate](COMPATIBILITY.md) remain separate checks. Unresolved `REQUIRED_*` inputs intentionally block deployment. There is no standalone `kubectl apply` quickstart for this four-repository platform.
+
+## 📚 Operational documentation
+
+- [Platform contracts and migration notes](docs/platform-contracts.md) — implementation detail retained from the original README.
+- [Infra root and private-value migration](docs/infra-root-migration.md).
+- [Service ownership and credential custody](docs/service-credentials.md).
+- [Mesh chart evidence and compatibility](docs/mesh-chart-evidence.md).
+- [Backup destinations and recovery gates](docs/backup-contract.md).
+- [PostgreSQL WAL recovery](docs/postgresql-wal-recovery.md).
+- [Prometheus snapshot-first backup runbook](docs/prometheus-tsdb-backup-runbook.md).
+- [Small-node placement](docs/small-node-placement.md) and [resource request profile](docs/resource-request-profile.md).
+- [Compatibility and remaining runtime gates](COMPATIBILITY.md).
