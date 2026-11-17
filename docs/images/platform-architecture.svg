@@ -1,0 +1,183 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="1320" viewBox="0 0 1280 1320" role="img" aria-labelledby="title description">
+  <title id="title">K3s platform ownership and reconciliation</title>
+  <desc id="description">Four repositories have separate responsibilities. Private Bootstrap uses Ansible to prepare Debian and OpenMediaVault with K3s, install Argo CD, register repositories, and perform protected create-once initialization and host backup custody. Argo CD reconciles public Infra and private Apps resources using private Live values. GitOps platform lanes cover Istio Ambient and certificates; Crossplane, OpenBao and Vault Secrets Operator; Longhorn and CloudNativePG; SMB CSI and K8up; observability; and native admission. OpenBao provides KV, database credentials and OIDC. K3s owns embedded etcd, Flannel VXLAN and NetworkPolicy, CoreDNS, Metrics Server and ServiceLB. Apps own consumer integrations. Full Apps acceptance follows Infra acceptance, while identity prerequisites may reconcile earlier. This is desired ownership architecture, not network traffic or evidence of runtime acceptance.</desc>
+  <defs>
+    <style>
+      text { font-family: "Avenir Next", "Segoe UI", sans-serif; fill: #24344b; }
+      .title { font-size: 32px; font-weight: 650; }
+      .heading { font-size: 23px; font-weight: 650; }
+      .primary { font-size: 21px; font-weight: 600; }
+      .body { font-size: 20px; }
+      .small { font-size: 19px; }
+      .repo { font-size: 19px; }
+      .muted { fill: #526176; }
+      .blue { fill: #2563b6; }
+      .teal { fill: #0f766e; }
+      .amber { fill: #956515; }
+      .rule { stroke: #cbd5e1; stroke-width: 1; }
+      .reconcile { fill: none; stroke: #2563b6; stroke-width: 2; }
+      .bootstrap { fill: none; stroke: #956515; stroke-width: 2; }
+    </style>
+    <marker id="blue-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M 0 0 L 8 4 L 0 8 Z" fill="#2563b6"/>
+    </marker>
+    <marker id="amber-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M 0 0 L 8 4 L 0 8 Z" fill="#956515"/>
+    </marker>
+  </defs>
+
+  <rect width="1280" height="1320" fill="#f8fafc"/>
+  <text class="title" x="40" y="54">K3s platform architecture</text>
+  <text class="body muted" x="40" y="88">Minimal imperative bootstrap. Kubernetes manifests first.</text>
+
+  <!-- Private bootstrap is a separate ownership rail, not an Argo application. -->
+  <g aria-label="Private Bootstrap repository and protected responsibilities">
+    <rect x="40" y="126" width="270" height="664" fill="#fffaf0"/>
+    <path d="M 40 126 V 790" stroke="#956515" stroke-width="4"/>
+    <text class="heading amber" x="60" y="158">Bootstrap</text>
+    <text class="small muted" x="207" y="158">private</text>
+    <text class="repo" x="60" y="188">k3s-on-omv-bootstrap</text>
+    <path d="M 60 209 H 290" class="rule"/>
+
+    <text class="primary" x="60" y="244">Host preparation</text>
+    <text class="body" x="60" y="273">Ansible</text>
+    <text class="body" x="60" y="303">Debian / OMV + K3s</text>
+    <text class="small" x="60" y="335">Initial Argo CD install</text>
+    <text class="small" x="60" y="363">Repository registration</text>
+    <path d="M 60 385 H 290" class="rule"/>
+
+    <text class="primary" x="60" y="420">Protected setup</text>
+    <text class="small" x="60" y="450">Create-once storage</text>
+    <text class="small" x="60" y="477">and seal keys</text>
+    <text class="small" x="60" y="512">OpenBao initialization</text>
+    <text class="small" x="60" y="542">Provider trust</text>
+    <text class="small" x="60" y="569">Human MFA</text>
+    <text class="small" x="60" y="597">Early DNS-01</text>
+    <text class="small" x="60" y="624">prerequisites</text>
+    <path d="M 60 642 H 290" class="rule"/>
+
+    <text class="primary" x="60" y="672">Host backup custody</text>
+    <text class="small" x="60" y="701">rclone copy + check</text>
+    <text class="small" x="60" y="728">Protected credentials</text>
+    <text class="small amber" x="60" y="766">Outside Argo ownership</text>
+    <path d="M 310 335 H 343" class="bootstrap" marker-end="url(#amber-arrow)"/>
+    <path d="M 175 790 V 833" class="bootstrap" marker-end="url(#amber-arrow)"/>
+    <text class="small amber" x="193" y="818">prepares</text>
+  </g>
+
+  <!-- These three repositories are Argo inputs; visibility is not ownership. -->
+  <g aria-label="Repositories consumed by Argo CD">
+    <path d="M 344 126 H 1240" stroke="#0f766e" stroke-width="3"/>
+    <path d="M 638 143 V 231 M 938 143 V 231" class="rule"/>
+
+    <text class="heading teal" x="364" y="158">Infra</text>
+    <text class="small muted" x="433" y="158">public</text>
+    <text class="repo" x="364" y="188">k3s-on-omv-infra</text>
+    <text class="small muted" x="364" y="218">Platform definitions</text>
+
+    <text class="heading teal" x="664" y="158">Live</text>
+    <text class="small muted" x="729" y="158">private</text>
+    <text class="repo" x="664" y="188">k3s-on-omv-live</text>
+    <text class="small muted" x="664" y="218">Private values + resources</text>
+
+    <text class="heading teal" x="964" y="158">Apps</text>
+    <text class="small muted" x="1040" y="158">private</text>
+    <text class="repo" x="964" y="188">k3s-on-omv-apps</text>
+    <text class="small muted" x="964" y="218">Workloads + integrations</text>
+
+    <path d="M 490 236 V 269" class="reconcile" marker-end="url(#blue-arrow)"/>
+    <path d="M 790 236 V 269" class="reconcile" marker-end="url(#blue-arrow)"/>
+    <path d="M 1090 236 V 269" class="reconcile" marker-end="url(#blue-arrow)"/>
+  </g>
+
+  <g aria-label="Argo CD steady-state reconciliation">
+    <rect x="344" y="270" width="896" height="126" rx="4" fill="#eef5ff" stroke="#99b8e0"/>
+    <text class="blue" x="368" y="304" font-size="25" font-weight="650">Argo CD</text>
+    <text class="body blue" x="552" y="304">Steady-state reconciler</text>
+    <text class="body" x="368" y="336">Infra + app resources, with private Live values</text>
+    <text class="body" x="368" y="368">Infra acceptance precedes full Apps acceptance.</text>
+  </g>
+
+  <!-- A single comb expresses shared reconciliation without dependency edges. -->
+  <path d="M 360 396 V 1165" class="reconcile"/>
+  <path d="M 360 506 H 389" class="reconcile" marker-end="url(#blue-arrow)"/>
+  <path d="M 360 628 H 389" class="reconcile" marker-end="url(#blue-arrow)"/>
+  <path d="M 360 744 H 389" class="reconcile" marker-end="url(#blue-arrow)"/>
+  <path d="M 360 840 H 389" class="reconcile" marker-end="url(#blue-arrow)"/>
+  <path d="M 360 951 H 389" class="reconcile" marker-end="url(#blue-arrow)"/>
+  <path d="M 360 1057 H 389" class="reconcile" marker-end="url(#blue-arrow)"/>
+  <path d="M 360 1165 H 389" class="reconcile" marker-end="url(#blue-arrow)"/>
+  <text class="heading blue" x="394" y="432">GitOps-managed platform</text>
+
+  <g aria-label="Declarative platform lanes">
+    <path d="M 394 450 H 1240" stroke="#0f766e" stroke-width="2"/>
+    <path d="M 394 562 H 1240 M 394 694 H 1240 M 394 794 H 1240 M 394 887 H 1240 M 394 1015 H 1240 M 394 1099 H 1240" class="rule"/>
+
+    <g aria-label="Traffic and certificates">
+      <text class="primary teal" x="404" y="483">Traffic</text>
+      <text class="primary teal" x="404" y="511">&amp; certificates</text>
+      <text class="primary" x="596" y="479">Istio Ambient + Gateway API</text>
+      <text class="body muted" x="596" y="508">base · istiod · CNI · ztunnel</text>
+      <text class="body" x="596" y="539">cert-manager: Let's Encrypt DNS-01 / Cloudflare</text>
+    </g>
+
+    <g aria-label="Secrets and identity">
+      <text class="primary teal" x="404" y="597">Secrets</text>
+      <text class="primary teal" x="404" y="625">&amp; identity</text>
+      <text class="primary" x="596" y="596">Crossplane + provider-vault configure OpenBao</text>
+      <text class="body muted" x="596" y="627">KV / database credentials / OIDC</text>
+      <text class="body" x="596" y="658">OpenBao → Vault Secrets Operator → scoped Secrets</text>
+    </g>
+
+    <g aria-label="Storage and databases">
+      <text class="primary teal" x="404" y="729">Storage &amp;</text>
+      <text class="primary teal" x="404" y="757">databases</text>
+      <text class="primary" x="596" y="729">Longhorn: encrypted block storage</text>
+      <text class="primary" x="596" y="762">CloudNativePG + Barman Cloud</text>
+    </g>
+
+    <g aria-label="Backup and restore controllers">
+      <text class="primary teal" x="404" y="828">Backup &amp;</text>
+      <text class="primary teal" x="404" y="856">restore</text>
+      <text class="primary" x="596" y="828">SMB CSI + K8up</text>
+      <text class="body" x="596" y="859">Retained repositories + restore validation</text>
+    </g>
+
+    <g aria-label="Observability with Alertmanager disabled in public defaults">
+      <text class="primary teal" x="404" y="922">Observability</text>
+      <text class="primary" x="596" y="922">kube-prometheus-stack</text>
+      <text class="small" x="596" y="952">Prometheus / Grafana / kube-state-metrics / node-exporter</text>
+      <text class="small muted" x="596" y="983">Prometheus Operator CRDs; Alertmanager off in public defaults</text>
+    </g>
+
+    <g aria-label="Native Kubernetes admission">
+      <text class="primary teal" x="404" y="1051">Admission</text>
+      <text class="primary" x="596" y="1051">Native timezone + resource admission</text>
+      <text class="body muted" x="596" y="1081">Scoped defaults and workload policy</text>
+    </g>
+  </g>
+
+  <g aria-label="Services owned by K3s, outside the Infra root">
+    <rect x="40" y="834" width="270" height="292" fill="#ffffff" stroke="#cbd5e1"/>
+    <text x="60" y="870" font-size="22" font-weight="650">K3s-owned services</text>
+    <text class="small muted" x="60" y="899">Outside the Infra root</text>
+    <text class="body" x="60" y="939">Embedded etcd</text>
+    <text class="body" x="60" y="972">Flannel VXLAN</text>
+    <text class="body" x="60" y="999">+ NetworkPolicy</text>
+    <text class="body" x="60" y="1032">CoreDNS</text>
+    <text class="body" x="60" y="1065">Metrics Server</text>
+    <text class="body" x="60" y="1098">ServiceLB</text>
+    <text class="small muted" x="40" y="1169">K3s networking stays</text>
+    <text class="small muted" x="40" y="1197">beneath Istio Ambient.</text>
+  </g>
+
+  <g aria-label="Application-owned consumers and identity prerequisites">
+    <rect x="394" y="1120" width="846" height="92" rx="4" fill="#ffffff" stroke="#99b8e0"/>
+    <text class="heading" x="416" y="1155">Application consumers</text>
+    <text class="body" x="416" y="1187">Own routes, identity, database access and Secret references.</text>
+    <text class="small muted" x="394" y="1239">Apps identity prerequisites may reconcile before full Infra acceptance.</text>
+  </g>
+
+  <path d="M 40 1260 H 1240" class="rule"/>
+  <text class="small muted" x="40" y="1290">Ownership and reconciliation map; runtime acceptance is separate.</text>
+</svg>

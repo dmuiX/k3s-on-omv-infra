@@ -1,0 +1,131 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="830" viewBox="0 0 1280 830" role="img" aria-labelledby="title description">
+  <title id="title">K3s backup destinations and host custody</title>
+  <desc id="description">PostgreSQL with Barman Cloud, OpenBao native Raft snapshots, and native K3s etcd snapshots each write to a separate Cloudflare R2 bucket. Bootstrap configures separate host rclone copy and check jobs from those three buckets to separate destinations on a verified, mounted OMV backup filesystem. Never use sync or a substitute root-filesystem directory. A separate OMV-only path sends application PVCs through K8up and Restic, and Prometheus native TSDB snapshots through one-shot K8up, into retained SMB CSI repository PVCs backed by OMV. These repositories never go to R2. PostgreSQL and OpenBao are not backed up as generic PVCs. Longhorn replication is not backup. Prometheus tool-image and success-gated cleanup runtime validation remain gated. The diagram describes desired backup contracts, not evidence of successful copies, checks or restores.</desc>
+  <defs>
+    <style>
+      text { font-family: "Avenir Next", "Segoe UI", sans-serif; fill: #24344b; }
+      .title { font-size: 32px; font-weight: 650; }
+      .heading { font-size: 23px; font-weight: 650; }
+      .primary { font-size: 21px; font-weight: 600; }
+      .body { font-size: 20px; }
+      .small { font-size: 19px; }
+      .muted { fill: #526176; }
+      .teal { fill: #0f766e; }
+      .amber { fill: #956515; }
+      .rule { stroke: #cbd5e1; stroke-width: 1; }
+      .export { fill: none; stroke: #0f766e; stroke-width: 2; }
+      .host-copy { fill: none; stroke: #956515; stroke-width: 2; }
+      .bucket { fill: #f0fdfa; stroke: #0f766e; stroke-width: 1.5; }
+    </style>
+    <marker id="teal-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M 0 0 L 8 4 L 0 8 Z" fill="#0f766e"/>
+    </marker>
+    <marker id="amber-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M 0 0 L 8 4 L 0 8 Z" fill="#956515"/>
+    </marker>
+  </defs>
+
+  <rect width="1280" height="830" fill="#f8fafc"/>
+  <text class="title" x="40" y="54">Backup destinations &amp; custody</text>
+  <text class="body muted" x="40" y="88">Three native R2 paths. A separate SMB path stays on OMV.</text>
+
+  <text class="heading" x="40" y="144">Native producers</text>
+  <text class="heading teal" x="360" y="144">Cloudflare R2</text>
+  <text class="small muted" x="360" y="169">Three separate buckets</text>
+  <text class="primary amber" x="690" y="144">Bootstrap host jobs</text>
+  <text class="heading" x="1000" y="144">OMV storage</text>
+
+  <!-- Host custody is repeated per bucket, never a shared sync destination. -->
+  <rect x="680" y="176" width="280" height="270" fill="#fffaf0"/>
+  <path d="M 680 176 V 446" stroke="#956515" stroke-width="3"/>
+  <path d="M 40 266 H 320 M 40 356 H 320" class="rule"/>
+  <path d="M 700 266 H 940 M 700 356 H 940" class="rule"/>
+
+  <g aria-label="PostgreSQL native backup to a dedicated R2 bucket and host copy">
+    <text class="heading" x="40" y="207">PostgreSQL</text>
+    <text class="body muted" x="40" y="237">Barman Cloud / data + WAL</text>
+    <path d="M 320 220 H 355" class="export" marker-end="url(#teal-arrow)"/>
+    <path class="bucket" d="M 360 197 C 360 181 632 181 632 197 V 244 C 632 260 360 260 360 244 Z"/>
+    <path d="M 360 197 C 360 213 632 213 632 197" class="export" stroke-width="1.5"/>
+    <text class="primary" x="496" y="229" text-anchor="middle">PostgreSQL bucket</text>
+    <path d="M 637 220 H 675" class="host-copy" marker-end="url(#amber-arrow)"/>
+    <text class="primary" x="700" y="227">rclone copy + check</text>
+    <path d="M 965 220 H 995" class="host-copy" marker-end="url(#amber-arrow)"/>
+  </g>
+
+  <g aria-label="OpenBao native snapshot to a dedicated R2 bucket and host copy">
+    <text class="heading" x="40" y="297">OpenBao</text>
+    <text class="body muted" x="40" y="327">Native Raft snapshots</text>
+    <path d="M 320 310 H 355" class="export" marker-end="url(#teal-arrow)"/>
+    <path class="bucket" d="M 360 287 C 360 271 632 271 632 287 V 334 C 632 350 360 350 360 334 Z"/>
+    <path d="M 360 287 C 360 303 632 303 632 287" class="export" stroke-width="1.5"/>
+    <text class="primary" x="496" y="319" text-anchor="middle">OpenBao bucket</text>
+    <path d="M 637 310 H 675" class="host-copy" marker-end="url(#amber-arrow)"/>
+    <text class="primary" x="700" y="317">rclone copy + check</text>
+    <path d="M 965 310 H 995" class="host-copy" marker-end="url(#amber-arrow)"/>
+  </g>
+
+  <g aria-label="Native K3s etcd snapshot to a dedicated R2 bucket and host copy">
+    <text class="heading" x="40" y="387">K3s embedded etcd</text>
+    <text class="body muted" x="40" y="417">Native scheduled snapshots</text>
+    <path d="M 320 400 H 355" class="export" marker-end="url(#teal-arrow)"/>
+    <path class="bucket" d="M 360 377 C 360 361 632 361 632 377 V 424 C 632 440 360 440 360 424 Z"/>
+    <path d="M 360 377 C 360 393 632 393 632 377" class="export" stroke-width="1.5"/>
+    <text class="primary" x="496" y="409" text-anchor="middle">etcd bucket</text>
+    <path d="M 637 400 H 675" class="host-copy" marker-end="url(#amber-arrow)"/>
+    <text class="primary" x="700" y="407">rclone copy + check</text>
+    <path d="M 965 400 H 995" class="host-copy" marker-end="url(#amber-arrow)"/>
+  </g>
+
+  <text class="small muted" x="40" y="474">PostgreSQL and OpenBao use native backups, not generic PVC copies.</text>
+  <text class="body amber" x="700" y="474">Never sync.</text>
+
+  <!-- One local filesystem, with distinct native-copy and SMB destinations. -->
+  <g aria-label="Verified, mounted OMV backup filesystem">
+    <rect x="1000" y="176" width="240" height="532" fill="#ffffff" stroke="#94a3b8" stroke-width="1.5"/>
+    <text x="1020" y="210" font-size="22" font-weight="650">Verified OMV</text>
+    <text x="1020" y="240" font-size="22" font-weight="650">backup filesystem</text>
+    <text class="body" x="1020" y="294">Mounted backup</text>
+    <text class="body" x="1020" y="322">disk required</text>
+    <text class="small muted" x="1020" y="350">No fallback directory</text>
+    <text class="body muted" x="1020" y="380">Separate copies</text>
+    <text class="body muted" x="1020" y="408">per R2 bucket</text>
+    <path d="M 1000 505 H 1240" class="rule"/>
+    <text x="1020" y="554" font-size="22" font-weight="600">SMB-backed</text>
+    <text x="1020" y="583" font-size="22" font-weight="600">repositories</text>
+    <text class="body teal" x="1020" y="631">OMV only</text>
+    <text class="body teal" x="1020" y="660">Never R2</text>
+  </g>
+
+  <path d="M 40 505 H 960" class="rule"/>
+  <text class="heading teal" x="40" y="539">OMV-only backup path</text>
+
+  <g aria-label="Application PVCs backed up with K8up and Restic to SMB">
+    <text x="40" y="585" font-size="22" font-weight="600">Application PVCs</text>
+    <path d="M 320 596 H 355" class="export" marker-end="url(#teal-arrow)"/>
+    <text class="primary" x="360" y="585">K8up / Restic</text>
+    <text class="small muted" x="360" y="614">Application data</text>
+    <path d="M 637 596 H 675" class="export" marker-end="url(#teal-arrow)"/>
+  </g>
+
+  <g aria-label="Prometheus native snapshot first, then one-shot K8up, never the live TSDB">
+    <text x="40" y="660" font-size="22" font-weight="600">Prometheus</text>
+    <text class="small muted" x="40" y="689">Native TSDB snapshot</text>
+    <path d="M 320 671 H 355" class="export" marker-end="url(#teal-arrow)"/>
+    <text class="primary" x="360" y="660">One-shot K8up</text>
+    <text class="small muted" x="360" y="689">Snapshot only; not live TSDB</text>
+    <path d="M 637 671 H 675" class="export" marker-end="url(#teal-arrow)"/>
+  </g>
+
+  <g aria-label="Retained SMB CSI repository PVCs, local Restic repositories">
+    <rect x="680" y="554" width="280" height="150" fill="#f0fdfa" stroke="#0f766e" stroke-width="1.5"/>
+    <text class="heading teal" x="700" y="589">SMB CSI</text>
+    <text class="small" x="700" y="620">Retained repository PVCs</text>
+    <text class="small muted" x="700" y="650">Local Restic repositories</text>
+    <path d="M 965 629 H 995" class="export" marker-end="url(#teal-arrow)"/>
+  </g>
+
+  <path d="M 40 735 H 1240" class="rule"/>
+  <text class="small" x="40" y="766">Longhorn replication is not backup. Desired contract; copy/check and restore acceptance are separate.</text>
+  <text class="small muted" x="40" y="794">Prometheus tool image and success-gated cleanup still need runtime validation.</text>
+</svg>
