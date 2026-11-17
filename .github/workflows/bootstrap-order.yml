@@ -44,7 +44,8 @@ jobs:
         run: |
           files=(tests/ci_dependencies.py tests/repo_suite.py tests/workload_contracts.py
                  tests/test_ci_dependencies.py tests/test_repo_suite.py
-                 tests/test_repo_workloads.py tests/test_workload_contracts.py)
+                 tests/test_repo_workloads.py tests/test_workload_contracts.py
+                 tests/test_resource_admission.py)
           python -m black --check "${files[@]}"
           python -m ruff check "${files[@]}"
           python -m mypy --strict --follow-imports=skip "${files[@]}"
@@ -118,4 +119,5 @@ jobs:
           done
           if [ "$ready" != true ]; then echo 'Isolated test API did not become healthy'; exit 1; fi
           TIMEZONE_TEST_CONTAINER="$test_id" python -m unittest discover -s tests -p test_timezone_defaults.py -v
-          echo 'Native timezone CREATE/UPDATE/deny tests passed in a network-isolated disposable API; no production access.' >> "$GITHUB_STEP_SUMMARY"
+          TIMEZONE_TEST_CONTAINER="$test_id" python -m unittest discover -s tests -p test_resource_admission.py -v
+          echo 'Native timezone and scoped resource admission tests passed in a network-isolated disposable API; no production access.' >> "$GITHUB_STEP_SUMMARY"

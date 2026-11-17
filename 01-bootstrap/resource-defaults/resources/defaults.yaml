@@ -1,0 +1,132 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingAdmissionPolicy
+metadata:
+  name: default-longhorn-v1-instance-manager-memory
+  annotations:
+    argocd.argoproj.io/sync-wave: '-3'
+spec:
+  failurePolicy: Fail
+  reinvocationPolicy: IfNeeded
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: longhorn
+    objectSelector:
+      matchLabels:
+        longhorn.io/component: instance-manager
+        longhorn.io/data-engine: v1
+    resourceRules:
+    - apiGroups: ['']
+      apiVersions: [v1]
+      operations: [CREATE]
+      resources: [pods]
+  matchConditions:
+  - name: expected-account-node-and-controller
+    expression: >-
+      object.spec.serviceAccountName == 'longhorn-service-account' &&
+      has(object.spec.nodeName) && object.spec.nodeName in ['omv', 'wyse5070', 'raspi4'] &&
+      has(object.metadata.ownerReferences) &&
+      object.metadata.ownerReferences.exists(r,
+        r.apiVersion == 'longhorn.io/v1beta2' && r.kind == 'InstanceManager' &&
+        r.name == object.metadata.name && r.uid != '' &&
+        has(r.controller) && r.controller)
+  variables:
+  - name: memoryRequest
+    expression: "object.spec.nodeName == 'raspi4' ? '448Mi' : '640Mi'"
+  mutations:
+  - patchType: ApplyConfiguration
+    applyConfiguration:
+      expression: >-
+        Object{spec: Object.spec{containers:
+          object.spec.containers.filter(c,
+            c.name == 'instance-manager' &&
+            (!has(c.resources) || !has(c.resources.requests) ||
+             !('memory' in c.resources.requests))
+          ).map(c, Object.spec.containers{
+            name: c.name,
+            resources: Object.spec.containers.resources{
+              requests: {'memory': variables.memoryRequest}
+            }
+          })
+        }}
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingAdmissionPolicyBinding
+metadata:
+  name: default-longhorn-v1-instance-manager-memory
+  annotations:
+    argocd.argoproj.io/sync-wave: '-2'
+spec:
+  policyName: default-longhorn-v1-instance-manager-memory
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingAdmissionPolicy
+metadata:
+  name: default-k3s-servicelb-requests
+  annotations:
+    argocd.argoproj.io/sync-wave: '-3'
+spec:
+  failurePolicy: Fail
+  reinvocationPolicy: IfNeeded
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: kube-system
+    objectSelector:
+      matchExpressions:
+      - key: svccontroller.k3s.cattle.io/svcname
+        operator: Exists
+      - key: svccontroller.k3s.cattle.io/svcnamespace
+        operator: Exists
+    resourceRules:
+    - apiGroups: ['']
+      apiVersions: [v1]
+      operations: [CREATE]
+      resources: [pods]
+  matchConditions:
+  - name: expected-account-service-and-controller
+    expression: >-
+      object.spec.serviceAccountName == 'svclb' &&
+      object.metadata.labels['svccontroller.k3s.cattle.io/svcname'] != '' &&
+      object.metadata.labels['svccontroller.k3s.cattle.io/svcnamespace'] != '' &&
+      has(object.metadata.ownerReferences) &&
+      object.metadata.ownerReferences.exists(r,
+        r.apiVersion == 'apps/v1' && r.kind == 'DaemonSet' &&
+        r.name.startsWith('svclb-') && r.uid != '' &&
+        has(r.controller) && r.controller)
+  mutations:
+  - patchType: ApplyConfiguration
+    applyConfiguration:
+      expression: >-
+        Object{spec: Object.spec{containers:
+          object.spec.containers.filter(c,
+            c.name.matches('^lb-tcp-[0-9]{1,5}$') &&
+            (!has(c.resources) || !has(c.resources.requests) ||
+             !('cpu' in c.resources.requests))
+          ).map(c, Object.spec.containers{
+            name: c.name,
+            resources: Object.spec.containers.resources{requests: {'cpu': '5m'}}
+          })
+        }}
+  - patchType: ApplyConfiguration
+    applyConfiguration:
+      expression: >-
+        Object{spec: Object.spec{containers:
+          object.spec.containers.filter(c,
+            c.name.matches('^lb-tcp-[0-9]{1,5}$') &&
+            (!has(c.resources) || !has(c.resources.requests) ||
+             !('memory' in c.resources.requests))
+          ).map(c, Object.spec.containers{
+            name: c.name,
+            resources: Object.spec.containers.resources{requests: {'memory': '8Mi'}}
+          })
+        }}
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingAdmissionPolicyBinding
+metadata:
+  name: default-k3s-servicelb-requests
+  annotations:
+    argocd.argoproj.io/sync-wave: '-2'
+spec:
+  policyName: default-k3s-servicelb-requests

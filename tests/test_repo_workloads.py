@@ -37,6 +37,7 @@ class RepositoryWorkloads(unittest.TestCase):
         expected = {
             "letsencrypt-dns01-issuer",
             "timezone-defaults",
+            "resource-defaults",
             "argocd-config",
             "istio-core",
             "istio-ambient",
