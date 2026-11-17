@@ -3,29 +3,29 @@
   <desc id="description">PostgreSQL with Barman Cloud, OpenBao native Raft snapshots, and native K3s etcd snapshots each write to a separate Cloudflare R2 bucket. Bootstrap configures separate host rclone copy and check jobs from those three buckets to separate destinations on a verified, mounted OMV backup filesystem. Never use sync or a substitute root-filesystem directory. A separate OMV-only path sends application PVCs through K8up and Restic, and Prometheus native TSDB snapshots through one-shot K8up, into retained SMB CSI repository PVCs backed by OMV. These repositories never go to R2. PostgreSQL and OpenBao are not backed up as generic PVCs. Longhorn replication is not backup. Prometheus tool-image and success-gated cleanup runtime validation remain gated. The diagram describes desired backup contracts, not evidence of successful copies, checks or restores.</desc>
   <defs>
     <style>
-      text { font-family: "Avenir Next", "Segoe UI", sans-serif; fill: #24344b; }
+      text { font-family: "Avenir Next", "Segoe UI", sans-serif; fill: #f5f7f5; }
       .title { font-size: 32px; font-weight: 650; }
       .heading { font-size: 23px; font-weight: 650; }
       .primary { font-size: 21px; font-weight: 600; }
       .body { font-size: 20px; }
       .small { font-size: 19px; }
-      .muted { fill: #526176; }
-      .teal { fill: #0f766e; }
-      .amber { fill: #956515; }
-      .rule { stroke: #cbd5e1; stroke-width: 1; }
-      .export { fill: none; stroke: #0f766e; stroke-width: 2; }
-      .host-copy { fill: none; stroke: #956515; stroke-width: 2; }
-      .bucket { fill: #f0fdfa; stroke: #0f766e; stroke-width: 1.5; }
+      .muted { fill: #b3bcb2; }
+      .teal { fill: #66da43; }
+      .amber { fill: #a2aea0; }
+      .rule { stroke: #2d382c; stroke-width: 1; }
+      .export { fill: none; stroke: #66da43; stroke-width: 2; }
+      .host-copy { fill: none; stroke: #a2aea0; stroke-width: 2; }
+      .bucket { fill: #091709; stroke: #66da43; stroke-width: 1.5; }
     </style>
     <marker id="teal-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto" markerUnits="userSpaceOnUse">
-      <path d="M 0 0 L 8 4 L 0 8 Z" fill="#0f766e"/>
+      <path d="M 0 0 L 8 4 L 0 8 Z" fill="#66da43"/>
     </marker>
     <marker id="amber-arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="8" markerHeight="8" orient="auto" markerUnits="userSpaceOnUse">
-      <path d="M 0 0 L 8 4 L 0 8 Z" fill="#956515"/>
+      <path d="M 0 0 L 8 4 L 0 8 Z" fill="#a2aea0"/>
     </marker>
   </defs>
 
-  <rect width="1280" height="830" fill="#f8fafc"/>
+  <rect width="1280" height="830" fill="#000000"/>
   <text class="title" x="40" y="54">Backup destinations &amp; custody</text>
   <text class="body muted" x="40" y="88">Three native R2 paths. A separate SMB path stays on OMV.</text>
 
@@ -36,8 +36,8 @@
   <text class="heading" x="1000" y="144">OMV storage</text>
 
   <!-- Host custody is repeated per bucket, never a shared sync destination. -->
-  <rect x="680" y="176" width="280" height="270" fill="#fffaf0"/>
-  <path d="M 680 176 V 446" stroke="#956515" stroke-width="3"/>
+  <rect x="680" y="176" width="280" height="270" fill="#101210"/>
+  <path d="M 680 176 V 446" stroke="#a2aea0" stroke-width="3"/>
   <path d="M 40 266 H 320 M 40 356 H 320" class="rule"/>
   <path d="M 700 266 H 940 M 700 356 H 940" class="rule"/>
 
@@ -82,7 +82,7 @@
 
   <!-- One local filesystem, with distinct native-copy and SMB destinations. -->
   <g aria-label="Verified, mounted OMV backup filesystem">
-    <rect x="1000" y="176" width="240" height="532" fill="#ffffff" stroke="#94a3b8" stroke-width="1.5"/>
+    <rect x="1000" y="176" width="240" height="532" fill="#0d120d" stroke="#5f705b" stroke-width="1.5"/>
     <text x="1020" y="210" font-size="22" font-weight="650">Verified OMV</text>
     <text x="1020" y="240" font-size="22" font-weight="650">backup filesystem</text>
     <text class="body" x="1020" y="294">Mounted backup</text>
@@ -118,7 +118,7 @@
   </g>
 
   <g aria-label="Retained SMB CSI repository PVCs, local Restic repositories">
-    <rect x="680" y="554" width="280" height="150" fill="#f0fdfa" stroke="#0f766e" stroke-width="1.5"/>
+    <rect x="680" y="554" width="280" height="150" fill="#091709" stroke="#66da43" stroke-width="1.5"/>
     <text class="heading teal" x="700" y="589">SMB CSI</text>
     <text class="small" x="700" y="620">Retained repository PVCs</text>
     <text class="small muted" x="700" y="650">Local Restic repositories</text>
