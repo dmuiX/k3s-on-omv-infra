@@ -121,6 +121,7 @@ def container(documents: list[Document], workload: str, name: str) -> Document:
         if d["kind"] == "Deployment" and d["metadata"]["name"] == workload
     ]
     pod = deployment["spec"]["template"]["spec"]
+    result: Document
     (result,) = [
         c
         for c in pod["containers"] + pod.get("initContainers", [])
