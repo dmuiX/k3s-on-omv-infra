@@ -16,6 +16,7 @@
     "test_smb_vso_account",
     "test_repo_suite",
     "test_repo_workloads",
+    "test_request_rightsizing",
     "test_workload_contracts"
   ],
   "mixed": {

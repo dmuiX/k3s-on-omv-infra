@@ -30,7 +30,7 @@ spec:
           manager:
             resources:
               requests:
-                cpu: 50m
+                cpu: 20m
                 memory: 96Mi
               limits:
                 cpu: 300m

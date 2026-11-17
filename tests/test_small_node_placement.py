@@ -54,13 +54,13 @@ class SmallNodePlacementTest(unittest.TestCase):
             "CriticalAddonsOnly=true:NoSchedule",
         )
 
-    def test_ztunnel_only_reduces_memory_request(self) -> None:
+    def test_ztunnel_measured_requests_preserve_existing_limits(self) -> None:
         app = application("01-bootstrap/istio")
         (source,) = [s for s in app["spec"]["sources"] if s.get("chart") == "ztunnel"]
         self.assertEqual(
             source["helm"]["valuesObject"]["resources"],
             {
-                "requests": {"cpu": "200m", "memory": "128Mi"},
+                "requests": {"cpu": "150m", "memory": "64Mi"},
                 "limits": {"cpu": "1", "memory": "1Gi"},
             },
         )
@@ -131,12 +131,39 @@ class SmallNodePlacementTest(unittest.TestCase):
             ]["memory"].removesuffix("Mi")
         )
         self.assertEqual(pending_helper, 64)
-        target = 1756 - 384 - 80 + 256 + pending_helper + added + (192 - 64)
-        self.assertEqual(target, 2204)
+        ztunnel = next(
+            s
+            for s in application("01-bootstrap/istio")["spec"]["sources"]
+            if s.get("chart") == "ztunnel"
+        )
+        ztunnel_memory = int(
+            ztunnel["helm"]["valuesObject"]["resources"]["requests"][
+                "memory"
+            ].removesuffix("Mi")
+        )
+        openbao_memory = int(
+            application("04-openbao")["spec"]["sources"][0]["helm"]["valuesObject"][
+                "server"
+            ]["resources"]["requests"]["memory"].removesuffix("Mi")
+        )
+        target = (
+            1756
+            - (512 - ztunnel_memory)
+            - 80
+            + openbao_memory
+            + pending_helper
+            + added
+            + (192 - 64)
+        )
+        self.assertEqual(target, 2108)
         capacity = 3868328 / 1024
         self.assertLess(capacity - 1536 - 256 - 192 - target, 0)
-        self.assertLess(capacity - 1024 - 256 - 192 - target, 128)
-        self.assertGreaterEqual(capacity - 992 - 256 - 192 - target, 128)
+        allocatable = capacity - 992 - 256 - 192
+        self.assertGreaterEqual(allocatable - target, 128)
+        # Existing IM/ServiceLB admission still does NOT fit after these cuts.
+        full = target + 448 + 3 * 4
+        self.assertEqual(full, 2568)
+        self.assertLess(allocatable - full, 0)
 
     @unittest.skipUnless(
         os.environ.get("LONGHORN_CHART_ARCHIVE")

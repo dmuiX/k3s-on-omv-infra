@@ -12,7 +12,7 @@ are explicitly accepted.** No production admission write or Pod restart included
 | Policy | Pod identity | Target | Missing request default |
 |---|---|---|---|
 | Longhorn V1 memory | Namespace longhorn; component=instance-manager; data-engine=v1; SA longhorn-service-account; controlling longhorn.io/v1beta2 InstanceManager with same name/nonempty UID; known node omv/wyse5070/raspi4 | instance-manager regular container only | RAM 448Mi on raspi4, 640Mi on omv/wyse5070; CPU untouched |
-| K3s ServiceLB | Namespace kube-system; nonempty native service-name/namespace labels; SA svclb; controlling apps/v1 DaemonSet svclb-* with nonempty UID | lb-tcp-N regular containers only | CPU 5m, RAM 8Mi per container |
+| K3s ServiceLB | Namespace kube-system; nonempty native service-name/namespace labels; SA svclb; controlling apps/v1 DaemonSet svclb-* with nonempty UID | lb-tcp-N regular containers only | CPU 5m, RAM 4Mi per container |
 
 Only Pod CREATE; no resize/UPDATE, existing Pod, init/ephemeral container,
 Longhorn V2, unrelated SA/owner/namespace/container or other kube-system workload
@@ -46,21 +46,22 @@ nodes (later fleet maximum 532.9Mi; peak 558.9Mi). Requests use roughly 20% roun
 headroom. Preserve existing native CPU (observed 480m Pi/Wyse, 1920m OMV), not a
 new fixed CPU profile. Fresh per-node reload/rebuild/restore peaks remain a gate.
 
-ServiceLB maximum per-series working-set P95/peak 2.364Mi; other two TCP
-containers P95 about 0.31Mi, peaks <=0.56Mi. CPU P95 sampled as zero. 5m/8Mi is a
+Refreshed ServiceLB normal P95/peak <=2.03/2.72Mi; other two TCP containers
+P95 about0.31Mi, peaks <=0.56Mi. CPU P95 sampled near zero. 5m/4Mi is a
 small utility reservation with margin, NOT a measured startup/failover upper
 bound. Requests do not cap bursts and kernel forwarding CPU can be charged
 outside these containers. Current layout: three TCP containers per node.
 
 ## Hard capacity blocker
 
-Existing #86 native Pi planning profile is 2204Mi including Pending helper and
-Barman/CSI/native placement. This proposal adds 448Mi IM + 3*8Mi ServiceLB = 472Mi
-on that node: **2676Mi** before any other new Pi placement/surge/unsupported target.
-The paired 992Mi reserve candidate provides approximately **2337.66Mi allocatable**:
-this proposal is short **338.34Mi**, and misses the existing 128Mi spare gate by
-**466.34Mi**. The unactivated original reserve is tighter still. These are dated
-scheduler-model projections, not current physical-memory or runtime safety proof.
+The [request reductions](request-rightsizing.md) bring the native Pi profile
+2204->2108Mi including helper and Barman/CSI/native placement. This proposal adds
+448Mi IM +3*4Mi ServiceLB=460Mi: **2568Mi** before other placement/surge/unsupported
+targets. The user's paired992Mi reserve activation was observed effective at
+approximately **2337.66Mi allocatable**, with OpenBao3/3 Ready. The complete source
+profile is still short **230.34Mi**, or **358.34Mi including128Mi spare**. Recovery
+of existing Pods does not prove adoption or fit of future admission reservations.
+These are placement-model projections, not physical-memory/runtime safety proof.
 
 Do not lower measured requests merely to force green or cut daemon/eviction
 protection. A separately approved capacity/placement/architecture decision and
