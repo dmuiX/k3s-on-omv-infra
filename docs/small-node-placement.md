@@ -19,35 +19,47 @@ no new system Application, APIService, skip marker or add-on handover is include
 - GitOps owns Barman ObjectStore sidecar requests 250m/192Mi and unchanged
   250m/256Mi limits through a resource-only SSA manifest in the existing postgres
   Application. Endpoint and credential custody remain Bootstrap/OpenBao-owned.
-- Paired Bootstrap: candidate Pi kubeReserved 1536Mi -> 1024Mi, unchanged system
+- Paired Bootstrap: candidate Pi kubeReserved 1536Mi -> 992Mi, unchanged system
   and eviction reserves. No SQL, credentials or primary role is changed.
 
 ## Budget and remaining gaps
 
 [The measured resource profile](resource-request-profile.md) records P95, peaks,
 native support and limitations. With the original 1794Mi allocatable memory, the
-native profile plus OpenBao needs 2140Mi and cannot fit. The paired candidate gives
-about 2306Mi allocatable and **166Mi request headroom**, verified against a fresh
-admitted-Pod snapshot including init sidecars. Current CPU request projections fit
-the observed node capacities as well; recalculate before actual deployment.
+native profile including both Pending OpenBao and discard-helper Pods needs
+2204Mi and cannot fit. The paired candidate gives about 2338Mi allocatable and
+**134Mi request headroom**. The former 1024Mi candidate omitted the 64Mi helper;
+its complete headroom is only 102Mi, below the unchanged 128Mi gate. A 960Mi
+candidate fails the service-memory gate at a fresh ~851Mi working set, so it is
+not used. Recheck against fresh admitted Pods including init sidecars. Current
+CPU request projections fit the observed node capacities as well; recalculate
+before actual deployment.
 
-This is not 166Mi physical RAM newly available. Moving workloads changes Pi usage;
+This is not 134Mi physical RAM newly available. Moving workloads changes Pi usage;
 requests change scheduler accounting. V1 instance-manager, engine/helper and
 UI/driver resource gaps remain explicit. Their full proposed profile still exceeds
-the new Pi budget by about 338Mi. No data-HA reduction is hidden in this change.
+the new Pi budget by about 370Mi. No data-HA reduction is hidden in this change.
 
 ## Ordered activation, not automatic approval
 
 1. Review/approve exact commands and separate Pi-service, CSI-node-plugin and
    eventual database-Pod impacts. A controller-interruption acknowledgement alone
-   does not approve these additional operations. Do not merge Infra first.
+   does not approve these additional operations. Do not merge Infra first. If
+   Infra is already merged, inspect the root operation's pinned revision and
+   child state: Pi recovery can release the old operation and then automatically
+   start newer CSI/ObjectStore changes. Approve that continuation or explicitly
+   arrange an operator hold before restarting; no automatic hold is assumed.
 2. From the reviewed Bootstrap revision run only bounded `configure-pi-memory`
-   maintenance. It checks complete current K3s service working set <=896Mi and host
-   MemAvailable >=1024Mi, peers, database/volume health, then installs the canonical
-   file and restarts only Pi K3s if needed. It verifies live config, a new lease,
-   >=2268Mi actual allocatable memory and unchanged primary. On failure it restores
+   maintenance. It checks complete current K3s service working set <=864Mi and host
+   MemAvailable >=1024Mi, peers, database/volume health and physical capacity for
+   the full 2204Mi profile plus 128Mi and unchanged reserves before writing. It
+   installs the canonical file and restarts only Pi K3s if needed, then verifies
+   live config, a new lease, >=2332Mi actual allocatable, OpenBao/helper recovery
+   and unchanged primary. On failure it restores
    the prior file when backed up, stops and does not blindly restart again. File
    restoration is not a guarantee that the running configuration was reverted.
+   Independently verify the actual Pod/parent cgroup limit and no new OOM kills;
+   effective-config/allocatable metadata alone is not runtime-memory acceptance.
 3. Require all nodes, etcd/storage and OpenBao healthy before reconciling the Infra
    changes. ztunnel must converge before resource headroom is consumed. Verify SMB
    placement, CSI requests and distribution, healthy local plugins and unchanged
@@ -67,7 +79,7 @@ the new Pi budget by about 338Mi. No data-HA reduction is hidden in this change.
    database replication/backups, unchanged primary/data-replica counts, and OpenBao
    3/3 plus a fresh functional check. Compare actual RAM and requests separately.
 
-The complete K3s service recently used about 781Mi working set. Historical service
+The complete K3s service recently used about 851Mi working set. Historical service
 peaks/recovery load are not fully covered; the live gate is not a long-term
 capacity guarantee. Full CI and production E2E remain required.
 

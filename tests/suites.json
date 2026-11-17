@@ -1,5 +1,6 @@
 {
   "repository": [
+    "test_barman_sidecar_resources",
     "test_ci_dependencies",
     "test_cloudnativepg_vso_account",
     "test_credential_resource_ownership",
@@ -10,6 +11,7 @@
     "test_openbao_network",
     "test_retention",
     "test_snapshot",
+    "test_small_node_placement",
     "test_smb_vso_account",
     "test_repo_suite",
     "test_repo_workloads",
