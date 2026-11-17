@@ -19,6 +19,10 @@
     "test_workload_contracts"
   ],
   "mixed": {
+    "test_resource_admission": [
+      "ResourceAdmissionContractTest.test_only_two_namespaced_create_policies_and_their_bindings",
+      "ResourceAdmissionContractTest.test_application_is_registered_and_does_not_own_workload_pods"
+    ],
     "test_backup_validation_templates": [
       "RequiredValueContracts.test_single_source_only_helper_owned_by_early_operator",
       "RequiredValueContracts.test_operator_chart_grants_global_transformation_lookup"

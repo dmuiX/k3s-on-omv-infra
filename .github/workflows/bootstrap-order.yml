@@ -88,6 +88,9 @@ jobs:
       - name: Execute native admission against an owned isolated test API
         run: |
           set -euo pipefail
+          python -m black --check tests/test_resource_admission.py
+          python -m ruff check tests/test_resource_admission.py
+          python -m mypy --strict --follow-imports=skip tests/test_resource_admission.py
           image='rancher/k3s:v1.37.1-k3s1@sha256:ca7f37d993d82ef0dcdcfecb2e0e2618ea541dbaffc620c8cedebe01a82acd0d'
           test_id=$(docker run -d --name "timezone-policy-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
             --label purpose=timezone-policy-test --label "owner=ci-${GITHUB_RUN_ID}" \
@@ -119,4 +122,5 @@ jobs:
           done
           if [ "$ready" != true ]; then echo 'Isolated test API did not become healthy'; exit 1; fi
           TIMEZONE_TEST_CONTAINER="$test_id" python -m unittest discover -s tests -p test_timezone_defaults.py -v
-          echo 'Native timezone CREATE/UPDATE/deny tests passed in a network-isolated disposable API; no production access.' >> "$GITHUB_STEP_SUMMARY"
+          TIMEZONE_TEST_CONTAINER="$test_id" python -m unittest discover -s tests -p test_resource_admission.py -v
+          echo 'Native timezone and scoped resource admission tests passed in a network-isolated disposable API; no production access.' >> "$GITHUB_STEP_SUMMARY"
