@@ -41,6 +41,12 @@ Controller Applications own controllers and CRDs. Consumers own their concrete c
 
 The rule is **one continuous owner for each field**. Avoid two systems repeatedly writing the same configuration. A documented field-scoped handoff is possible where an API requires it; see the Barman exception below. An app-specific credential must not become another unrelated item in a shared OpenBao configuration Application.
 
+Resource metrics have an explicit [K3s-to-GitOps handoff](metrics-server-gitops.md):
+Bootstrap disables only the packaged duplicate; Infra owns the official Metrics
+Server chart on standard nodes. CoreDNS, Flannel and ServiceLB remain K3s-owned.
+Existing installations require attended retirement/adoption before activation;
+the declared ownership diagram is not evidence that this transition has run.
+
 See [service ownership and credential custody](service-credentials.md), [Infra root/value-file handoff](infra-root-migration.md), and the [consumer integration charts](../charts/).
 
 ## Bootstrap, reconciliation and acceptance

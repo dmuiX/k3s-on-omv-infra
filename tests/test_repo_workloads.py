@@ -42,6 +42,7 @@ class RepositoryWorkloads(unittest.TestCase):
             "istio-core",
             "istio-ambient",
             "prometheus-operator-crds",
+            "metrics-server",
             "barman-cloud",
             "cert-manager",
             "cloudnative-pg",

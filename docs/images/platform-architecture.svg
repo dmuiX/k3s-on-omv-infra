@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1280" height="1320" viewBox="0 0 1280 1320" role="img" aria-labelledby="title description">
   <title id="title">K3s platform ownership and reconciliation</title>
-  <desc id="description">Four repositories have separate responsibilities. Private Bootstrap uses Ansible to prepare Debian and OpenMediaVault with K3s, install Argo CD, register repositories, and perform protected create-once initialization and host backup custody. Argo CD reconciles public Infra and private Apps resources using private Live values. GitOps platform lanes cover Istio Ambient and certificates; Crossplane, OpenBao and Vault Secrets Operator; Longhorn and CloudNativePG; SMB CSI and K8up; observability; and native admission. OpenBao provides KV, database credentials and OIDC. K3s owns embedded etcd, Flannel VXLAN and NetworkPolicy, CoreDNS, Metrics Server and ServiceLB. Apps own consumer integrations. Full Apps acceptance follows Infra acceptance, while identity prerequisites may reconcile earlier. This is desired ownership architecture, not network traffic or evidence of runtime acceptance.</desc>
+  <desc id="description">Four repositories have separate responsibilities. Private Bootstrap uses Ansible to prepare Debian and OpenMediaVault with K3s, install Argo CD, register repositories, and perform protected create-once initialization and host backup custody. Argo CD reconciles public Infra and private Apps resources using private Live values. GitOps platform lanes cover Istio Ambient and certificates; Crossplane, OpenBao and Vault Secrets Operator; Longhorn and CloudNativePG; SMB CSI and K8up; observability and Metrics Server; and native admission. OpenBao provides KV, database credentials and OIDC. K3s owns embedded etcd, Flannel VXLAN and NetworkPolicy, CoreDNS and ServiceLB. Apps own consumer integrations. Full Apps acceptance follows Infra acceptance, while identity prerequisites may reconcile earlier. This is desired ownership architecture, not network traffic or evidence of runtime acceptance.</desc>
   <defs>
     <style>
       text { font-family: "Avenir Next", "Segoe UI", sans-serif; fill: #f5f7f5; }
@@ -143,9 +143,9 @@
       <text class="body" x="596" y="859">Retained repositories + restore validation</text>
     </g>
 
-    <g aria-label="Observability with Alertmanager disabled in public defaults">
+    <g aria-label="Observability and resource metrics with Alertmanager disabled in public defaults">
       <text class="primary teal" x="404" y="922">Observability</text>
-      <text class="primary" x="596" y="922">kube-prometheus-stack</text>
+      <text class="primary" x="596" y="922">kube-prometheus-stack + Metrics Server</text>
       <text class="small" x="596" y="952">Prometheus / Grafana / kube-state-metrics / node-exporter</text>
       <text class="small muted" x="596" y="983">Prometheus Operator CRDs; Alertmanager off in public defaults</text>
     </g>
@@ -165,8 +165,7 @@
     <text class="body" x="60" y="972">Flannel VXLAN</text>
     <text class="body" x="60" y="999">+ NetworkPolicy</text>
     <text class="body" x="60" y="1032">CoreDNS</text>
-    <text class="body" x="60" y="1065">Metrics Server</text>
-    <text class="body" x="60" y="1098">ServiceLB</text>
+    <text class="body" x="60" y="1065">ServiceLB</text>
     <text class="small muted" x="40" y="1169">K3s networking stays</text>
     <text class="small muted" x="40" y="1197">beneath Istio Ambient.</text>
   </g>

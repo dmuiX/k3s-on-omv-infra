@@ -5,6 +5,7 @@
     "kustomize": {"version": "v5.7.1", "url": "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize/v5.7.1/kustomize_v5.7.1_linux_amd64.tar.gz", "sha256": "ea375e7372f9aa029129d4b2d16c66b7750b7f1213c4f66f910d981c895818d8", "member": "kustomize"}
   },
   "charts": [
+    {"chart":"metrics-server","version":"3.14.0","repository":"https://kubernetes-sigs.github.io/metrics-server/","url":"https://github.com/kubernetes-sigs/metrics-server/releases/download/metrics-server-helm-chart-3.14.0/metrics-server-3.14.0.tgz","sha256":"c2ca1185c01e6e7f53dd1b7d131f0c9b3fa50e003ed068b784563a1b5a3422a1"},
     {"chart":"argo-cd","version":"10.10.3","repository":"https://argoproj.github.io/argo-helm","url":"https://github.com/argoproj/argo-helm/releases/download/argo-cd-10.10.3/argo-cd-10.10.3.tgz","sha256":"fa03517a9f8165e2f4b3b6755a7871af9dd6a36aeddc8ad948be5d45f56bf6b8"},
     {"chart":"base","version":"1.31.2","repository":"https://blob.istio.io/istio-release/charts","url":"https://blob.istio.io/istio-release/charts/base-1.31.2.tgz","sha256":"bf1e4bfdc1604603eec48ddd83877eb02aa2b929f90b12105f3f326203661abd"},
     {"chart":"cni","version":"1.31.2","repository":"https://blob.istio.io/istio-release/charts","url":"https://blob.istio.io/istio-release/charts/cni-1.31.2.tgz","sha256":"61ebab3041d12fb127284da82cbf86dcc7e5b6246c3f1f64a9a1d520a825dc2c"},

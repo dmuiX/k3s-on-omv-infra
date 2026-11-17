@@ -1,4 +1,4 @@
-"""Placement tuning must not take ownership of K3s DNS or resource metrics."""
+"""Placement tuning preserves K3s DNS and declares the Metrics Server owner."""
 
 from pathlib import Path
 from typing import Any
@@ -225,10 +225,11 @@ class SmallNodePlacementTest(unittest.TestCase):
         ][0]["env"]
         self.assertIn({"name": "CSI_POD_ANTI_AFFINITY_PRESET", "value": "hard"}, env)
 
-    def test_dns_and_metrics_stay_out_of_the_gitops_root(self) -> None:
+    def test_only_metrics_moves_into_the_gitops_root(self) -> None:
         paths = list(INFRA.glob("**/app.yml"))
         names = {yaml.safe_load(p.read_text())["metadata"]["name"] for p in paths}
-        self.assertTrue({"coredns", "metrics-server"}.isdisjoint(names))
+        self.assertNotIn("coredns", names)
+        self.assertIn("metrics-server", names)
         root = yaml.safe_load((INFRA / "kustomization.yaml").read_text())
         self.assertEqual(
             set(root["resources"]), {str(p.relative_to(INFRA)) for p in paths}

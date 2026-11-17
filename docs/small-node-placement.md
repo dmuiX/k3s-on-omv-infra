@@ -1,8 +1,10 @@
 # Small-node workload tuning
 
 This addresses issue #78 through existing Helm settings and a paired Bootstrap
-resource/budget change. CoreDNS and Metrics Server remain K3s-managed and unchanged:
-no new system Application, APIService, skip marker or add-on handover is included.
+resource/budget change. CoreDNS remains K3s-managed and unchanged. The subsequent
+[Metrics Server handoff](metrics-server-gitops.md) separately introduces an official
+chart on standard nodes with paired K3s configuration. No skip marker or runtime
+Deployment patch is used; existing clusters need an attended owner transition.
 
 ## Scope
 
@@ -26,6 +28,10 @@ no new system Application, APIService, skip marker or add-on handover is include
   and eviction reserves. No SQL, credentials or primary role is changed.
 
 ## Budget and remaining gaps
+
+The arithmetic below predates the Metrics Server handoff. Its later placement
+removes another 70Mi of Pi requests only after approved activation; this does not
+make the complete future database/Barman profile fit automatically.
 
 [The measured resource profile](resource-request-profile.md) records P95, peaks,
 native support and limitations. With the original 1794Mi allocatable memory, the

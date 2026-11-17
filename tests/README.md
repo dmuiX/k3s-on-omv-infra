@@ -111,6 +111,7 @@ is used. Native merge/admission is NOT full operator/runtime acceptance.
 | `timezone-defaults` | Four offline contracts plus fourteen actual CREATE/UPDATE/deny admission tests in the isolated API job, including Git-owned CronJobs | Existing production Pods and host/OS timezone behavior |
 | `istio-core` | All official component charts, native CNI/ztunnel DaemonSets, readiness, non-privileged CNI and consumed ztunnel resources | Node injection/traffic and actual ambient connectivity |
 | `istio-ambient` | Public Gateway deployment/PDB overlays: three replicas, bounded rolling update, restricted seccomp | Private Gateway/Certificate binding and istiod-generated Deployment |
+| `metrics-server` | Real official chart, standard-node selector, unchanged requests, native probes/security, one APIService with complete Service/RBAC wiring, wrong-value negative control | Existing K3s owner retirement, Argo adoption, all-node metric freshness and HPA behavior |
 | `prometheus-operator-crds` | Exact chart renders and safely parses the complete public CRD documents | Complete API-server/CRD schema validation |
 | `barman-cloud` | Two real controller replicas, native account, health probes, CPU/RAM requests and limits | ObjectStore custody, archive/recovery and plugin sidecars |
 | `cert-manager` | Three controller Deployments with two replicas, native reader account and supported probes | ACME challenge/DNS and issued certificate; native cainjector has no health endpoint |
@@ -133,8 +134,9 @@ is used. Native merge/admission is NOT full operator/runtime acceptance.
 | `backup-validation` | Bounded exclusive restore-validation CronJob/account, shared required-value transformation; public references | Private application chart consumers and actual database/application restores |
 | `kube-prometheus-stack` | Real chart, two-replica Prometheus with hard host anti-affinity, native alert rules, two-replica Grafana with secret refs and bounded rollout, disabled Alertmanager | Private dashboards/SSO/credentials, real scrape delivery and alert notification |
 
-K3s-owned DNS/Metrics Server/service-LB, private Apps and Bootstrap host ceremonies
-are not owned or changed by this CI. Generated Pods/controllers are checked at
+K3s-owned DNS/service-LB, private Apps and Bootstrap host ceremonies are not
+owned or changed by this CI. Metrics Server's new GitOps chart is covered here;
+the existing-cluster ownership handoff remains separate production acceptance. Generated Pods/controllers are checked at
 the owning CR/chart/overlay seam; rendering a CR does not prove reconciliation.
 
 ## Current detected source defect (not waived)
