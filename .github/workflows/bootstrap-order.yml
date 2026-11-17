@@ -44,8 +44,7 @@ jobs:
         run: |
           files=(tests/ci_dependencies.py tests/repo_suite.py tests/workload_contracts.py
                  tests/test_ci_dependencies.py tests/test_repo_suite.py
-                 tests/test_repo_workloads.py tests/test_workload_contracts.py
-                 tests/test_resource_admission.py)
+                 tests/test_repo_workloads.py tests/test_workload_contracts.py)
           python -m black --check "${files[@]}"
           python -m ruff check "${files[@]}"
           python -m mypy --strict --follow-imports=skip "${files[@]}"
@@ -88,6 +87,9 @@ jobs:
       - name: Execute native admission against an owned isolated test API
         run: |
           set -euo pipefail
+          python -m black --check tests/test_resource_admission.py
+          python -m ruff check tests/test_resource_admission.py
+          python -m mypy --strict --follow-imports=skip tests/test_resource_admission.py
           image='rancher/k3s:v1.37.1-k3s1@sha256:ca7f37d993d82ef0dcdcfecb2e0e2618ea541dbaffc620c8cedebe01a82acd0d'
           test_id=$(docker run -d --name "timezone-policy-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
             --label purpose=timezone-policy-test --label "owner=ci-${GITHUB_RUN_ID}" \
