@@ -115,14 +115,33 @@ class SmallNodePlacementTest(unittest.TestCase):
         added = sum(
             int(c["requests"]["memory"].removesuffix("Mi")) for c in profile.values()
         )
-        target = 1756 - 384 - 80 + 256 + added + (192 - 64)
-        self.assertEqual(target, 2140)
+        helper = next(
+            document
+            for document in yaml.safe_load_all(
+                (
+                    INFRA
+                    / "06-platform/longhorn-config/resources/encrypted-discard.yaml"
+                ).read_text()
+            )
+            if document.get("kind") == "DaemonSet"
+        )
+        pending_helper = int(
+            helper["spec"]["template"]["spec"]["containers"][0]["resources"][
+                "requests"
+            ]["memory"].removesuffix("Mi")
+        )
+        self.assertEqual(pending_helper, 64)
+        target = 1756 - 384 - 80 + 256 + pending_helper + added + (192 - 64)
+        self.assertEqual(target, 2204)
         capacity = 3868328 / 1024
         self.assertLess(capacity - 1536 - 256 - 192 - target, 0)
-        self.assertGreaterEqual(capacity - 1024 - 256 - 192 - target, 128)
+        self.assertLess(capacity - 1024 - 256 - 192 - target, 128)
+        self.assertGreaterEqual(capacity - 992 - 256 - 192 - target, 128)
 
     @unittest.skipUnless(
-        os.environ.get("LONGHORN_CHART_ARCHIVE"), "Pinned Longhorn chart is required"
+        os.environ.get("LONGHORN_CHART_ARCHIVE")
+        or os.environ.get("PLATFORM_CHART_AUDIT"),
+        "Pinned Longhorn chart is required",
     )
     def test_pinned_chart_consumes_native_resources_and_hard_affinity(self) -> None:
         values = application("02-controllers/longhorn")["spec"]["sources"][0]["helm"][
@@ -133,7 +152,11 @@ class SmallNodePlacementTest(unittest.TestCase):
                 "helm",
                 "template",
                 "longhorn",
-                os.environ["LONGHORN_CHART_ARCHIVE"],
+                os.environ.get("LONGHORN_CHART_ARCHIVE")
+                or str(
+                    Path(os.environ["PLATFORM_CHART_AUDIT"])
+                    / "longhorn-1.13.0/longhorn"
+                ),
                 "--namespace",
                 "longhorn",
                 "--kube-version",

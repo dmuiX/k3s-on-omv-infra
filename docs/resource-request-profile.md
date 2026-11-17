@@ -102,39 +102,47 @@ All figures below are MiB, rounded only for display.
 | Current allocatable Pi memory | 1,793.66 |
 | Current effective Pod requests | 1,756 |
 | Existing PR plus the third OpenBao server: 1756 - 384 - 80 + 256 | 1,548 |
-| Remaining request headroom | 245.66 |
+| Already Pending encrypted-discard helper (not in the scheduled baseline) | +64 |
+| Remaining request headroom | 181.66 |
 | Four remaining CSI controller replicas at 80Mi | +320 |
 | Three node-plugin containers at 48Mi | +144 |
 | Barman sidecar 64Mi -> 192Mi | +128 |
-| Total with these natively configurable targets | 2,140 |
-| **Deficit against unchanged allocatable memory** | **346.34** |
-| Paired Pi kubeReserved candidate: 1536Mi -> 1024Mi | +512 |
-| Allocatable with that candidate and unchanged system/eviction reserves | 2,305.66 |
-| **Native profile headroom after paired activation** | **165.66** |
+| Total with these natively configurable targets, including both Pending Pods | 2,204 |
+| **Deficit against unchanged allocatable memory** | **410.34** |
+| Paired Pi kubeReserved candidate: 1536Mi -> 992Mi | +544 |
+| Allocatable with that candidate and unchanged system/eviction reserves | 2,337.66 |
+| **Native profile headroom after paired activation** | **133.66** |
 | Additional currently unsupported Pi targets: instance manager + engine + helper | +504 |
-| Total if all of the defined Pi targets were reservable | 2,644 |
-| Full-target deficit against the original reserve | 850.34 |
-| **Full-target deficit even with the paired candidate** | **338.34** |
+| Total if all of the defined Pi targets were reservable | 2,708 |
+| Full-target deficit against the original reserve | 914.34 |
+| **Full-target deficit even with the paired candidate** | **370.34** |
 
-This does **not** mean an extra 850Mi physical RAM is immediately consumed: the
+This does **not** mean an extra 914Mi physical RAM is immediately consumed: the
 processes already run. It means their proposed scheduling guarantees do not fit
 the current reservation model. Do not force requests below the measured normal
-load simply to make the arithmetic pass. Do not present the existing 246Mi
+load simply to make the arithmetic pass. Do not present the intermediate 182Mi
 request headroom as complete coverage for these previously unreserved consumers.
 
-The paired bounded Pi maintenance checks the complete live K3s service working
-set, requires at least 128Mi spare inside the 1024Mi candidate and at least 1Gi
-host MemAvailable, checks both remaining local API/etcd readiness gates, and
-verifies effective config, fresh worker lease, allocatable memory and unchanged DB
-primary afterwards. System reserve and all eviction protections stay unchanged.
-The observed whole-service working set was about 781Mi; full historical working
-set peaks are still unavailable. This is a guarded candidate, not proof that all
-future recovery spikes fit it. It changes scheduler accounting, not a hard
-process-memory limit or physical RAM consumption.
+The earlier 1024Mi candidate omitted the Pending 64Mi helper and leaves only
+101.66Mi request headroom, below the unchanged 128Mi gate. A 960Mi candidate would
+fit requests, but a fresh whole-service working set of about 851Mi exceeds its
+832Mi service gate. The 992Mi candidate preserves both gates: at most 864Mi live
+service working set and at least 128Mi request headroom. It is not a blind request
+reduction or removal of daemon protection.
+
+The paired bounded Pi maintenance checks physical capacity for the complete
+profile and reserves before installation, requires at least 128Mi spare inside
+the 992Mi candidate and at least 1Gi host MemAvailable, checks both remaining local
+API/etcd readiness gates, and verifies effective config, fresh worker lease,
+at least 2332Mi allocatable memory, OpenBao/helper recovery and unchanged DB primary
+afterwards. System reserve and all eviction protections stay unchanged. Full
+historical service working-set peaks remain unavailable. This is a tight guarded
+candidate, not proof that all future recovery spikes fit it. It changes scheduler
+accounting, not a hard process-memory limit or physical RAM consumption.
 
 The native profile fits this candidate; the complete profile still does not.
 Do not claim all missing requests are solved: unsupported components and the
-remaining 338Mi full-target deficit remain open. No storage-role or data-HA change
+remaining 370Mi full-target deficit remain open. No storage-role or data-HA change
 is included. Inspect actual Pods after operator rollout, recalculate fresh
 memory/CPU headroom and complete the production tests before acceptance.
 
