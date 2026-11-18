@@ -653,9 +653,18 @@ class PlatformContractTest < Minitest::Test
         assert_equal true, transformation.fetch('excludeRaw'), relative
         assert_equal [{ 'name' => 'required-openbao-value', 'namespace' => 'vault-secrets-operator' }],
                      transformation.fetch('transformationRefs'), relative
-        text = transformation.fetch('templates').values.map { |template| template.fetch('text') }.join("\n")
-        assert_includes text, 'template "requiredValue"', relative
-        refute_includes text, 'fail ', relative
+        transformation.fetch('templates').each do |output, template|
+          text = template.fetch('text')
+          next unless text.include?('get .Secrets')
+          assert_includes text, 'template "requiredValue"', relative
+          if relative == '07-k3s-postgres/resources/credentials.yaml' &&
+              doc.dig('metadata', 'name') == 'postgresql-r2-credentials' && output == 'S3_ENDPOINT'
+            guard = 'fail "OpenBao endpoint must be an HTTPS R2 account URL"'
+            assert_includes text, guard, relative
+            text = text.sub(guard, '')
+          end
+          refute_includes text, 'fail ', relative
+        end
       end
     end
   end
@@ -724,25 +733,32 @@ class PlatformContractTest < Minitest::Test
     refute_match(/k8up(?:-r2|-bucket|-endpoint|\/r2-credentials)|k8up-volumes/, corpus)
   end
 
-  def test_postgres_object_store_is_rendered_once_with_canonical_live_endpoint
-    raw_stores = YAML_REPOSITORIES.flat_map { |repository| yaml_files(repository) }
-      .flat_map { |path| yaml_documents(path) }
-      .select { |document| document["kind"] == "ObjectStore" }
-    assert_equal 0, raw_stores.length, "ObjectStore must not also be a raw manifest"
-    stores = shared_documents.select { |_path, document| document["kind"] == "ObjectStore" }
+  def test_postgres_object_store_has_one_raw_owner_and_no_endpoint_literal
+    stores = YAML_REPOSITORIES.flat_map { |repository| yaml_files(repository) }
+      .flat_map { |path| yaml_documents(path).map { |document| [path, document] } }
+      .select { |_path, document| document["kind"] == "ObjectStore" }
     assert_equal 1, stores.length
-    owner, store = stores.first
-    assert_equal INFRA / "07-k3s-postgres/app.yml", owner
+    manifest, store = stores.first
+    assert_equal INFRA / "07-k3s-postgres/resources/objectstore.yaml", manifest
+    sources = application(INFRA / "07-k3s-postgres/app.yml").dig("spec", "sources")
+    assert_equal ["07-k3s-postgres/resources", "adapters/credential-custody",
+                  "adapters/postgresql-size-retention", "infra/k3s-postgres"], sources.map { |s| s.fetch("path") }
+    refute sources.any? { |source| source.key?("helm") || source.key?("ref") }
     assert_equal "barmancloud.cnpg.io/v1", store["apiVersion"]
     assert_equal "k3s-postgres-backups", store.dig("metadata", "name")
     assert_equal "cloudnative-pg", store.dig("metadata", "namespace")
-    endpoint = private_value("r2", "r2", "endpoint")
-    assert store.dig("spec", "configuration", "endpointURL") == endpoint,
-      "ObjectStore must render the canonical Live endpoint"
+    refute store.dig("spec", "configuration").key?("endpointURL"),
+      "ObjectStore must not carry an endpoint literal"
     assert_equal "s3://cloudnativepg-backups/", store.dig("spec", "configuration", "destinationPath")
     assert_equal({
       "logLevel" => "info",
       "retentionPolicyIntervalSeconds" => 1800,
+      "env" => [{
+        "name" => "AWS_ENDPOINT_URL_S3",
+        "valueFrom" => { "secretKeyRef" => {
+          "name" => "postgresql-r2-credentials", "key" => "S3_ENDPOINT", "optional" => false
+        } }
+      }],
       "resources" => {
         "requests" => {"cpu" => "50m", "memory" => "64Mi"},
         "limits" => {"cpu" => "250m", "memory" => "256Mi"}

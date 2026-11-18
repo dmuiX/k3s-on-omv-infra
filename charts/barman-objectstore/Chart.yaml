@@ -1,5 +1,0 @@
-apiVersion: v2
-name: barman-objectstore
-description: ObjectStore for k3s-postgres with the R2 endpoint supplied by Live
-type: application
-version: 0.1.0

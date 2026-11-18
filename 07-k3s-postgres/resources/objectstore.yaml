@@ -1,13 +1,8 @@
-{{- $r2 := .Values.r2 | default dict -}}
-{{- $endpoint := required "r2.endpoint is required from Live infra/r2/values.yml" $r2.endpoint -}}
-{{- if not (and (kindIs "string" $endpoint) (regexMatch `\Ahttps://[0-9a-f]{32}(\.(eu|fedramp))?\.r2\.cloudflarestorage\.com\z` $endpoint)) -}}
-{{- fail "r2.endpoint must be an HTTPS R2 account URL with a 32-character lowercase hex account ID and optional .eu or .fedramp jurisdiction" -}}
-{{- end }}
 apiVersion: barmancloud.cnpg.io/v1
 kind: ObjectStore
 metadata:
   name: k3s-postgres-backups
-  namespace: {{ .Release.Namespace }}
+  namespace: cloudnative-pg
   annotations:
     argocd.argoproj.io/sync-wave: "-1"
     argocd.argoproj.io/sync-options: Prune=false,Delete=false
@@ -15,7 +10,6 @@ metadata:
 spec:
   configuration:
     destinationPath: s3://cloudnativepg-backups/
-    endpointURL: {{ $endpoint | quote }}
     s3Credentials:
       accessKeyId:
         name: postgresql-r2-credentials
@@ -37,7 +31,14 @@ spec:
   instanceSidecarConfiguration:
     logLevel: info
     retentionPolicyIntervalSeconds: 1800
-    # Preserve the deployed sizing during adoption; do not roll out the legacy request target.
+    env:
+      - name: AWS_ENDPOINT_URL_S3
+        valueFrom:
+          secretKeyRef:
+            name: postgresql-r2-credentials
+            key: S3_ENDPOINT
+            optional: false
+    # Preserve deployed sizing during adoption.
     resources:
       requests:
         cpu: 50m

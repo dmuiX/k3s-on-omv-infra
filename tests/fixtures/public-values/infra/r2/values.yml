@@ -1,4 +1,0 @@
-# +argocd:skip-file-rendering
-# Synthetic account ID, used only for offline Helm rendering.
-r2:
-  endpoint: https://00000000000000000000000000000000.r2.cloudflarestorage.com

@@ -17,6 +17,14 @@ REFERENCE = [{'name': 'required-openbao-value', 'namespace': 'vault-secrets-oper
 HELPER = yaml.safe_load((ROOT / '02-controllers/vault-secrets-operator/resources/required-values.yaml').read_text())
 VSO_SOURCE = os.environ.get('VSO_TEMPLATE_SOURCE')
 VSO_CHART_SOURCE = os.environ.get('VSO_CHART_SOURCE')
+R2_ACCOUNT = '0' * 31 + 'a'
+R2_HOST = 'r2.cloudflarestorage.com'
+POSTGRES_R2_ENDPOINT_ERROR = 'OpenBao endpoint must be an HTTPS R2 account URL'
+
+
+def postgres_r2_endpoint(secret, output):
+    return (secret['kind'], secret['metadata'].get('namespace'), secret['metadata']['name'], output) == (
+        'VaultStaticSecret', 'cloudnative-pg', 'postgresql-r2-credentials', 'S3_ENDPOINT')
 
 
 def consumers(documents):
@@ -150,7 +158,12 @@ class RequiredValueContracts(unittest.TestCase):
                 mapped.update(re.findall(r'\.Secrets\.([\w-]+)', texts))
                 self.assertTrue(mapped)
                 self.assertEqual(required_keys(texts), mapped)
-                self.assertNotIn('fail ', texts)
+                for output, template in transform['templates'].items():
+                    text = template['text']
+                    if postgres_r2_endpoint(secret, output):
+                        self.assertEqual(re.findall(r'fail "([^"]+)"', text), [POSTGRES_R2_ENDPOINT_ERROR])
+                        text = text.replace(f'fail "{POSTGRES_R2_ENDPOINT_ERROR}"', '')
+                    self.assertNotIn('fail ', text)
                 self.assertNotIn('define "requiredValue"', texts)
 
 
@@ -184,7 +197,8 @@ class RequiredValueRendering(unittest.TestCase):
                 keys = required_keys(template['text'])
                 values = {key: ' fixture+/:' + key + '\n' for key in keys}
                 if 'endpoint' in keys:
-                    values['endpoint'] = 'https://fixture.invalid/path'
+                    values['endpoint'] = (f'https://{R2_ACCOUNT}.{R2_HOST}' if postgres_r2_endpoint(secret, output)
+                                          else 'https://fixture.invalid/path')
                 with self.subTest(secret=secret['metadata']['name'], output=output):
                     result = self.render({output: template}, values)
                     self.assertEqual(result['Error'], '')
@@ -226,6 +240,38 @@ class RequiredValueRendering(unittest.TestCase):
                             result = self.render({output: template}, invalid)
                             self.assertIsNone(result['Data'])
                             self.assertIn('missing or empty OpenBao key: ' + key, result['Error'])
+
+    def test_postgres_endpoint_requires_exact_r2_url_without_echoing_input(self):
+        secret, = [d for d in consumers(yaml.safe_load_all(
+            (ROOT / '07-k3s-postgres/resources/credentials.yaml').read_text()))
+            if postgres_r2_endpoint(d, 'S3_ENDPOINT')]
+        templates = secret['spec']['destination']['transformation']['templates']
+        values = {'access-key-id': 'fixture-id', 'secret-access-key': 'fixture-key', 'region': 'auto'}
+        for jurisdiction in ('', '.eu', '.fedramp'):
+            with self.subTest(jurisdiction=jurisdiction):
+                valid = f'https://{R2_ACCOUNT}{jurisdiction}.{R2_HOST}'
+                self.assertEqual(self.render(templates, {**values, 'endpoint': valid}), {
+                    'Data': {**values, 'S3_ENDPOINT': valid}, 'Error': ''})
+        endpoint = f'https://{R2_ACCOUNT}.{R2_HOST}'
+        for invalid in (
+            True, 1, ['fixture-list'], {'nested': 'fixture-map'},
+            f'http://{R2_ACCOUNT}.{R2_HOST}', f'https://{R2_ACCOUNT.upper()}.{R2_HOST}',
+            f'https://{R2_ACCOUNT[:-1]}.{R2_HOST}', f'https://{R2_ACCOUNT}.us.{R2_HOST}',
+            f'{endpoint}.example.invalid', f'{endpoint}:443', f'{endpoint}/',
+            f'{endpoint}?query=fixture', f'{endpoint}#fixture',
+            f'https://fixture-user@{R2_ACCOUNT}.{R2_HOST}',
+            f'{endpoint}\n', f'{endpoint}\r', f'{endpoint} ', f' {endpoint}',
+        ):
+            with self.subTest(invalid=invalid):
+                result = self.render(templates, {**values, 'endpoint': invalid})
+                self.assertIsNone(result['Data'])
+                self.assertTrue(result['Error'].endswith('error calling fail: ' + POSTGRES_R2_ENDPOINT_ERROR))
+                if isinstance(invalid, str):
+                    self.assertNotIn(invalid.strip(), result['Error'])
+        for values_without_endpoint in (values, {**values, 'endpoint': ''}):
+            result = self.render(templates, values_without_endpoint)
+            self.assertIsNone(result['Data'])
+            self.assertIn('missing or empty OpenBao key: endpoint', result['Error'])
 
     def test_historical_postgres_outputs_keep_identical_successful_bytes(self):
         actual = {d['metadata']['name']: d for d in consumers(desired_documents()) + consumers(chart_documents())}

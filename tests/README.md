@@ -29,8 +29,8 @@ Chart upgrades must update the coordinate and checksum together.
 
 Tests use the real Helm/Kustomize engines with canonical public inline values
 and **synthetic** site inputs under `fixtures/public-values`. The profile uses
-`.example.invalid` names, a fake R2 account ID and Secret references, never
-production configuration or credential values. The runner overrides private-repo environment paths,
+`.example.invalid` names and Secret references, never production configuration
+or credential values. The runner overrides private-repo environment paths,
 discards inherited VSO source overrides and sets `KUBECONFIG=/dev/null` before
 imports. Rendered Secret payloads and failed tool output are not printed.
 This is input isolation for reviewed tests, **not a sandbox for arbitrary code**.
@@ -130,8 +130,8 @@ is used. Native merge/admission is NOT full operator/runtime acceptance.
 | `longhorn-config` | Public trim-only RecurringJob and encrypted-discard DaemonSet; actual ConfigMap program/process/lease fixture tests; synthetic OIDC/proxy render | Real block devices/discard, private OIDC and CSI/node-plugin lifecycle |
 | `openbao-backups` | Bounded exclusive CronJob/account and executable snapshot adapter transitions with fake endpoints | Real backup integrity, credentials, retention and recovery |
 | `openbao-config` | Public render, prerequisite waves and credential ownership | Mount/auth/identity operations and real policies |
-| `k3s-postgres` | Three-instance CNPG CR, required anti-affinity, supervised primary updates, encrypted local class, synchronous failover quorum, Barman plugin/ScheduledBackup; one complete ObjectStore with unchanged sizing, strict endpoint validation and credential references; executable retention fixtures | Actual Argo SSA adoption, generated Pods, physical data health, actual sidecars and backup/restore |
-| `backup-validation` | Bounded exclusive restore-validation CronJob/account, shared required-value transformation; public references | Private application chart consumers and actual database/application restores |
+| `k3s-postgres` | Three-instance CNPG CR, required anti-affinity, supervised primary updates, encrypted local class, synchronous failover quorum, Barman plugin/ScheduledBackup; one complete raw ObjectStore with unchanged sizing and a required endpoint Secret reference; executable retention fixtures | Pinned VSO endpoint format test, actual Argo SSA adoption, generated Pods, physical data health and backup/restore |
+| `backup-validation` | Bounded exclusive restore-validation CronJob/account, shared required-value transformation; validation store clone preserves local R2 references through the ObjectStore bridge | Private application chart consumers and actual database/application restores |
 | `kube-prometheus-stack` | Real chart, two-replica Prometheus with hard host anti-affinity, native alert rules, two-replica Grafana with secret refs and bounded rollout, disabled Alertmanager | Private dashboards/SSO/credentials, real scrape delivery and alert notification |
 
 K3s-owned DNS/service-LB, private Apps and Bootstrap host ceremonies are not

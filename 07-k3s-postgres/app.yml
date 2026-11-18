@@ -24,13 +24,6 @@ spec:
     - repoURL: 'https://github.com/dmuiX/k3s-on-omv-live.git'
       targetRevision: main
       path: infra/k3s-postgres
-      ref: live
-    - repoURL: 'https://github.com/dmuiX/k3s-on-omv-infra.git'
-      targetRevision: main
-      path: charts/barman-objectstore
-      helm:
-        valueFiles:
-          - $live/infra/r2/values.yml
   syncPolicy:
     automated:
       enabled: true

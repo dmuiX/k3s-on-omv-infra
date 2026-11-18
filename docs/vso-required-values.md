@@ -33,7 +33,9 @@ change. Grafana's existing database-only identity and ServiceAccount are preserv
 - Backup credentials: SMB username/password and etcd R2 keys/endpoint.
 - Longhorn: OIDC client ID/secret and cookie key.
 - OpenBao snapshots: R2 keys, region and endpoint.
-- PostgreSQL: manager credentials and R2 fields/aliases.
+- PostgreSQL: manager credentials and R2 fields/aliases. This destination also
+  checks the [exact R2 endpoint format](backup-contract.md#credentials-and-bucket-separation)
+  for Barman; the shared `requiredValue` helper remains unchanged.
 - Backup validation: repository password and R2 fields/aliases.
 - Monitoring: Alertmanager SMTP fields and repository password.
 - `charts/postgres-consumer`: database username/password in split or DSN format.
