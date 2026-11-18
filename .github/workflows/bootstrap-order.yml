@@ -46,7 +46,8 @@ jobs:
                  tests/test_ci_dependencies.py tests/test_repo_suite.py
                  tests/test_repo_workloads.py tests/test_workload_contracts.py
                  tests/test_native_request_profile.py tests/test_request_rightsizing.py
-                 tests/test_small_node_placement.py tests/test_memory_limits.py)
+                 tests/test_small_node_placement.py tests/test_memory_limits.py
+                 tests/test_shutdown_pod_preview.py 06-platform/shutdown-pod-preview/preview.py)
           python -m black --check "${files[@]}"
           python -m ruff check "${files[@]}"
           python -m mypy --strict --follow-imports=skip "${files[@]}"

@@ -1,0 +1,69 @@
+# Only namespace RoleBindings use this shared list permission. Never bind it
+# cluster-wide or extend it with write verbs to move beyond the preview.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: shutdown-pod-preview
+rules:
+  - apiGroups: ['']
+    resources: [pods]
+    verbs: [list]
+  - apiGroups: [apps]
+    resources: [deployments, replicasets]
+    verbs: [list]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: shutdown-pod-preview
+  namespace: argocd
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: shutdown-pod-preview
+subjects:
+  - kind: ServiceAccount
+    name: shutdown-pod-preview
+    namespace: shutdown-pod-preview
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: shutdown-pod-preview
+  namespace: audiobookshelf
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: shutdown-pod-preview
+subjects:
+  - kind: ServiceAccount
+    name: shutdown-pod-preview
+    namespace: shutdown-pod-preview
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: shutdown-pod-preview
+  namespace: kube-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: shutdown-pod-preview
+subjects:
+  - kind: ServiceAccount
+    name: shutdown-pod-preview
+    namespace: shutdown-pod-preview
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: shutdown-pod-preview
+  namespace: longhorn
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: shutdown-pod-preview
+subjects:
+  - kind: ServiceAccount
+    name: shutdown-pod-preview
+    namespace: shutdown-pod-preview
