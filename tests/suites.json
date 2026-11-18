@@ -12,6 +12,7 @@
     "test_native_reader_accounts",
     "test_openbao_network",
     "test_retention",
+    "test_shutdown_pod_preview",
     "test_snapshot",
     "test_small_node_placement",
     "test_smb_vso_account",
