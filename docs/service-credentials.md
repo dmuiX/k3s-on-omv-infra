@@ -60,6 +60,44 @@ Grafana consumes the separate VSO-owned `grafana-admin` Secret through the nativ
 
 Each Job has a separate ServiceAccount, audience-bound login role, create-only policy and NetworkPolicy. Longhorn/database producers have no Argo permissions or Argo CLI. The central multi-service Job has been removed. A small `adapters/credential-custody` ConfigMap provides identical HTTP/CAS/ownership handling in each consumer namespace; it contains no consumer paths, identity decisions, Argo implementation or combined issuer permissions.
 
+## Producer retries and diagnostic lifetime
+
+OpenBao snapshots and the PostgreSQL manager, Longhorn proxy and Grafana admin
+credential Jobs use native `restartPolicy: OnFailure`: container retries normally
+reuse the Pod network namespace/IP rather than creating a fresh Pod for each
+process failure. This is bounded by the existing deadlines (snapshot 1800s,
+credentials 600s) and backoff limits (snapshot explicitly 6, credentials 2).
+It does not prove or cure an underlying mesh/network startup race; Pod replacement
+can still occur. No custom retry loop is added. Retention and restore-validation
+Jobs are excluded because their retry safety has not been demonstrated here.
+
+Snapshot Jobs have `ttlSecondsAfterFinished: 86400` for both success and failure;
+the CronJob also keeps at most one successful and one failed Job. This is not a
+guaranteed one-day log-retention window: history cleanup can happen sooner.
+
+Credential Jobs remain fixed-name `Sync` hooks, using
+`BeforeHookCreation,HookSucceeded`. Argo deletes a successful hook and all its
+Pod attempts only after observing success. Failed hooks remain for diagnosis
+until the next full sync recreates them; selective sync does not run hooks.
+They deliberately have no TTL: a TTL controller could delete a hook before Argo
+observes completion after an outage. This uses the supported [Argo CD hook
+lifecycle](https://argo-cd.readthedocs.io/en/stable/user-guide/sync-waves/#hook-lifecycle-and-cleanup),
+not a regular desired Job whose removal could cause a recreation loop.
+
+Both cleanup mechanisms remove access to Pod logs, including earlier failed
+attempts of an eventually successful Job. Capture current and previous-container
+logs when needed before cleanup. There is no log collector here: Grafana exposes
+metrics, **not these Pod logs**. Existing immutable Job templates are not patched;
+credential hooks adopt the policy on a later full sync, snapshots on future
+scheduled Jobs. Unrelated old Pods and failed legacy Jobs require separately
+approved cleanup after diagnostic capture. No deployment or live test is part
+of this change.
+
+The public rendered-workload regression normalizes only these lifecycle changes
+and compares complete Job/CronJob specs with their original canonical hashes,
+covering deadlines, identities, commands and Secret references. Existing
+credential-ownership move hashes cover other objects and are unchanged.
+
 ## Credential resource boundaries
 
 Group resources by responsibility, not Kubernetes kind. A provisioner bundle can

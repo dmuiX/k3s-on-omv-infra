@@ -12,16 +12,20 @@ metadata:
 spec:
   schedule: "17 2 * * *"
   concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
   jobTemplate:
     spec:
+      backoffLimit: 6
       activeDeadlineSeconds: 1800
+      ttlSecondsAfterFinished: 86400
       template:
         metadata:
           labels:
             app.kubernetes.io/name: openbao-snapshot
         spec:
           serviceAccountName: openbao-snapshot
-          restartPolicy: Never
+          restartPolicy: OnFailure
           securityContext:
             runAsNonRoot: true
             seccompProfile:
