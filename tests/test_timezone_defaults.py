@@ -443,12 +443,14 @@ class NativeTimezoneAdmissionTest(unittest.TestCase):
         )
 
     def test_actual_git_owned_cronjobs_use_the_central_policy(self) -> None:
-        count = 0
+        found: set[tuple[str, str]] = set()
         for path in ROOT.glob("[0-9][0-9]-*/**/*.yaml"):
             for resource in yaml.safe_load_all(path.read_text()):
                 if not isinstance(resource, dict) or resource.get("kind") != "CronJob":
                     continue
                 namespace = resource["metadata"]["namespace"]
+                identity = (namespace, resource["metadata"]["name"])
+                self.assertNotIn(identity, found)
                 self.kubectl(
                     "apply",
                     "-f",
@@ -464,8 +466,16 @@ class NativeTimezoneAdmissionTest(unittest.TestCase):
                 self.assertEqual(
                     actual["spec"]["schedule"], resource["spec"]["schedule"]
                 )
-                count += 1
-        self.assertEqual(count, 3)
+                found.add(identity)
+        self.assertEqual(
+            found,
+            {
+                ("backup-validation", "postgresql-restore-validation"),
+                ("cloudnative-pg", "postgresql-size-retention"),
+                ("openbao", "openbao-snapshot"),
+                ("shutdown-pod-preview", "shutdown-pod-preview"),
+            },
+        )
 
     def test_new_ephemeral_container_is_forced(self) -> None:
         resource = self.admit(pod(), dry_run=False)
