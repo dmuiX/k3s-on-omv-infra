@@ -724,6 +724,32 @@ class PlatformContractTest < Minitest::Test
     refute_match(/k8up(?:-r2|-bucket|-endpoint|\/r2-credentials)|k8up-volumes/, corpus)
   end
 
+  def test_postgres_object_store_is_rendered_once_with_canonical_live_endpoint
+    raw_stores = YAML_REPOSITORIES.flat_map { |repository| yaml_files(repository) }
+      .flat_map { |path| yaml_documents(path) }
+      .select { |document| document["kind"] == "ObjectStore" }
+    assert_equal 0, raw_stores.length, "ObjectStore must not also be a raw manifest"
+    stores = shared_documents.select { |_path, document| document["kind"] == "ObjectStore" }
+    assert_equal 1, stores.length
+    owner, store = stores.first
+    assert_equal INFRA / "07-k3s-postgres/app.yml", owner
+    assert_equal "barmancloud.cnpg.io/v1", store["apiVersion"]
+    assert_equal "k3s-postgres-backups", store.dig("metadata", "name")
+    assert_equal "cloudnative-pg", store.dig("metadata", "namespace")
+    endpoint = private_value("r2", "r2", "endpoint")
+    assert store.dig("spec", "configuration", "endpointURL") == endpoint,
+      "ObjectStore must render the canonical Live endpoint"
+    assert_equal "s3://cloudnativepg-backups/", store.dig("spec", "configuration", "destinationPath")
+    assert_equal({
+      "logLevel" => "info",
+      "retentionPolicyIntervalSeconds" => 1800,
+      "resources" => {
+        "requests" => {"cpu" => "50m", "memory" => "64Mi"},
+        "limits" => {"cpu" => "250m", "memory" => "256Mi"}
+      }
+    }, store.dig("spec", "instanceSidecarConfiguration"))
+  end
+
   def test_shared_r2_source_has_isolated_vso_identities_including_restore_validation
     credential_files = [
       INFRA / "06-platform/backup-credentials/resources/credentials.yaml",
@@ -733,20 +759,6 @@ class PlatformContractTest < Minitest::Test
     ]
     static_secrets = credential_files.flat_map { |path| yaml_documents(path) }
       .select { |document| document["kind"] == "VaultStaticSecret" && document.dig("spec", "path") == "platform/r2" }
-    git_owned_object_stores = YAML_REPOSITORIES.flat_map { |repository| yaml_files(repository) }
-      .flat_map { |path| yaml_documents(path) }
-      .select { |document| document["kind"] == "ObjectStore" }
-    assert_equal 1, git_owned_object_stores.length
-    resource_profile = git_owned_object_stores.first
-    assert_equal "k3s-postgres-backups", resource_profile.dig("metadata", "name")
-    assert_equal ["instanceSidecarConfiguration"], resource_profile.fetch("spec").keys
-    assert_equal ["resources"], resource_profile.dig("spec", "instanceSidecarConfiguration").keys
-    assert_equal %w[limits requests], resource_profile.dig("spec", "instanceSidecarConfiguration", "resources").keys.sort
-    bootstrap_ceremony = (BOOTSTRAP / "ansible/roles/openbao_setup/tasks/platform-backups.yml").read
-    assert_includes bootstrap_ceremony, "kind: ObjectStore"
-    assert_includes bootstrap_ceremony, 'endpointURL: {{ platform_r2_endpoint.user_input | to_json }}'
-    assert_includes bootstrap_ceremony, "k3s-on-omv.io/create-once-owner: protected-ceremonies/platform-r2"
-    refute_match(/endpointURL:\s*https:\/\//, bootstrap_ceremony)
     assert_equal %w[backup-validation cloudnative-pg kube-system openbao], static_secrets.map { |document| document.dig("metadata", "namespace") }.sort
     assert_equal %w[etcd-s3-config-secret openbao-snapshot-r2 postgresql-r2-credentials postgresql-validation-r2], static_secrets.map { |document| document.dig("spec", "destination", "name") }.sort
     etcd_destination = static_secrets.find { |document| document.dig("metadata", "namespace") == "kube-system" }
