@@ -6,7 +6,9 @@ import yaml
 
 
 class RepositoryWorkloads(unittest.TestCase):
-    def test_producer_jobs_use_bounded_native_retries_and_diagnostic_retention(self) -> None:
+    def test_producer_jobs_use_bounded_native_retries_and_diagnostic_retention(
+        self,
+    ) -> None:
         import copy
         import hashlib
         import json
@@ -16,16 +18,39 @@ class RepositoryWorkloads(unittest.TestCase):
         # Original complete specs: normalize only the reviewed lifecycle deltas.
         # This also guards deadlines, identities, commands and Secret references.
         cases = (
-            ("openbao-backups", "openbao-snapshot", "CronJob", "16fbb2d2d3bfa560ad61fa474ffa13185ab74110bef2eb68493fde485ac6b142"),
-            ("k3s-postgres", "k3s-postgres-manager-provisioner", "Job", "1766471924335d1c3fe85f0794320d3df5ea6d31707e7007b0801abc24a4dbd5"),
-            ("longhorn-config", "longhorn-proxy-provisioner", "Job", "5f81c185c941619867900e214e96812eb0e978c7452bd66df99004f33448a0b3"),
-            ("kube-prometheus-stack", "grafana-admin-provisioner", "Job", "74cd024b8b115a9b9cb97b28be6d2575402444b5e179b3c07f5a14d0514164e8"),
+            (
+                "openbao-backups",
+                "openbao-snapshot",
+                "CronJob",
+                "16fbb2d2d3bfa560ad61fa474ffa13185ab74110bef2eb68493fde485ac6b142",
+            ),
+            (
+                "k3s-postgres",
+                "k3s-postgres-manager-provisioner",
+                "Job",
+                "1766471924335d1c3fe85f0794320d3df5ea6d31707e7007b0801abc24a4dbd5",
+            ),
+            (
+                "longhorn-config",
+                "longhorn-proxy-provisioner",
+                "Job",
+                "5f81c185c941619867900e214e96812eb0e978c7452bd66df99004f33448a0b3",
+            ),
+            (
+                "kube-prometheus-stack",
+                "grafana-admin-provisioner",
+                "Job",
+                "74cd024b8b115a9b9cb97b28be6d2575402444b5e179b3c07f5a14d0514164e8",
+            ),
         )
         repo = Repository()
         for app, name, kind, baseline in cases:
             with self.subTest(application=app):
-                job, = [d for d in repo.render(app)
-                        if d["kind"] == kind and d["metadata"]["name"] == name]
+                (job,) = [
+                    d
+                    for d in repo.render(app)
+                    if d["kind"] == kind and d["metadata"]["name"] == name
+                ]
                 spec = copy.deepcopy(job["spec"])
                 if kind == "CronJob":
                     self.assertEqual(spec.pop("successfulJobsHistoryLimit", None), 1)
@@ -36,37 +61,63 @@ class RepositoryWorkloads(unittest.TestCase):
                 else:
                     annotations = job["metadata"]["annotations"]
                     self.assertEqual(annotations["argocd.argoproj.io/hook"], "Sync")
-                    self.assertEqual(annotations["argocd.argoproj.io/hook-delete-policy"], "BeforeHookCreation,HookSucceeded")
-                    self.assertNotIn("ttlSecondsAfterFinished", native)
+                    self.assertEqual(
+                        annotations["argocd.argoproj.io/hook-delete-policy"],
+                        "BeforeHookCreation,HookSucceeded",
+                    )
                     native = spec
+                    self.assertNotIn("ttlSecondsAfterFinished", native)
                     self.assertEqual(native["backoffLimit"], 2)
                 pod = native["template"]["spec"]
                 self.assertEqual(pod["restartPolicy"], "OnFailure")
                 pod["restartPolicy"] = "Never"
-                self.assertEqual(hashlib.sha256(json.dumps(spec, sort_keys=True).encode()).hexdigest(), baseline)
+                self.assertEqual(
+                    hashlib.sha256(
+                        json.dumps(spec, sort_keys=True).encode()
+                    ).hexdigest(),
+                    baseline,
+                )
 
-    def test_credential_producer_scripts_preserve_create_once_custody_on_rerun(self) -> None:
+    def test_credential_producer_scripts_preserve_create_once_custody_on_rerun(
+        self,
+    ) -> None:
         import contextlib
         import io
         import types
+        from typing import TypedDict
         from unittest.mock import patch
 
         from workload_contracts import Repository
+
+        class CustodyWrite(TypedDict):
+            options: dict[str, int]
+            data: dict[str, str]
 
         repo = Repository()
         for app in ("k3s-postgres", "longhorn-config", "kube-prometheus-stack"):
             with self.subTest(application=app):
                 docs = repo.render(app)
                 helper = types.ModuleType("credential_helpers")
-                source = next(d["data"]["credential_helpers.py"] for d in docs
-                              if d["kind"] == "ConfigMap" and d["metadata"]["name"] == "credential-custody")
+                source = next(
+                    d["data"]["credential_helpers.py"]
+                    for d in docs
+                    if d["kind"] == "ConfigMap"
+                    and d["metadata"]["name"] == "credential-custody"
+                )
                 exec(compile(source, "credential_helpers.py", "exec"), helper.__dict__)
-                stored = {}
-                writes = []
+                stored: dict[str, dict[str, str]] = {}
+                writes: list[str] = []
 
-                def request(base, path, token, data=None):
+                def request(
+                    _base: str, path: str, _token: str, data: CustodyWrite | None = None
+                ) -> dict[str, object]:
                     if path == "identity/oidc/client/longhorn":
-                        return {"data": {"client_id": "fixture-client", "client_secret": "fixture-secret"}}
+                        return {
+                            "data": {
+                                "client_id": "fixture-client",
+                                "client_secret": "fixture-secret",
+                            }
+                        }
                     if data is not None:
                         self.assertEqual(data["options"], {"cas": 0})
                         self.assertNotIn(path, stored)
@@ -75,19 +126,29 @@ class RepositoryWorkloads(unittest.TestCase):
                         return {}
                     if path in stored:
                         return {"data": {"data": stored[path].copy()}}
-                    raise helper.APIError(404)
+                    raise vars(helper)["APIError"](404)
 
-                helper.request = request
-                producer = next(d["data"]["provision.py"] for d in docs
-                                if d["kind"] == "ConfigMap" and "provision.py" in d.get("data", {}))
-                namespace = {"__name__": "fixture"}
-                with patch.dict("sys.modules", {"credential_helpers": helper}), patch.object(
-                    helper, "login", return_value="fixture-token"
-                ) as login, contextlib.redirect_stdout(io.StringIO()):
+                producer = next(
+                    d["data"]["provision.py"]
+                    for d in docs
+                    if d["kind"] == "ConfigMap" and "provision.py" in d.get("data", {})
+                )
+                namespace: dict[str, object] = {"__name__": "fixture"}
+                with (
+                    patch.dict("sys.modules", {"credential_helpers": helper}),
+                    patch.object(helper, "request", new=request),
+                    patch.object(
+                        helper, "login", return_value="fixture-token"
+                    ) as login,
+                    contextlib.redirect_stdout(io.StringIO()),
+                ):
                     exec(compile(producer, "provision.py", "exec"), namespace)
-                    namespace["main"]()
+                    main = namespace["main"]
+                    if not callable(main):
+                        self.fail("Credential producer must expose a callable main")
+                    main()
                     first = {key: value.copy() for key, value in stored.items()}
-                    namespace["main"]()
+                    main()
                 self.assertEqual(stored, first)
                 self.assertEqual(len(writes), 1)
                 self.assertEqual(login.call_count, 2)
