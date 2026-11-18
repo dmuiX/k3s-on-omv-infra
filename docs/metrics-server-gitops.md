@@ -3,11 +3,14 @@
 ## Desired state
 
 `01-bootstrap/metrics-server/app.yml` owns the official Metrics Server chart
-3.14.0 / application 0.9.0 in `kube-system`. Its native `nodeSelector` keeps the
-single replica on `compute-class=standard` (OMV/Wyse), with the Linux selector.
-It still collects metrics from all three nodes. CPU/RAM requests remain
-100m/70Mi; the existing unbounded CPU/RAM limits are not changed by this handoff.
-This frees 70Mi of Pi requests, not the entire future Barman/database deficit.
+3.14.0 / application 0.9.0 in `kube-system`. Its native `nodeSelector` keeps both
+replicas on `compute-class=standard` (OMV/Wyse), with the Linux selector. Required
+Pod anti-affinity on `kubernetes.io/hostname` places one replica on each host.
+Each replica collects metrics from all three nodes. Per-Pod CPU/RAM requests
+remain 100m/70Mi, totaling 200m/140Mi; the existing unbounded CPU/RAM limits are
+unchanged. The second replica adds 100m/70Mi of requests on a standard node and
+another set of kubelet scrapes, not load on the Pi scheduler budget. Removing the
+packaged Pi Pod frees 70Mi of Pi requests, not the entire future Barman/database deficit.
 
 The chart owns the Deployment, Service, ServiceAccount, RBAC and the single
 `v1beta1.metrics.k8s.io` APIService. Wave -6 precedes Istiod's resource-metrics HPA;
@@ -22,6 +25,42 @@ Paired Bootstrap adds only `metrics-server` to K3s's `disable` list on all serve
 No runtime Deployment patch, skip marker, generated-manifest edit, replacement
 controller or migration script is used. Clean-install base acceptance requires
 CoreDNS, not the Metrics API that Argo installs afterward.
+
+## Two-replica availability
+
+The pinned chart natively supports `replicas`, `affinity`, `updateStrategy` and
+`podDisruptionBudget`; no custom workload or budget manifest is needed. The
+anti-affinity selector matches the chart's actual Pod labels across revisions.
+One chart-owned `policy/v1` PodDisruptionBudget with `minAvailable: 1` protects
+against evicting the last healthy replica during voluntary maintenance.
+
+With hard host separation and only two eligible hosts, the Deployment uses
+`maxSurge: 0` and `maxUnavailable: 1`. Default surge-only rolling updates would
+wait for a third eligible host; the explicit strategy lets one Pod update while
+the other remains available. A PDB does not govern Deployment rolling updates,
+so the strategy is necessary in addition to the budget.
+
+If OMV or Wyse is unavailable, one replica remains and its replacement stays
+Pending until another eligible host is available. Do not relax placement onto
+the Pi merely to make two replicas Ready. The budget cannot prevent an
+involuntary node failure and may block draining the last remaining healthy Pod.
+
+Upstream [HA guidance](https://github.com/kubernetes-sigs/metrics-server#high-availability)
+recommends `--enable-aggregator-routing=true` on API servers for request load
+balancing. This PR does not change K3s flags or restart hosts; host-side routing
+is a separate inspection/approval, not a prerequisite silently added to this
+chart change.
+
+After approved Argo activation, verify two Ready Pods on distinct OMV/Wyse
+hostnames, a matching PDB with one allowed disruption when both Pods are healthy,
+one Available APIService with two ready backend endpoints, fresh node/Pod metrics
+and Istiod HPA `ScalingActive`. Runtime failover and maintenance behavior remain
+separate acceptance; rendered anti-affinity is not proof of an actual failover.
+
+For a one-replica rollback, review the budget as well as the replica count.
+Pruning is disabled: reverting the source does not remove the new PDB, and a
+retained `minAvailable: 1` budget would block voluntary eviction of the sole Pod.
+Do not re-enable the packaged K3s owner for a chart-only replica rollback.
 
 ## Existing-cluster transition: blocked until separately approved
 
@@ -89,8 +128,9 @@ change database/storage resources to make this migration appear successful.
 ## Evidence boundary
 
 The chart archive is SHA-256 pinned in `tests/ci-dependencies.json`. Public tests
-render the real chart, check placement, resource preservation, RBAC/Service/API
-wiring, probes, security and an intentionally misspelled-value negative control.
+render the real chart, check two replicas, required host separation, the native
+PDB and bounded rollout strategy, per-Pod resource preservation, RBAC/Service/API
+wiring, probes, security and intentionally misspelled placement/HA-value negative controls.
 Bootstrap tests render every server config and retain the old-config refusal.
 These are source/render tests, not proof of actual K3s retirement, Argo adoption,
 three-node metric freshness, HPA behavior or production rollback.

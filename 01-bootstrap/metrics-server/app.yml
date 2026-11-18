@@ -17,11 +17,28 @@ spec:
     targetRevision: 3.14.0
     helm:
       valuesObject:
-        replicas: 1
+        replicas: 2
+        # Hard host separation leaves no third eligible node for a surge Pod.
+        updateStrategy:
+          type: RollingUpdate
+          rollingUpdate:
+            maxSurge: 0
+            maxUnavailable: 1
+        podDisruptionBudget:
+          enabled: true
+          minAvailable: 1
         priorityClassName: system-node-critical
         nodeSelector:
           kubernetes.io/os: linux
           compute-class: standard
+        affinity:
+          podAntiAffinity:
+            requiredDuringSchedulingIgnoredDuringExecution:
+            - topologyKey: kubernetes.io/hostname
+              labelSelector:
+                matchLabels:
+                  app.kubernetes.io/name: metrics-server
+                  app.kubernetes.io/instance: metrics-server
         resources:
           requests:
             cpu: 100m

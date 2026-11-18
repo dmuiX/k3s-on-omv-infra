@@ -33,7 +33,7 @@ class MetricsServerTest(unittest.TestCase):
         docs = Repository().render("metrics-server")
         deployment, = [d for d in docs if d["kind"] == "Deployment"]
         self.assertEqual(deployment["metadata"]["name"], "metrics-server")
-        self.assertEqual(deployment["spec"]["replicas"], 1)
+        self.assertEqual(deployment["spec"]["replicas"], 2)
         pod = deployment["spec"]["template"]["spec"]
         self.assertEqual(pod["nodeSelector"], {"kubernetes.io/os": "linux", "compute-class": "standard"})
         self.assertFalse(any(t.get("key") == "CriticalAddonsOnly" for t in pod.get("tolerations", [])))
@@ -48,6 +48,47 @@ class MetricsServerTest(unittest.TestCase):
         self.assertTrue(container["securityContext"]["runAsNonRoot"])
         self.assertFalse(container["securityContext"]["allowPrivilegeEscalation"])
         self.assertNotEqual(pod["serviceAccountName"], "default")
+
+    def test_replicas_require_distinct_hosts_and_can_roll_without_a_third_host(self):
+        docs = Repository().render("metrics-server")
+        deployment, = [d for d in docs if d["kind"] == "Deployment"]
+        spec = deployment["spec"]
+        pod = spec["template"]["spec"]
+        terms = pod["affinity"]["podAntiAffinity"]["requiredDuringSchedulingIgnoredDuringExecution"]
+        self.assertEqual(terms, [{
+            "topologyKey": "kubernetes.io/hostname",
+            "labelSelector": {"matchLabels": spec["selector"]["matchLabels"]},
+        }])
+        self.assertEqual(spec["strategy"], {
+            "type": "RollingUpdate",
+            "rollingUpdate": {"maxSurge": 0, "maxUnavailable": 1},
+        })
+
+    def test_native_pdb_keeps_one_replica_available_for_voluntary_disruptions(self):
+        docs = Repository().render("metrics-server")
+        deployment, = [d for d in docs if d["kind"] == "Deployment"]
+        budget, = [d for d in docs if d["kind"] == "PodDisruptionBudget"]
+        self.assertEqual(budget["apiVersion"], "policy/v1")
+        self.assertEqual(budget["metadata"]["name"], "metrics-server")
+        self.assertEqual(budget["metadata"]["namespace"], "kube-system")
+        self.assertEqual(budget["spec"]["minAvailable"], 1)
+        self.assertNotIn("maxUnavailable", budget["spec"])
+        self.assertEqual(budget["spec"]["selector"], deployment["spec"]["selector"])
+
+    def test_misspelled_ha_values_do_not_silently_satisfy_the_render_contract(self):
+        for field in ("affinity", "updateStrategy", "podDisruptionBudget"):
+            with self.subTest(field=field):
+                repo = Repository()
+                values = repo.apps["metrics-server"]["spec"]["source"]["helm"]["valuesObject"]
+                values[field + "Typo"] = values.pop(field)
+                docs = repo.render("metrics-server")
+                deployment = next(d for d in docs if d["kind"] == "Deployment")
+                if field == "affinity":
+                    self.assertNotIn("affinity", deployment["spec"]["template"]["spec"])
+                elif field == "updateStrategy":
+                    self.assertNotIn("strategy", deployment["spec"])
+                else:
+                    self.assertFalse(any(d["kind"] == "PodDisruptionBudget" for d in docs))
 
     def test_chart_owns_the_single_metrics_api_and_its_rbac_service_chain(self):
         docs = Repository().render("metrics-server")
