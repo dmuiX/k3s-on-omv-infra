@@ -346,6 +346,10 @@ class RepositoryWorkloads(unittest.TestCase):
             {"maxSurge": 0, "maxUnavailable": 1},
         )
         self.assertEqual(budget["minAvailable"], 2)
+        spread, = deployment["template"]["spec"]["topologySpreadConstraints"]
+        self.assertEqual((spread["whenUnsatisfiable"], spread["topologyKey"], spread["maxSkew"], spread["minDomains"]),
+                         ("DoNotSchedule", "kubernetes.io/hostname", 2, 2))
+        self.assertEqual(spread["labelSelector"], budget["selector"])
         self.assertEqual(
             deployment["template"]["spec"]["securityContext"]["seccompProfile"]["type"],
             "RuntimeDefault",
