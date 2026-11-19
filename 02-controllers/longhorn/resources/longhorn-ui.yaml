@@ -1,5 +1,5 @@
 # Generated from longhorn 1.13.0 templates/deployment-ui.yaml (Deployment only).
-# Keep upstream parity except for the three container settings below. See docs/longhorn-ui-hardening.md.
+# Only the UI image digest, securityContext, requests and readinessProbe differ from Helm.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -42,7 +42,7 @@ spec:
             weight: 1
       containers:
       - name: longhorn-ui
-        image: docker.io/longhornio/longhorn-ui:v1.13.0
+        image: docker.io/longhornio/longhorn-ui:v1.13.0@sha256:f22fb0254ae50195c1635ce428dfae26375956b3d7bd39640fae8fe33a236023
         imagePullPolicy: IfNotPresent
         securityContext:
           allowPrivilegeEscalation: false

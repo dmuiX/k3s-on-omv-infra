@@ -92,6 +92,11 @@ class LonghornUIOverride(unittest.TestCase):
         override, = [d for d in local if identity(d) == ui]
         # Compare the ENTIRE Deployment; never print site-specific render content on failure.
         container, = [c for c in override['spec']['template']['spec']['containers'] if c['name'] == 'longhorn-ui']
+        # Normalize only the verified Docker Hub multiarch index over Helm's exact image tag.
+        tag = 'docker.io/longhornio/longhorn-ui:v1.13.0'
+        index = 'sha256:f22fb0254ae50195c1635ce428dfae26375956b3d7bd39640fae8fe33a236023'
+        self.assertEqual(container['image'], f'{tag}@{index}')
+        container['image'] = tag
         security = container.pop('securityContext')
         self.assertEqual(set(security), {'allowPrivilegeEscalation'})
         self.assertIs(security['allowPrivilegeEscalation'], False)
