@@ -271,8 +271,14 @@ class RepositoryWorkloads(unittest.TestCase):
         from workload_contracts import Repository, monitor_has_target
 
         docs = Repository().render("argocd-config")
-        redis, = [d for d in docs if d["kind"] == "Deployment" and d["metadata"]["name"] == "argocd-redis"]
-        self.assertIs(redis["spec"]["template"]["spec"]["automountServiceAccountToken"], False)
+        (redis,) = [
+            d
+            for d in docs
+            if d["kind"] == "Deployment" and d["metadata"]["name"] == "argocd-redis"
+        ]
+        self.assertIs(
+            redis["spec"]["template"]["spec"]["automountServiceAccountToken"], False
+        )
         params = next(
             d
             for d in docs
