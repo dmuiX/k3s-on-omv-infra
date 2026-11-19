@@ -172,6 +172,7 @@ class NativeChartMigrations(unittest.TestCase):
         for component in ('dex', 'redis'):
             self.assertNotIn('metrics', values[component])
         redis = next(d for d in kind(docs, 'Deployment') if d['metadata']['name'] == 'argocd-redis')
+        self.assertIs(redis['spec']['template']['spec']['automountServiceAccountToken'], False)
         self.assertNotIn('redis-exporter', [c['name'] for c in redis['spec']['template']['spec']['containers']])
 
     def test_native_pdbs_preserve_replica_counts_and_protect_one_replica(self):
