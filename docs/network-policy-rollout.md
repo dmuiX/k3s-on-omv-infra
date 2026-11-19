@@ -1,0 +1,24 @@
+# Draft: isolate workloads in stages
+
+Design only. This document installs no policy. Goal: for each workload, document and enforce necessary communication, or record the control that substitutes for Pod NetworkPolicy. A selector match in Radar is not evidence that traffic is restricted. The November 19 baseline counted 48 Deployment/DaemonSet/StatefulSet templates: 5 selected in both directions, 8 ingress only and 35 neither. Track native Jobs and operator-created Pods separately.
+
+## First two implementation PRs (one workload per PR)
+
+| Subject | Required paths to confirm before enforcement | Acceptance |
+|---|---|---|
+| VSO controller, `vault-secrets-operator` | Ingress from Prometheus to the authenticated metrics container port (currently TCP 8443). Egress to cluster DNS (UDP/TCP 53), Kubernetes API, and the OpenBao active Service (TCP 8200). Verify native service target ports, kubelet probes, admission/webhook configuration and ambient transport at both ends. | Both Prometheus replicas can scrape. Observe a new successful refresh after rollout; verify delivery and rotation on a disposable consumer, without reading secret payloads. No stale deliveries or restarts outside that consumer. |
+| Grafana Deployment, `kube-prometheus-stack` | Gateway ingress to Grafana's Pod port, plus any discovered scrapers. Egress: DNS, PostgreSQL RW (TCP 5432), configured data sources (including Prometheus), and the Kubernetes API for provisioning sidecars. Inventory enabled auth providers, outbound plugins/alerts and any renderer or headless peer before restricting. | Authenticated login, a real data-source query and a provisioned dashboard on both replicas; verify Grafana's DB connection and sidecar refresh. Keep Alertmanager scaled to zero. |
+
+For each PR, derive the subject selector from the **rendered** Pod template, not the namespace or Helm release alone. For peers combine `namespaceSelector` and `podSelector` in a single peer (AND). Follow [API network ownership](api-network-ownership.md): portable ports and workload selectors in Infra; deployment-specific API address tuples in Live. Inspect Service and EndpointSlice mappings and policy enforcement before/after DNAT. On ambient paths check application port **and** TCP 15008 where required, narrowly between those peers. Do not add 15008 namespace-wide. DNS must reach the actual resolver; a Service IP alone may not match the enforced destination.
+
+## Remaining inventory
+
+1. **Argo and controllers.** Split server, repo-server, application controller, Redis and other components. Replace existing any-source server ingress rather than layering a narrower allow over it. Inventory UI/CLI, Radar, internal RPC, Redis, approved Git/Helm sources, Kubernetes API and webhooks. Test fetch/render/sync and admission with a representative resource. Treat cert-manager, Crossplane, CNPG, Barman and backup jobs as distinct subjects; test renewal, reconciliation and recovery paths in addition to readiness.
+2. **Storage, DNS and mesh.** Separate Longhorn UI/OIDC proxy from manager, CSI, engine and replica data paths. Validate a disposable volume mount, remount and replica recovery before advancing. For CoreDNS verify cluster lookup, upstream forwarding and API access. For Istio separate gateway, istiod, CNI and ztunnel; test enrollment and TLS on a disposable workload on each node. Inventory `hostNetwork` separately: where the CNI cannot distinguish Pod from node traffic, use validated host controls or record a scoped exception instead of claiming Pod isolation.
+3. **Close the inventory.** Map every remaining template, scheduled/one-shot job and operator-created workload to owner, ingress/egress decisions, acceptance evidence and exceptions with review dates. An existing TLS or authentication requirement is not a substitute for an egress decision.
+
+## Rollout and stop conditions
+
+Baseline current endpoints, service health, dependencies and policy union. A new selector can isolate a workload immediately; deliver all required allows for that direction together. Existing broad allows remain effective until explicitly retired. Test the exact rendered selectors and positive/negative cases with synthetic identities and destinations in isolation first. No broad deny-all rollout, traffic probes against unrelated tenants, or temporary allow-all to make tests pass.
+
+Apply only one approved cohort; compare with baseline on both Prometheus replicas and verify at least one real reconciliation/refresh. Stop on admission timeouts, missing targets, stale secrets, failed DNS/DB traffic, or storage degradation. Before merge prepare rollback to the prior effective policy set: reverting Git alone may leave a new isolating policy in the cluster where Argo pruning is disabled. Plan explicit removal of only the new policy (or restoration of the old rules), verify the effective union and repeat the functional check before continuing.
