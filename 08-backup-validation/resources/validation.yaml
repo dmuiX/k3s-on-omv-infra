@@ -155,6 +155,9 @@ spec:
       template:
         spec:
           serviceAccountName: backup-validation
+          securityContext:
+            seccompProfile:
+              type: RuntimeDefault
           restartPolicy: Never
           containers:
             - name: validate

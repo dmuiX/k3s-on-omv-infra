@@ -33,6 +33,13 @@ class RetentionManifestTest(unittest.TestCase):
                                      "SecretBackendConnection", "", "postgresql")],
                          "openbao-database-connection.yaml")
 
+    def test_restore_validator_pod_uses_runtime_default_seccomp(self):
+        path = PATH.parents[2] / "08-backup-validation/resources/validation.yaml"
+        job, = (doc for doc in yaml.safe_load_all(path.read_text())
+                if doc["kind"] == "CronJob" and doc["metadata"]["name"] == "postgresql-restore-validation")
+        pod = job["spec"]["jobTemplate"]["spec"]["template"]["spec"]
+        self.assertEqual(pod.get("securityContext", {}).get("seccompProfile"), {"type": "RuntimeDefault"})
+
     def test_validation_uses_explicit_r2_secret_references(self):
         root = PATH.parents[2] / "08-backup-validation/resources"
         documents = list(yaml.safe_load_all((root / "credentials.yaml").read_text()))
