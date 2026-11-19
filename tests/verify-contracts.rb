@@ -526,7 +526,9 @@ class PlatformContractTest < Minitest::Test
     pod = deployment.dig("spec", "template", "spec")
     assert_equal "kubernetes.io/hostname", pod.dig("affinity", "podAntiAffinity", "preferredDuringSchedulingIgnoredDuringExecution", 0, "podAffinityTerm", "topologyKey")
     assert_equal "RuntimeDefault", pod.dig("securityContext", "seccompProfile", "type")
-    assert_equal "ScheduleAnyway", pod.dig("topologySpreadConstraints", 0, "whenUnsatisfiable")
+    assert_equal [{"maxSkew" => 2, "minDomains" => 2, "topologyKey" => "kubernetes.io/hostname",
+                   "whenUnsatisfiable" => "DoNotSchedule", "labelSelector" => {"matchLabels" => {
+                     "gateway.networking.k8s.io/gateway-name" => "istio-gateway"}}}], pod["topologySpreadConstraints"]
     assert_equal "CriticalAddonsOnly", pod.dig("tolerations", 0, "key")
     pdb = YAML.safe_load(options.dig("data", "podDisruptionBudget"))
     assert_equal 2, pdb.dig("spec", "minAvailable")
