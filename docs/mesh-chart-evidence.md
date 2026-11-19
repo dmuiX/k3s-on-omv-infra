@@ -42,5 +42,5 @@ Argo CD automatic pruning is disabled. After merging this change, the old `istio
 
 1. Bootstrap selects `v1.37.1+k3s1`. The remaining upstream support-matrix gap for the pinned controller set is the explicitly accepted Homelab exception, but it still requires successful local API, admission, networking, restart, and upgrade evidence before the gate may open.
 2. Verify real K3s/Flannel paths, kernel/netfilter, amd64/arm64 behavior, ambient interception, DNS, mTLS, NetworkPolicies and restart/upgrade behavior.
-3. Verify Gateway API CRDs, gateway customization/admission, three eligible nodes, listener/TLS routing and LAN/VPN-only exposure. Verify the preinstalled Argo child-Application health customization during first installation.
+3. Verify Gateway API CRDs, gateway customization/admission, three Ready gateway pods across at least two hostnames, listener/TLS routing and LAN/VPN-only exposure. Verify the preinstalled Argo child-Application health customization during first installation.
 4. Reviewed repository URLs/revisions and the deployment evidence gate remain unresolved.
