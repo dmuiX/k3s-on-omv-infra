@@ -10,6 +10,8 @@
 
 All OMV storage is beneath the dedicated `k3s-cluster` Btrfs subvolume on the verified backup filesystem. The Live StorageClass source is exactly `//192.168.1.5/k3s-cluster`. Verify that the backing disk and SMB share are available; never create a substitute directory on the root filesystem. PostgreSQL/OpenBao PVCs are excluded from generic K8up backups. Longhorn replication is not backup.
 
+`postgresql-size-retention` runs daily in dry-run mode. Missing or failed PITR/mirror evidence still blocks the job. With valid evidence it reads Barman's timezone-aware `end_time_iso` and checks each backup's native keep status; it does not delete base backups or WAL. Monitor storage growth while previewing. Do not enable `run --apply` until a current production restore succeeds and an isolated retention rehearsal confirms the deletion scope and recoverability of retained backups. Switching modes requires a separate reviewed manifest change.
+
 For the November 2026 WAL-retention incident, recovery gates and the planned December CNPG update follow-up, see [PostgreSQL WAL recovery](postgresql-wal-recovery.md).
 
 ## Credentials and bucket separation

@@ -18,6 +18,9 @@ spec:
       template:
         spec:
           serviceAccountName: postgresql-size-retention
+          securityContext:
+            seccompProfile:
+              type: RuntimeDefault
           restartPolicy: Never
           containers:
             - name: retention
@@ -27,6 +30,7 @@ spec:
               args:
                 - /adapter/retention.py
                 - run
+                - --dry-run
               resources:
                 requests:
                   cpu: 50m
