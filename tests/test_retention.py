@@ -1,4 +1,5 @@
 import copy
+import json
 import sys
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -115,7 +116,10 @@ class RetentionManifestTest(unittest.TestCase):
         documents = list(yaml.safe_load_all(
             (root / "07-k3s-postgres/resources/retention.yaml").read_text()))
         job = next(doc for doc in documents if doc["kind"] == "CronJob")
-        container = job["spec"]["jobTemplate"]["spec"]["template"]["spec"]["containers"][0]
+        pod = job["spec"]["jobTemplate"]["spec"]["template"]["spec"]
+        self.assertEqual(pod["securityContext"]["seccompProfile"], {"type": "RuntimeDefault"})
+        container = pod["containers"][0]
+        self.assertEqual(container["args"], ["/adapter/retention.py", "run", "--dry-run"])
         self.assertFalse(any("secretRef" in source for source in container["envFrom"]))
         refs = {env["name"]: env["valueFrom"]["secretKeyRef"]
                 for env in container["env"] if "valueFrom" in env}
@@ -152,6 +156,41 @@ class RetentionTest(unittest.TestCase):
         self.assertEqual(dry_run, ["barman-cloud-backup-delete", "--dry-run", "--backup-id", "2", "--minimum-redundancy", "2"])
         execute = MODULE.authorize_after_dry_run(self.backups, list(self.backups), dry_run, dry_run_succeeded=True)
         self.assertEqual(execute, ["barman-cloud-backup-delete", "--backup-id", "2", "--minimum-redundancy", "2"])
+
+    def test_catalog_reads_native_iso_time_and_explicit_keep_status(self):
+        record = {"backup_id": "20261014T010000", "status": "DONE", "size": 1234,
+                  "end_time": "Wed Oct 14 00:00:00 2026", "end_time_iso": self.now.isoformat()}
+        catalog = json.dumps({"backups_list": [record]})
+        for keep in ("full", "standalone", "nokeep", "unknown"):
+            with self.subTest(keep=keep), patch.object(MODULE, "_barman_base_args", return_value=["target", "db"]), \
+                    patch.object(MODULE, "_run", side_effect=[catalog, f"Keep: {keep}\n"]) as cli:
+                if keep == "unknown":
+                    with self.assertRaisesRegex(RuntimeError, "unknown Barman keep status"):
+                        MODULE._catalog()
+                else:
+                    backup, = MODULE._catalog()
+                    self.assertEqual(backup.completed_at, self.now)
+                    self.assertEqual(backup.archival_protected, keep != "nokeep")
+                self.assertEqual(cli.call_args.args[0], ["barman-cloud-backup-keep", "--status", "target", "db", record["backup_id"]])
+
+    def test_missing_restore_evidence_blocks_even_catalog_access(self):
+        with (patch.dict(MODULE.os.environ, BASE_BACKUP_BUDGET_BYTES=str(MODULE.BUDGET)),
+              patch.object(MODULE, "_lease", side_effect=RuntimeError("missing restore evidence")),
+              patch.object(MODULE, "_run") as cli):
+            with self.assertRaisesRegex(RuntimeError, "missing restore evidence"):
+                MODULE.run(preview=True)
+            cli.assert_not_called()
+
+    def test_preview_never_invokes_real_delete(self):
+        with (patch.dict(MODULE.os.environ, BASE_BACKUP_BUDGET_BYTES=str(MODULE.BUDGET)),
+              patch.object(MODULE, "_lease", return_value=("success", datetime.now(timezone.utc))),
+              patch.object(MODULE, "_catalog", return_value=self.backups),
+              patch.object(MODULE, "_storage_state", return_value=(True, False)),
+              patch.object(MODULE, "_barman_base_args", return_value=["target", "db"]),
+              patch.object(MODULE, "_run") as cli):
+            MODULE.run(preview=True)
+            cli.assert_called_once_with(["barman-cloud-backup-delete", "--dry-run", "--backup-id", "2",
+                                         "--minimum-redundancy", "2", "target", "db"])
 
     def test_changed_catalog_or_failed_dry_run_never_authorizes_delete(self):
         _, dry_run = self.plan()

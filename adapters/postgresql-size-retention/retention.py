@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import json
 import os
+import re
 from pathlib import Path
 import ssl
 import subprocess
@@ -99,7 +100,11 @@ def _parse_time(value: str) -> datetime:
 
 
 def _run(args: list[str]) -> str:
-    return subprocess.run(args, check=True, capture_output=True, text=True, timeout=300).stdout
+    try:
+        return subprocess.run(args, check=True, capture_output=True, text=True, timeout=300).stdout
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+        # The native command line includes the private endpoint; do not log it.
+        raise RuntimeError(f"{args[0]} failed or timed out") from exc
 
 
 def _lease() -> tuple[str, datetime]:
@@ -138,15 +143,17 @@ def _catalog() -> list[Backup]:
         raise RuntimeError("Barman returned an unknown catalog")
     backups = []
     for record in records:
-        backups.append(
-            Backup(
-                backup_id=str(record.get("backup_id", "")),
-                completed_at=_parse_time(str(record.get("end_time", ""))),
-                base_bytes=int(record.get("size", -1)),
-                status=str(record.get("status", "")),
-                archival_protected=bool(record.get("is_archival", False)),
-            )
-        )
+        backup_id = record.get("backup_id")
+        size = record.get("size")
+        if (not isinstance(backup_id, str) or not re.fullmatch(r"[0-9]{8}T[0-9]{6}", backup_id)
+                or record.get("status") != "DONE" or type(size) is not int or size < 0):
+            raise RuntimeError("incomplete or invalid Barman catalog entry")
+        completed_at = _parse_time(record["end_time_iso"])
+        # Barman 3.20.1 list JSON does not carry keep annotations.
+        keep = _run(["barman-cloud-backup-keep", "--status", *_barman_base_args(), backup_id]).strip()
+        if keep not in {"Keep: nokeep", "Keep: full", "Keep: standalone"}:
+            raise RuntimeError("unknown Barman keep status")
+        backups.append(Backup(backup_id, completed_at, size, archival_protected=keep != "Keep: nokeep"))
     return backups
 
 
@@ -174,7 +181,7 @@ def _storage_state(backups: list[Backup]) -> tuple[bool, bool]:
     return base_ids == catalog_ids, archiver_stale
 
 
-def run() -> None:
+def run(*, preview: bool) -> None:
     if int(os.environ["BASE_BACKUP_BUDGET_BYTES"]) != BUDGET:
         raise RuntimeError("base-backup budget differs from the reviewed contract")
 
@@ -202,6 +209,9 @@ def run() -> None:
     destructive = authorize_after_dry_run(before, after_dry_run, dry_run, dry_run_succeeded=True)
     if not destructive:
         raise RuntimeError("dry-run did not preserve the catalog")
+    if preview:
+        print("verified one retention candidate (dry-run only; nothing deleted)")
+        return
     _run([*destructive, *_barman_base_args()])
     after_delete = _catalog()
     deleted_id = dry_run[3]
@@ -212,9 +222,9 @@ def run() -> None:
 
 if __name__ == "__main__":
     try:
-        if sys.argv[1:] != ["run"]:
-            raise RuntimeError("expected the run subcommand")
-        run()
+        if sys.argv[1:] not in (["run"], ["run", "--dry-run"], ["run", "--apply"]):
+            raise RuntimeError("expected run [--dry-run | --apply]")
+        run(preview=sys.argv[1:] != ["run", "--apply"])
     except Exception as exc:
         print(f"retention blocked: {exc}", file=sys.stderr)
         raise SystemExit(1)
