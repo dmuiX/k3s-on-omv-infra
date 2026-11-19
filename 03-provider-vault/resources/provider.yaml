@@ -39,6 +39,6 @@ metadata:
   annotations:
     argocd.argoproj.io/sync-wave: "0"
 spec:
-  package: xpkg.upbound.io/upbound/provider-vault@sha256:01f580a9a140175c907ba0d888297f01a247ed37128160cdcab283a53f561c92
+  package: xpkg.upbound.io/upbound/provider-vault@sha256:8eae97550673bbd0ae159edef1fb0708f9d2deb84c85726ec812ecd87a44c87c
   runtimeConfigRef:
     name: provider-vault
