@@ -33,7 +33,9 @@ change. Grafana's existing database-only identity and ServiceAccount are preserv
 - Backup credentials: SMB username/password and etcd R2 keys/endpoint.
 - Longhorn: OIDC client ID/secret and cookie key.
 - OpenBao snapshots: R2 keys, region and endpoint.
-- PostgreSQL: manager credentials and R2 fields/aliases.
+- PostgreSQL: manager credentials and R2 fields/aliases. This destination also
+  checks the [exact R2 endpoint format](backup-contract.md#credentials-and-bucket-separation)
+  for Barman; the shared `requiredValue` helper remains unchanged.
 - Backup validation: repository password and R2 fields/aliases.
 - Monitoring: Alertmanager SMTP fields and repository password.
 - `charts/postgres-consumer`: database username/password in split or DSN format.
@@ -84,12 +86,51 @@ VSO_CHART_SOURCE=/path/to/vso-chart \
   python -m unittest discover -s tests -p test_backup_validation_templates.py -v
 ```
 
-The optional engine/chart checks skip explicitly without cached sources. They
-use cached dependencies only; no dependency installation or cluster access is
-required. Native CRD checks cover namespaced transformation references and
-`excludeRaw`; template checks execute the upstream Go engine, not the operator's
-Secret builder or runtime reconciliation. Keep Grafana-specific filter/merge,
-extra-source-key and admin-template tests with #66 when that consumer is added.
+The optional engine/chart checks skip if their source paths are not set. Native
+CRD checks cover namespaced transformation references and `excludeRaw`. Keep
+Grafana-specific filter/merge, extra-source-key and admin-template tests with #66
+when that consumer is added.
+
+### Focused PostgreSQL endpoint parser rerun (no sibling repos)
+
+Use Python with PyYAML and a local Go toolchain (upstream's `go.mod` requires
+at least 1.27.1; tested with 1.27.4). If an approved cache already contains VSO
+v1.6.0 source and the Go modules, skip the preparation and set `VSO_TEMPLATE_SOURCE`
+and `GOMODCACHE` to those locations. Otherwise, **opt in** to the following public
+source/module preparation from the Infra root. This is not part of public CI.
+
+```sh
+# Run in a dedicated shell; all fetched inputs are public.
+set -eu
+cache=$(mktemp -d)
+curl -fsS --proto '=https' \
+  https://codeload.github.com/hashicorp/vault-secrets-operator/tar.gz/refs/tags/v1.6.0 \
+  -o "$cache/vso.tar.gz"
+(cd "$cache" && printf '%s  %s\n' \
+  83d34a49b21364227a3b3275ba45572394e5b516327658d2ff24bd3e421c15e1 vso.tar.gz \
+  | shasum -a 256 -c -)
+tar -xzf "$cache/vso.tar.gz" -C "$cache"
+export VSO_TEMPLATE_SOURCE="$cache/vault-secrets-operator-1.6.0"
+export GOMODCACHE="$cache/go-mod"
+(cd "$VSO_TEMPLATE_SOURCE" && GOENV=off GOWORK=off GOFLAGS= GOTOOLCHAIN=local \
+  GOPROXY=https://proxy.golang.org GOSUMDB=sum.golang.org GOPRIVATE= \
+  GONOPROXY=none GONOSUMDB=none go list -mod=readonly -deps ./template >/dev/null)
+```
+
+Run only the endpoint matrix from the Infra root, using the prepared cache:
+
+```sh
+KUBECONFIG=/dev/null PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=tests \
+  python -m unittest -v \
+  test_backup_validation_templates.RequiredValueRendering.test_postgres_endpoint_requires_exact_r2_url_without_echoing_input
+```
+
+The harness verifies the four consumed v1.6.0 files (module metadata and parser
+sources) by SHA-256 and builds offline. Missing tooling, mismatched sources or
+an incomplete module cache fail once opted in. This tests the upstream parser's
+behavior on the repo's actual transformation and synthetic values. It does not
+exercise the full VSO Secret builder, OpenBao auth/CAS, reconciliation or Pod
+env adoption, and does not test Barman or R2.
 `tests/test_service_credentials.py` also renders the resolved shared OIDC chart
 sources using existing `charts/openbao-oidc/tests/fixtures/*-values.yaml`; this
 offline check never starts OpenBao. Actual code exchange and group-assignment

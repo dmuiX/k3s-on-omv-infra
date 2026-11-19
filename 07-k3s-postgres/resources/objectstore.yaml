@@ -1,0 +1,48 @@
+apiVersion: barmancloud.cnpg.io/v1
+kind: ObjectStore
+metadata:
+  name: k3s-postgres-backups
+  namespace: cloudnative-pg
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+    argocd.argoproj.io/sync-options: Prune=false,Delete=false
+    k3s-on-omv.io/create-once-owner: protected-ceremonies/platform-r2
+spec:
+  configuration:
+    destinationPath: s3://cloudnativepg-backups/
+    s3Credentials:
+      accessKeyId:
+        name: postgresql-r2-credentials
+        key: access-key-id
+      secretAccessKey:
+        name: postgresql-r2-credentials
+        key: secret-access-key
+      region:
+        name: postgresql-r2-credentials
+        key: region
+    data:
+      compression: gzip
+      encryption: AES256
+      jobs: 2
+    wal:
+      compression: gzip
+      encryption: AES256
+      maxParallel: 2
+  instanceSidecarConfiguration:
+    logLevel: info
+    retentionPolicyIntervalSeconds: 1800
+    env:
+      - name: AWS_ENDPOINT_URL_S3
+        valueFrom:
+          secretKeyRef:
+            name: postgresql-r2-credentials
+            key: S3_ENDPOINT
+            optional: false
+    # Preserve deployed sizing during adoption.
+    resources:
+      requests:
+        cpu: 50m
+        memory: 64Mi
+      limits:
+        cpu: 250m
+        memory: 256Mi

@@ -653,9 +653,18 @@ class PlatformContractTest < Minitest::Test
         assert_equal true, transformation.fetch('excludeRaw'), relative
         assert_equal [{ 'name' => 'required-openbao-value', 'namespace' => 'vault-secrets-operator' }],
                      transformation.fetch('transformationRefs'), relative
-        text = transformation.fetch('templates').values.map { |template| template.fetch('text') }.join("\n")
-        assert_includes text, 'template "requiredValue"', relative
-        refute_includes text, 'fail ', relative
+        transformation.fetch('templates').each do |output, template|
+          text = template.fetch('text')
+          next unless text.include?('get .Secrets')
+          assert_includes text, 'template "requiredValue"', relative
+          if relative == '07-k3s-postgres/resources/credentials.yaml' &&
+              doc.dig('metadata', 'name') == 'postgresql-r2-credentials' && output == 'S3_ENDPOINT'
+            guard = 'fail "OpenBao endpoint must be an HTTPS R2 account URL"'
+            assert_includes text, guard, relative
+            text = text.sub(guard, '')
+          end
+          refute_includes text, 'fail ', relative
+        end
       end
     end
   end
@@ -724,6 +733,39 @@ class PlatformContractTest < Minitest::Test
     refute_match(/k8up(?:-r2|-bucket|-endpoint|\/r2-credentials)|k8up-volumes/, corpus)
   end
 
+  def test_postgres_object_store_has_one_raw_owner_and_no_endpoint_literal
+    stores = YAML_REPOSITORIES.flat_map { |repository| yaml_files(repository) }
+      .flat_map { |path| yaml_documents(path).map { |document| [path, document] } }
+      .select { |_path, document| document["kind"] == "ObjectStore" }
+    assert_equal 1, stores.length
+    manifest, store = stores.first
+    assert_equal INFRA / "07-k3s-postgres/resources/objectstore.yaml", manifest
+    sources = application(INFRA / "07-k3s-postgres/app.yml").dig("spec", "sources")
+    assert_equal ["07-k3s-postgres/resources", "adapters/credential-custody",
+                  "adapters/postgresql-size-retention", "infra/k3s-postgres"], sources.map { |s| s.fetch("path") }
+    refute sources.any? { |source| source.key?("helm") || source.key?("ref") }
+    assert_equal "barmancloud.cnpg.io/v1", store["apiVersion"]
+    assert_equal "k3s-postgres-backups", store.dig("metadata", "name")
+    assert_equal "cloudnative-pg", store.dig("metadata", "namespace")
+    refute store.dig("spec", "configuration").key?("endpointURL"),
+      "ObjectStore must not carry an endpoint literal"
+    assert_equal "s3://cloudnativepg-backups/", store.dig("spec", "configuration", "destinationPath")
+    assert_equal({
+      "logLevel" => "info",
+      "retentionPolicyIntervalSeconds" => 1800,
+      "env" => [{
+        "name" => "AWS_ENDPOINT_URL_S3",
+        "valueFrom" => { "secretKeyRef" => {
+          "name" => "postgresql-r2-credentials", "key" => "S3_ENDPOINT", "optional" => false
+        } }
+      }],
+      "resources" => {
+        "requests" => {"cpu" => "50m", "memory" => "64Mi"},
+        "limits" => {"cpu" => "250m", "memory" => "256Mi"}
+      }
+    }, store.dig("spec", "instanceSidecarConfiguration"))
+  end
+
   def test_shared_r2_source_has_isolated_vso_identities_including_restore_validation
     credential_files = [
       INFRA / "06-platform/backup-credentials/resources/credentials.yaml",
@@ -733,20 +775,6 @@ class PlatformContractTest < Minitest::Test
     ]
     static_secrets = credential_files.flat_map { |path| yaml_documents(path) }
       .select { |document| document["kind"] == "VaultStaticSecret" && document.dig("spec", "path") == "platform/r2" }
-    git_owned_object_stores = YAML_REPOSITORIES.flat_map { |repository| yaml_files(repository) }
-      .flat_map { |path| yaml_documents(path) }
-      .select { |document| document["kind"] == "ObjectStore" }
-    assert_equal 1, git_owned_object_stores.length
-    resource_profile = git_owned_object_stores.first
-    assert_equal "k3s-postgres-backups", resource_profile.dig("metadata", "name")
-    assert_equal ["instanceSidecarConfiguration"], resource_profile.fetch("spec").keys
-    assert_equal ["resources"], resource_profile.dig("spec", "instanceSidecarConfiguration").keys
-    assert_equal %w[limits requests], resource_profile.dig("spec", "instanceSidecarConfiguration", "resources").keys.sort
-    bootstrap_ceremony = (BOOTSTRAP / "ansible/roles/openbao_setup/tasks/platform-backups.yml").read
-    assert_includes bootstrap_ceremony, "kind: ObjectStore"
-    assert_includes bootstrap_ceremony, 'endpointURL: {{ platform_r2_endpoint.user_input | to_json }}'
-    assert_includes bootstrap_ceremony, "k3s-on-omv.io/create-once-owner: protected-ceremonies/platform-r2"
-    refute_match(/endpointURL:\s*https:\/\//, bootstrap_ceremony)
     assert_equal %w[backup-validation cloudnative-pg kube-system openbao], static_secrets.map { |document| document.dig("metadata", "namespace") }.sort
     assert_equal %w[etcd-s3-config-secret openbao-snapshot-r2 postgresql-r2-credentials postgresql-validation-r2], static_secrets.map { |document| document.dig("spec", "destination", "name") }.sort
     etcd_destination = static_secrets.find { |document| document.dig("metadata", "namespace") == "kube-system" }
