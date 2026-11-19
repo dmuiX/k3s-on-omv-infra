@@ -49,6 +49,12 @@ spec:
   - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
     targetRevision: main
     path: 02-controllers/vault-secrets-operator/resources
+  # Stage 1: publish the complete Live policy before merging this source.
+  - repoURL: https://github.com/dmuiX/k3s-on-omv-live.git
+    targetRevision: main
+    path: infra/network-policies
+    directory:
+      include: vso-controller.yaml
   syncPolicy:
     managedNamespaceMetadata:
       labels:

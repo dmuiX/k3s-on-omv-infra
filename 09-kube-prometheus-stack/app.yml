@@ -218,6 +218,12 @@ spec:
     helm:
       valueFiles:
       - $live/infra/kube-prometheus-stack/postgres-values.yml
+  # Stage 2: Live skips this file until VSO acceptance. Do not glob both policies.
+  - repoURL: https://github.com/dmuiX/k3s-on-omv-live.git
+    targetRevision: main
+    path: infra/network-policies
+    directory:
+      include: grafana.yaml
   syncPolicy:
     managedNamespaceMetadata:
       labels:

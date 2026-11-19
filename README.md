@@ -57,6 +57,8 @@ Istio is the sole Ambient/Gateway controller; packaged Traefik is disabled. Its 
 | Admission defaults | [Timezone defaults](01-bootstrap/timezone-defaults/app.yml), [resource defaults](01-bootstrap/resource-defaults/app.yml) | Native Kubernetes policies with isolated admission tests |
 | Application integration | [Integration charts](charts/), [credential custody](adapters/credential-custody/) | Reusable routing, network-policy, OIDC and PostgreSQL-consumer resources without moving application ownership into Infra |
 
+See [staged VSO and Grafana network isolation](docs/network-policy-rollout.md) for the Live-first merge order, exact activation boundaries, acceptance checks and prune-disabled rollback.
+
 Chart versions and public overrides live in the Application manifests rather than a second version table in this README. Helm Applications use inline `helm.valuesObject` plus private `$live` value files. Controller Applications own controllers/CRDs; consumer resources stay with their applications.
 
 ## 📂 Repository layout

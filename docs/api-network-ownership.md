@@ -1,12 +1,14 @@
-# Deployment-specific API network ownership candidate
+# Deployment-specific API network ownership
 
-This is an offline publication candidate, not a deployed or runtime-verified restriction. No cluster or secret reads were performed. Exact addresses are copied from the existing local deployment policies, not rediscovered or verified against current endpoints.
+For VSO and Grafana see [phase-one isolation](network-policy-rollout.md). These policies are complete, separately activated Live resources: API, DNS and workload permits arrive in the **same** policy. Their endpoint inventory was checked against current metadata; do not assume historical endpoint lists are current for a new workload.
+
+The earlier migration below was an offline publication candidate, not a runtime-verified restriction. Its addresses came from local deployment policies.
 
 ## Ownership and discovery
 
-Live owns Service `10.43.0.1/32` TCP 443 separately from K3s endpoint `192.168.1.2/32`, `192.168.1.5/32`, `192.168.1.7/32` TCP 6443. Both tuples cover policy enforcement before/after Service DNAT; neither grants the other port to the other addresses. Update these lists with Service/EndpointSlice changes after separately authorized verification.
+Live owns the API Service `/32` TCP 443 separately from the K3s endpoint `/32`s TCP 6443. Both tuples cover policy enforcement before/after Service DNAT; neither grants the other port to the other addresses. Update these lists with Service/EndpointSlice changes after separately authorized verification.
 
-- `infra/openbao/api-network-policy.yaml`: injector API egress and endpoint webhook ingress on TCP 8080. Infra keeps DNS and Ambient probe source `169.254.7.127/32`.
+- `infra/openbao/api-network-policy.yaml`: injector API egress and endpoint webhook ingress on TCP 8080. Infra keeps DNS and the Ambient probe source.
 - `infra/openbao/server-api-network-policy.yaml`: server-only API access. The native server policy retains its published selector and all rules except the ports-only TCP 6443 rule. The additive policy selects the actual server labels, including `component: server`.
 - `infra/k3s-postgres/api-network-policy.yaml`: only `cnpg.io/cluster: k3s-postgres` instances. Existing same-namespace/database-client ingress, Barman, DNS, namespace ownership and workload identities are unchanged. The credential provisioning helper is not a database instance and does not receive this grant; its existing OpenBao/DNS-only policy is preserved.
 - `infra/backup-validation/api-network-policy.yaml`: namespace-wide helper API access, preserving the prior namespace-wide scope. Internal OpenBao/PostgreSQL/DNS and metrics ingress remain unchanged.
