@@ -1,0 +1,127 @@
+rule_files: [rules.yml]
+evaluation_interval: 1m
+
+tests:
+  # The affected lease is missing until 6m, renews through 12m, then stalls.
+  # It first exceeds 120s of age at 15m and should fire at 20m, not before.
+  - name: controller-manager lease failure with a healthy scheduler
+    interval: 1m
+    input_series:
+      - series: 'kube_lease_renew_time{namespace="kube-system",lease="kube-controller-manager"}'
+        values: '_ _ _ _ _ _ 360+60x6 720x7'
+      - series: 'kube_lease_renew_time{namespace="kube-system",lease="kube-scheduler"}'
+        values: '0+60x20'
+    alert_rule_test:
+      - {alertname: K3sControllerManagerLeaseNotRenewing, eval_time: 4m, exp_alerts: []}
+      - alertname: K3sControllerManagerLeaseNotRenewing
+        eval_time: 5m
+        exp_alerts: &controller_lease_alert
+          - exp_labels: {namespace: kube-system, lease: kube-controller-manager, severity: critical}
+            exp_annotations: {summary: The kube-controller-manager leader lease is missing or stale.}
+      - {alertname: K3sSchedulerLeaseNotRenewing, eval_time: 5m, exp_alerts: []}
+      - {alertname: K3sControllerManagerLeaseNotRenewing, eval_time: 12m, exp_alerts: []}
+      - {alertname: K3sControllerManagerLeaseNotRenewing, eval_time: 19m, exp_alerts: []}
+      - {alertname: K3sControllerManagerLeaseNotRenewing, eval_time: 20m, exp_alerts: *controller_lease_alert}
+      - {alertname: K3sSchedulerLeaseNotRenewing, eval_time: 20m, exp_alerts: []}
+
+  - name: scheduler lease failure with a healthy controller-manager
+    interval: 1m
+    input_series:
+      - series: 'kube_lease_renew_time{namespace="kube-system",lease="kube-scheduler"}'
+        values: '_ _ _ _ _ _ 360+60x6 720x7'
+      - series: 'kube_lease_renew_time{namespace="kube-system",lease="kube-controller-manager"}'
+        values: '0+60x20'
+    alert_rule_test:
+      - {alertname: K3sSchedulerLeaseNotRenewing, eval_time: 4m, exp_alerts: []}
+      - alertname: K3sSchedulerLeaseNotRenewing
+        eval_time: 5m
+        exp_alerts: &scheduler_lease_alert
+          - exp_labels: {namespace: kube-system, lease: kube-scheduler, severity: critical}
+            exp_annotations: {summary: The kube-scheduler leader lease is missing or stale.}
+      - {alertname: K3sControllerManagerLeaseNotRenewing, eval_time: 5m, exp_alerts: []}
+      - {alertname: K3sSchedulerLeaseNotRenewing, eval_time: 12m, exp_alerts: []}
+      - {alertname: K3sSchedulerLeaseNotRenewing, eval_time: 19m, exp_alerts: []}
+      - {alertname: K3sSchedulerLeaseNotRenewing, eval_time: 20m, exp_alerts: *scheduler_lease_alert}
+      - {alertname: K3sControllerManagerLeaseNotRenewing, eval_time: 20m, exp_alerts: []}
+
+  - name: new leader renews before the pending window expires despite a lagging scrape
+    interval: 1m
+    input_series:
+      - series: 'kube_lease_renew_time{namespace="kube-system",lease="kube-controller-manager",instance="ksm-a"}'
+        values: '0+60x2 120x13'
+      - series: 'kube_lease_renew_time{namespace="kube-system",lease="kube-controller-manager",instance="ksm-b"}'
+        values: '0+60x2 120x5 540+60x7'
+    alert_rule_test:
+      - {alertname: K3sControllerManagerLeaseNotRenewing, eval_time: 9m, exp_alerts: []}
+      - {alertname: K3sControllerManagerLeaseNotRenewing, eval_time: 16m, exp_alerts: []}
+
+  - name: cloud controller activity cannot substitute for the controller-manager
+    interval: 1m
+    input_series:
+      - series: 'running_managed_controllers{job="apiserver",manager="cloud-controller-manager"}'
+        values: '1x12'
+      - series: 'running_managed_controllers{job="apiserver",manager="kube-controller-manager",instance="server-a"}'
+        values: '0x5 1x6 0x10'
+      - series: 'running_managed_controllers{job="apiserver",manager="kube-controller-manager",instance="server-b"}'
+        values: '0x16 1x6'
+    alert_rule_test:
+      - {alertname: K3sControllerManagerActivityMissing, eval_time: 4m, exp_alerts: []}
+      - alertname: K3sControllerManagerActivityMissing
+        eval_time: 5m
+        exp_alerts:
+          - exp_labels: {severity: warning}
+            exp_annotations: {summary: No kube-controller-manager controller reports running on the apiserver scrape.}
+      - {alertname: K3sControllerManagerActivityMissing, eval_time: 12m, exp_alerts: []}
+      # Activity moves to server-b after four minutes with no active controller.
+      - {alertname: K3sControllerManagerActivityMissing, eval_time: 16m, exp_alerts: []}
+      - {alertname: K3sControllerManagerActivityMissing, eval_time: 23m, exp_alerts: []}
+
+  - name: proxy coverage requires a matching kubelet scrape per inventoried node
+    interval: 1m
+    input_series:
+      - series: 'kube_node_info{node="quiet"}'
+        values: '1x30 stale'
+      - series: 'kube_node_info{node="missing"}'
+        values: '1x30 stale'
+      - series: 'kube_node_info{instance="no-node-label"}'
+        values: '1x36'
+      # Presence matters, not the age of the last sync on a quiet node.
+      - series: 'kubeproxy_sync_proxy_rules_last_timestamp_seconds{job="kubelet",metrics_path="/metrics",node="quiet"}'
+        values: '0x36'
+      - series: 'kubeproxy_sync_proxy_rules_last_timestamp_seconds{job="apiserver",metrics_path="/metrics",node="missing"}'
+        values: '0+60x36'
+      - series: 'kubeproxy_sync_proxy_rules_last_timestamp_seconds{job="kubelet",metrics_path="/metrics/cadvisor",node="missing"}'
+        values: '0+60x36'
+    alert_rule_test:
+      - {alertname: K3sProxySyncMetricMissing, eval_time: 4m, exp_alerts: []}
+      - alertname: K3sProxySyncMetricMissing
+        eval_time: 30m
+        exp_alerts:
+          - exp_labels: {node: missing, severity: warning}
+            exp_annotations: {summary: The kube-proxy sync metric is missing from the kubelet scrape for missing.}
+      - {alertname: K3sProxyNodeInventoryMissing, eval_time: 30m, exp_alerts: []}
+      - {alertname: K3sProxyNodeInventoryMissing, eval_time: 35m, exp_alerts: []}
+      - alertname: K3sProxyNodeInventoryMissing
+        eval_time: 36m
+        exp_alerts:
+          - exp_labels: {severity: warning}
+            exp_annotations: {summary: No node inventory is available to check kube-proxy coverage.}
+      - {alertname: K3sProxySyncMetricMissing, eval_time: 36m, exp_alerts: []}
+
+  - name: apiserver scheduler histogram produces the recorded quantiles
+    interval: 1m
+    input_series:
+      - series: 'scheduler_scheduling_attempt_duration_seconds_bucket{job="apiserver",instance="server",pod="scheduler",le="1"}'
+        values: '0+60x5'
+      - series: 'scheduler_scheduling_attempt_duration_seconds_bucket{job="apiserver",instance="server",pod="scheduler",le="+Inf"}'
+        values: '0+60x5'
+    promql_expr_test:
+      - expr: cluster_quantile:scheduler_scheduling_attempt_duration_seconds:histogram_quantile
+        eval_time: 5m
+        exp_samples:
+          - labels: 'cluster_quantile:scheduler_scheduling_attempt_duration_seconds:histogram_quantile{job="apiserver",quantile="0.5"}'
+            value: 0.5
+          - labels: 'cluster_quantile:scheduler_scheduling_attempt_duration_seconds:histogram_quantile{job="apiserver",quantile="0.9"}'
+            value: 0.9
+          - labels: 'cluster_quantile:scheduler_scheduling_attempt_duration_seconds:histogram_quantile{job="apiserver",quantile="0.99"}'
+            value: 0.99

@@ -98,6 +98,11 @@ spec:
                       storage: 1Gi
         grafana:
           sidecar:
+            dashboards:
+              # 92.10.1 uses tpl here for both ConfigMap labels and the sidecar
+              # selector. Keep the selector at 1; unselect just these dashboards
+              # in place (prune=false). Scheduler's process panels are K3s-wide.
+              labelValue: '{{ ternary "0" "1" (has (base .Template.Name) (list "scheduler.yaml" "controller-manager.yaml" "proxy.yaml")) }}'
             resources:
               requests:
                 cpu: 10m
@@ -160,6 +165,35 @@ spec:
             capabilities:
               drop:
               - ALL
+        # K3s exposes embedded components through existing scrapes, not pods
+        # behind the chart's dedicated Services.
+        defaultRules:
+          disabled:
+            KubeControllerManagerDown: true
+            KubeSchedulerDown: true
+            KubeProxyDown: true
+          rules:
+            kubeControllerManager: false
+            kubeProxy: false
+            kubeSchedulerAlerting: false
+            kubeSchedulerRecording: true
+        kubeScheduler:
+          enabled: true
+          jobNameOverride: apiserver
+          service:
+            enabled: false
+          serviceMonitor:
+            enabled: false
+        kubeControllerManager:
+          service:
+            enabled: false
+          serviceMonitor:
+            enabled: false
+        kubeProxy:
+          service:
+            enabled: false
+          serviceMonitor:
+            enabled: false
         kubeApiServer:
           serviceMonitor:
             metricRelabelings:

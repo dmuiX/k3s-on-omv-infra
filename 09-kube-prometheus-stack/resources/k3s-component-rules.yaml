@@ -1,0 +1,50 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: k3s-component-rules
+  namespace: kube-prometheus-stack
+spec:
+  groups:
+    - name: k3s.components
+      rules:
+        - alert: K3sControllerManagerLeaseNotRenewing
+          expr: |
+            absent(kube_lease_renew_time{namespace="kube-system",lease="kube-controller-manager"})
+            or (time() - max by (namespace, lease) (kube_lease_renew_time{namespace="kube-system",lease="kube-controller-manager"}) > 120)
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: The kube-controller-manager leader lease is missing or stale.
+        - alert: K3sSchedulerLeaseNotRenewing
+          expr: |
+            absent(kube_lease_renew_time{namespace="kube-system",lease="kube-scheduler"})
+            or (time() - max by (namespace, lease) (kube_lease_renew_time{namespace="kube-system",lease="kube-scheduler"}) > 120)
+          for: 5m
+          labels:
+            severity: critical
+          annotations:
+            summary: The kube-scheduler leader lease is missing or stale.
+        - alert: K3sControllerManagerActivityMissing
+          expr: absent(running_managed_controllers{job="apiserver",manager="kube-controller-manager"} > 0)
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: No kube-controller-manager controller reports running on the apiserver scrape.
+        - alert: K3sProxyNodeInventoryMissing
+          expr: absent(kube_node_info{node!=""})
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: No node inventory is available to check kube-proxy coverage.
+        - alert: K3sProxySyncMetricMissing
+          expr: |
+            group by (node) (kube_node_info{node!=""})
+            unless on (node) kubeproxy_sync_proxy_rules_last_timestamp_seconds{job="kubelet",metrics_path="/metrics",node!=""}
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: 'The kube-proxy sync metric is missing from the kubelet scrape for {{ $labels.node }}.'

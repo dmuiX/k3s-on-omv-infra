@@ -1,13 +1,37 @@
-# Draft: use the existing K3s component metrics
+# K3s component metrics
 
-Scope: controller-manager, scheduler and kube-proxy on K3s v1.37.1+k3s1 with kube-prometheus-stack 92.10.1. No manifests are changed. K3s [shares a metrics registry](https://docs.k3s.io/reference/metrics) between embedded Kubernetes components. The dedicated Services have no pod endpoints. Both Prometheus replicas already observe these families; do not add component listeners, globally relabel `job`, or sum the kubelet and API-server copies. Native etcd member metrics are different and out of scope.
+K3s [shares a metrics registry](https://docs.k3s.io/reference/metrics) across embedded components. The [stack Application](../09-kube-prometheus-stack/app.yml) (chart 92.10.1) uses existing scrapes instead of dedicated controller-manager, scheduler and kube-proxy Services and ServiceMonitors. There are no new listeners or global `job` rewrites. Do not sum the apiserver and kubelet copies. Native etcd member metrics are out of scope.
 
-## Proposed changes in `09-kube-prometheus-stack`
+- **Scheduler:** the chart's `kube-scheduler.rules` group stays in place. `jobNameOverride: apiserver` points its nine native recording rules (three latency histograms × p50/p90/p99) at one scrape job. Scrape health alone does not establish scheduler health.
+- **Component alerts:** [`k3s-component-rules`](../09-kube-prometheus-stack/resources/k3s-component-rules.yaml) replaces dedicated-job alerts. It checks the `kube-system` leader leases for scheduler and controller-manager independently (missing or older than 120s), and warns if no `running_managed_controllers{job="apiserver",manager="kube-controller-manager"}` is positive. For proxy it warns on empty node inventory or any inventoried node missing `kubeproxy_sync_proxy_rules_last_timestamp_seconds{job="kubelet",metrics_path="/metrics"}`. This tests presence, not timestamp age. All five alerts use `for: 5m`; Alertmanager remains at zero replicas.
+- **Grafana:** the scheduler, controller-manager and proxy dashboard ConfigMaps still render under their existing names. Helm `tpl` sets `grafana_dashboard="0"` on those three **in place**; the sidecar still selects `"1"`. Do not delete the ConfigMaps. In particular, scheduler process panels would describe the shared K3s process, not a standalone scheduler.
 
-- **Scheduler:** keep `kubeScheduler.enabled` and `defaultRules.rules.kubeSchedulerRecording` true. Set `kubeScheduler.jobNameOverride: apiserver`, disable `kubeScheduler.service.enabled` and `kubeScheduler.serviceMonitor.enabled`, and replace the dedicated-job alert group (`defaultRules.rules.kubeSchedulerAlerting: false`). The nine existing quantile recording rules currently query an empty job. Render the existing rules in place; do not add a duplicate group. Audit dashboards that select their old job label. A healthy apiserver scrape alone is not evidence that scheduling works.
-- **Controller-manager:** disable the empty dedicated Service and monitor; replace the dedicated-job availability rules. Use `running_managed_controllers{job="apiserver",manager="kube-controller-manager"}` for activity and the controller-manager leader lease for availability. Do not confuse cloud-controller-manager samples on the etcd-only server with kube-controller-manager.
-- **Proxy:** disable the empty dedicated Service/monitor and replace its dedicated-job availability rules. Use `kube_node_info unless on(node) kubeproxy_sync_proxy_rules_last_timestamp_seconds{job="kubelet",metrics_path="/metrics"}` to identify nodes missing the signal. Check that the `node` label is populated on both sides. Do not interpret a quiet last-sync timestamp as a fixed-interval heartbeat. Keep kubelet scrape health separate.
+## Verify before retiring anything
 
-For each of `kube-controller-manager` and `kube-scheduler`, define a separate missing/stale lease alert. Example for scheduler: `absent(kube_lease_renew_time{namespace="kube-system",lease="kube-scheduler"}) or (time() - max by (namespace, lease) (kube_lease_renew_time{namespace="kube-system",lease="kube-scheduler"}) > 120)`. Use a sustained `for` window, validate the threshold against observed renewal intervals, and retain kube-state-metrics health alerts. Never hard-code today's leader. Leave Alertmanager intentionally disabled.
+After Argo sync, check **each Prometheus replica directly**, not through a load-balanced endpoint. Stop if either fails:
 
-**Before implementing:** inventory dashboards and alert names, especially all references to old component `job` labels; render with pinned chart and Live values. Test replacements with `promtool` fixtures for healthy, stale, missing, leader transition and missing-node cases. Because Argo pruning is off, inventory obsolete PrometheusRule/Service/ServiceMonitor objects and plan their explicit retirement only after replacements have produced samples. **Accept on both replicas separately:** nine populated scheduler recording rules where input traffic exists, independently renewing leases, proxy coverage on all three expected nodes, no duplicate alerts or missing unrelated targets. Roll back by restoring previous groups/configuration and explicitly retiring only replacement objects; merging this draft cannot change metrics or alerts.
+1. In Targets and Rules, verify healthy apiserver, kubelet and kube-state-metrics scrapes, one healthy `k3s.components` group and one `kube-scheduler.rules` group. Confirm the nine recordings produce samples where their input histograms have traffic.
+2. Confirm both `kube_lease_renew_time` series advance and stay within 120s, and the controller-manager activity query above returns a positive sample.
+3. Compare `kube_node_info{node!=""}` with the expected nodes (currently three); every node must have the proxy metric on kubelet `/metrics`, with the same `node` label. An empty missing-node result is not sufficient: complete inventory loss has its own alert, and a node removed from a partial inventory cannot be checked by this join.
+
+**Scoped retirement (`prune: false`):** only after both replicas pass, compare retained objects to the desired render. Remove only the following old stack-owned objects if still present; match kind, namespace and exact name, never a label or wildcard. Inspect each rule object's live groups before removal; stop if it also contains unrelated rules.
+
+| Service in `kube-system` **and** ServiceMonitor of the same name in `kube-prometheus-stack` | Dedicated PrometheusRule in `kube-prometheus-stack` |
+| --- | --- |
+| `kube-prometheus-stack-kube-controller-manager` | `kube-prometheus-stack-kubernetes-system-controller-manager` |
+| `kube-prometheus-stack-kube-scheduler` | `kube-prometheus-stack-kubernetes-system-scheduler` |
+| `kube-prometheus-stack-kube-proxy` | `kube-prometheus-stack-kubernetes-system-kube-proxy` |
+
+Leave mixed rule objects such as `kube-prometheus-stack-kubernetes-system` under chart management; do not delete them. Keep `kube-prometheus-stack-kube-scheduler.rules`. Recheck both replicas for absence of the retired dedicated-job alerts, duplicate rules or lost unrelated targets.
+
+**Rollback:** revert the component changes in Git and sync. Confirm the previous Services, monitors, alert groups, scheduler expressions and dashboard labels are restored. Once both replicas load the prior rules, explicitly retire only the now-undesired `PrometheusRule/k3s-component-rules` in `kube-prometheus-stack`; pruning is still off.
+
+## Public test
+
+From the repository root, use the public chart cache and synthetic values (no cluster or private values):
+
+```sh
+PATH="/path/to/promtool-3.15.0/bin:$PATH" \
+PLATFORM_CHART_AUDIT=/path/to/pinned-chart-cache \
+python -m unittest discover -s tests -p test_k3s_component_metrics.py
+```
