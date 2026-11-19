@@ -84,6 +84,33 @@ class K3sComponentMetricsTests(unittest.TestCase):
         for source in ("apiserver", "kubelet", "kube-state-metrics"):
             self.assertIn(f"{STACK}-{source}", monitors)
 
+    def test_kubelet_main_endpoint_supplies_proxy_rule_labels(self):
+        name = f"{STACK}-kubelet"
+        (spec,) = (
+            d["spec"] for d in self.docs
+            if d["kind"] == "ServiceMonitor" and d["metadata"]["name"] == name
+        )
+        self.assertEqual(spec["namespaceSelector"]["matchNames"], ["kube-system"])
+        self.assertEqual(spec["selector"]["matchLabels"][spec["jobLabel"]], "kubelet")
+        (main,) = (e for e in spec["endpoints"] if e.get("path", "/metrics") == "/metrics")
+        self.assertEqual(main["port"], "https-metrics")
+        self.assertEqual(
+            main["relabelings"],
+            [{"sourceLabels": ["__metrics_path__"], "targetLabel": "metrics_path", "action": "replace"}],
+        )
+        # Sample filters may discard series, but do not strip or rewrite node.
+        for rule in main.get("metricRelabelings", []):
+            self.assertIn(rule["action"], ("drop", "keep"))
+        # The operator discovers node labels from Node targetRefs, not pod labels
+        # or an explicit node relabel in the monitor. Live values need verification.
+        (args,) = (
+            c["args"] for d in self.docs
+            if d["kind"] == "Deployment" and d["metadata"]["name"] == f"{STACK}-operator"
+            for c in d["spec"]["template"]["spec"]["containers"] if c["name"] == STACK
+        )
+        self.assertIn(f"--kubelet-service=kube-system/{name}", args)
+        self.assertIn("--kubelet-endpoints=true", args)
+
     def test_only_component_dashboards_are_hidden_from_the_sidecar(self):
         labels = {
             d["metadata"]["name"]: d["metadata"]["labels"]["grafana_dashboard"]

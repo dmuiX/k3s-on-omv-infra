@@ -88,6 +88,9 @@ tests:
       # Presence matters, not the age of the last sync on a quiet node.
       - series: 'kubeproxy_sync_proxy_rules_last_timestamp_seconds{job="kubelet",metrics_path="/metrics",node="quiet"}'
         values: '0x36'
+      # A matching pod name cannot stand in for the node label in the join.
+      - series: 'kubeproxy_sync_proxy_rules_last_timestamp_seconds{job="kubelet",metrics_path="/metrics",pod="missing"}'
+        values: '0+60x36'
       - series: 'kubeproxy_sync_proxy_rules_last_timestamp_seconds{job="apiserver",metrics_path="/metrics",node="missing"}'
         values: '0+60x36'
       - series: 'kubeproxy_sync_proxy_rules_last_timestamp_seconds{job="kubelet",metrics_path="/metrics/cadvisor",node="missing"}'
