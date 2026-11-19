@@ -81,6 +81,7 @@ spec:
           provisionerReplicaCount: 3
           resizerReplicaCount: 3
           snapshotterReplicaCount: 3
+  # Keep after Helm: this directory overrides only Deployment/longhorn-ui.
   - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
     targetRevision: main
     path: 02-controllers/longhorn/resources

@@ -61,6 +61,7 @@
       "NativeChartMigrations.test_k8up_leader_and_monitor",
       "NativeChartMigrations.test_cert_manager_and_cnpg",
       "NativeChartMigrations.test_longhorn_only_adds_restricted_scrape_rule",
+      "LonghornUIOverride.test_only_ui_deployment_overrides_helm",
       "NativeChartMigrations.test_native_pdbs_preserve_replica_counts_and_protect_one_replica"
     ],
     "test_oidc_proxy": [

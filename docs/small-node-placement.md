@@ -48,7 +48,8 @@ before actual deployment.
 
 This is not230Mi physical RAM newly available. Moving workloads changes Pi usage;
 requests change scheduler accounting. V1 instance-manager, engine/helper and
-UI/driver resource gaps remain explicit. The existing IM/ServiceLB admission
+driver resource gaps remain explicit. Include the [UI requests](longhorn-ui-hardening.md)
+if a UI pod is scheduled on the Pi. The existing IM/ServiceLB admission
 profile still reaches2568Mi, exceeding allocatable by230Mi before extra spare;
 see scoped-resource-admission.md. No data-HA reduction is hidden in this change.
 
