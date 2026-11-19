@@ -1,12 +1,12 @@
 # Compatibility gate
 
-Pinned in the reviewed manifests: cert-manager `v1.21.2`, K8up `4.10.0`, csi-driver-smb `1.20.3`, Longhorn `1.13.0`, Crossplane chart `2.4.2`, provider-vault `4.0.5`, OpenBao chart `0.30.4`, VSO `1.6.0`, CNPG `0.29.1`, Barman plugin `0.8.1`, prometheus-operator-crds `32.0.1`, kube-prometheus-stack `92.10.1`, Istio `1.31.2`, and Radar `1.17.0`.
+Pinned in the reviewed manifests: cert-manager `v1.21.2`, K8up `4.10.0`, csi-driver-smb `1.20.3`, Longhorn `1.13.0`, Crossplane chart `2.4.2`, provider-vault `4.1.0`, OpenBao chart `0.30.4`, VSO `1.6.0`, CNPG `0.29.1`, Barman plugin `0.8.1`, prometheus-operator-crds `32.0.1`, kube-prometheus-stack `92.10.1`, Istio `1.31.2`, and Radar `1.17.0`.
 
 Runtime evidence collected automatically during and after deployment:
 
 - Mandatory Kubernetes Berlin timezones require native `admissionregistration.k8s.io/v1` mutating/validating policies and bindings, plus CEL two-variable comprehensions (Kubernetes 1.33+). Production schema/CEL compilation passed with dry-run only; 18 focused checks (4 offline, 14 native admission) passed against isolated agentless K3s `v1.37.1+k3s1`, including forced explicit/imported TZ, init/debug containers and final denial without mutation. All policies fail closed. Production activation, existing-resource adoption and Longhorn/Argo reconciliation remain separate post-merge gates; see `docs/timezone-defaults.md`.
 - Istio is pinned to the official `base`, `istiod`, `cni`, and `ztunnel` charts `1.31.2`; Gateway API uses istiod's native automated deployment and `infrastructure.parametersRef` overlays (no separate gateway chart). Local renders and Linux amd64/arm64 image-manifest inspection are static evidence only. The K3s `v1.37.1+k3s1` support-matrix gap is the explicit Homelab exception recorded by the architecture contract; runtime validation remains mandatory. Verify actual K3s/Flannel CNI paths, kernel/netfilter, ambient traffic, DNS, NetworkPolicy, gateway admission/readiness, three-node scheduling, and Argo child-Application health sequencing. See `docs/mesh-chart-evidence.md`.
-- provider-vault `4.0.5` package digest, exact 16-type v2 activation-policy APIs, OpenBao behavior, and drift reconciliation.
+- provider-vault `4.1.0` package digest, exact 16-type v2 activation-policy APIs, OpenBao behavior, and drift reconciliation.
 - OpenBao snapshot and PostgreSQL retention adapter multi-arch image digests.
 - The protected bootstrap ceremony now creates exactly `kv/platform/r2` and `kv/platform/smb`; deployment stays blocked until API and runtime validation confirms CAS-zero behavior and both VSO transformations without exposing values.
 - Official csi-driver-smb 1.20.3 runtime compatibility with K3s, SMB dialect/security negotiation, retained dynamic subdirectory behavior, node packages, permissions, failure handling, and the verified mounted OMV backup disk.
