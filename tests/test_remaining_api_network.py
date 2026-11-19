@@ -59,6 +59,23 @@ class RemainingAPINetwork(unittest.TestCase):
         self.assertEqual(metrics['spec']['ingress'], [
             {'from': [namespace('kube-prometheus-stack')], 'ports': tcp(8080)}])
 
+    def test_restore_validator_hbone_targets_only_source_database_instances(self):
+        root = INFRA / '08-backup-validation/resources'
+        job, = (d for d in yaml.safe_load_all((root / 'validation.yaml').read_text())
+                if d['kind'] == 'CronJob' and d['metadata']['name'] == 'postgresql-restore-validation')
+        labels = {'app.kubernetes.io/name': job['metadata']['name']}
+        pod_labels = job['spec']['jobTemplate']['spec']['template']['metadata']['labels']
+        self.assertEqual(pod_labels.get('app.kubernetes.io/name'), labels['app.kubernetes.io/name'])
+        policy, = (d for d in yaml.safe_load_all((root / 'network-policy.yaml').read_text())
+                   if d['metadata']['name'] == 'allow-restore-validator-postgresql-hbone')
+        self.assertEqual(job['metadata']['namespace'], 'backup-validation')
+        self.assertEqual(policy['metadata']['namespace'], job['metadata']['namespace'])
+        self.assertEqual(policy['spec'], {
+            'podSelector': {'matchLabels': labels}, 'policyTypes': ['Egress'],
+            'egress': [{'to': [{**namespace('cloudnative-pg'), 'podSelector': {'matchLabels': {
+                'cnpg.io/cluster': 'k3s-postgres', 'cnpg.io/podRole': 'instance'}}}], 'ports': tcp(15008)}],
+        })
+
     def test_live_https_exceptions_preserve_exact_targeting(self):
         for directory, resource, policy_name in (
             ('backup-validation', '08-backup-validation/resources/network-policy.yaml',
