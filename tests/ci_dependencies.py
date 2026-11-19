@@ -79,7 +79,7 @@ class PublicRedirects(HTTPRedirectHandler):
 
 def validate_tools(tools: dict[str, Any]) -> None:
     """Close executable names and integrity/version inputs before writing files."""
-    if set(tools) != {"helm", "argocd", "kustomize"}:
+    if set(tools) != {"helm", "argocd", "kustomize", "promtool"}:
         raise ValueError("Invalid tool names")
     for tool in tools.values():
         if (

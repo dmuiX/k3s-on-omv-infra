@@ -4,6 +4,7 @@
     "test_ci_dependencies",
     "test_cloudnativepg_vso_account",
     "test_credential_resource_ownership",
+    "test_etcd_member_metrics",
     "test_longhorn_discard",
     "test_longhorn_discard_processes",
     "test_metrics_server",

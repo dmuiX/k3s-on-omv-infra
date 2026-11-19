@@ -51,6 +51,8 @@ even after a workload assertion fails, unless the workflow is cancelled.
 
 ## Workload-specific coverage
 
+`test_etcd_member_metrics.py` renders the pinned exporter DaemonSet and checks that its only pod changes are a read-only textfile mount and collector argument. It runs the deployed member rules through pinned `promtool` with healthy, missing, stale, duplicate and unhealthy member series. For the producer's executable tests and systemd unit checks see the paired Bootstrap repository. Neither suite contacts etcd.
+
 The scope was checked against a read-only deployment inventory. Names/versions
 below describe public desired-state interfaces, **not current live health**.
 Every Infra child must be explicitly classified by the render contract; a new

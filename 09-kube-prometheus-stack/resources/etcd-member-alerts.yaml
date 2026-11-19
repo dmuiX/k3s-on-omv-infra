@@ -1,0 +1,80 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: etcd-member-alerts
+  namespace: kube-prometheus-stack
+spec:
+  groups:
+    - name: platform.etcd-member
+      interval: 30s
+      rules:
+        # Keep the full scrape label set until after filtering: an up duplicate
+        # must not vouch for a different scrape's cached textfile or gauges.
+        - record: platform_etcd_member:fresh_scrape_timestamp_seconds
+          expr: |
+            (platform_etcd_member_last_success_timestamp_seconds{job="node-exporter",namespace="node-exporter"} >= time() - 120) <= time()
+            and (up{job="node-exporter",namespace="node-exporter"} == 1)
+            and etcd_server_has_leader{job="node-exporter",namespace="node-exporter"}
+            and etcd_server_is_leader{job="node-exporter",namespace="node-exporter"}
+        - record: platform_etcd_member:reporting_members
+          expr: count(count by (instance) (platform_etcd_member:fresh_scrape_timestamp_seconds)) or vector(0)
+        - alert: EtcdMemberCoverageUnexpected
+          expr: (platform_etcd_member:reporting_members > 0) != 3
+          for: 1m
+          labels:
+            severity: warning
+          annotations:
+            summary: Expected three distinct etcd members with fresh telemetry. Check scrape discovery, collector timestamps and host clocks.
+        - alert: EtcdMemberTelemetryAbsent
+          expr: platform_etcd_member:reporting_members == 0
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: No fresh etcd member telemetry. Check node-exporter targets and the member metrics collector on each server.
+        - alert: EtcdMemberHasNoLeader
+          expr: |
+            min by (instance) (
+              etcd_server_has_leader{job="node-exporter",namespace="node-exporter"} and platform_etcd_member:fresh_scrape_timestamp_seconds
+            ) == 0
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: 'Etcd member {{ $labels.instance }} sees no leader. Check peer connectivity and election logs.'
+        - alert: EtcdMemberLeaderCountUnexpected
+          # Missing observations do not prove there is no leader. The coverage
+          # alerts handle those; two observed leaders are anomalous even then.
+          expr: |
+            (
+              sum(max by (instance) (etcd_server_is_leader{job="node-exporter",namespace="node-exporter"} and platform_etcd_member:fresh_scrape_timestamp_seconds)) == 0
+              and platform_etcd_member:reporting_members == 3
+            ) or (
+              sum(max by (instance) (etcd_server_is_leader{job="node-exporter",namespace="node-exporter"} and platform_etcd_member:fresh_scrape_timestamp_seconds)) > 1
+            )
+          for: 1m
+          labels:
+            severity: critical
+          annotations:
+            summary: Etcd members do not report a single leader. Check member status and election logs.
+        - alert: EtcdMemberWalFsyncSlow
+          expr: |
+            max by (instance) (
+              histogram_quantile(0.99, rate(etcd_disk_wal_fsync_duration_seconds_bucket{job="node-exporter",namespace="node-exporter"}[5m]))
+              and platform_etcd_member:fresh_scrape_timestamp_seconds
+            ) > 0.01
+          for: 5m
+          labels:
+            severity: warning
+          annotations:
+            summary: 'Etcd WAL fsync p99 exceeds 10 ms on {{ $labels.instance }}. Check disk latency and competing I/O.'
+        - alert: EtcdMemberFailedProposals
+          expr: |
+            max by (instance) (
+              increase(etcd_server_proposals_failed_total{job="node-exporter",namespace="node-exporter"}[5m])
+              and platform_etcd_member:fresh_scrape_timestamp_seconds
+            ) > 0
+          labels:
+            severity: warning
+          annotations:
+            summary: 'Etcd proposals failed on {{ $labels.instance }} in the last 5 minutes. Check leader stability and peer latency.'
