@@ -2,24 +2,31 @@
 """Run an isolated CNPG point-in-time recovery and publish bounded evidence."""
 import base64, copy, json, os, re, ssl, subprocess, sys, time, uuid
 from datetime import datetime, timezone
+from functools import cache
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
-import psycopg2
 
 API = "https://kubernetes.default.svc"
-TOKEN = Path("/var/run/secrets/kubernetes.io/serviceaccount/token").read_text().strip()
-TLS = ssl.create_default_context(cafile="/var/run/secrets/kubernetes.io/serviceaccount/ca.crt")
-HEADERS = {"Authorization": f"Bearer {TOKEN}", "Content-Type": "application/json"}
 SOURCE_NS, VALIDATION_NS = "cloudnative-pg", "backup-validation"
 SOURCE, RESTORE, STORE = "k3s-postgres", "postgresql-pitr-validation", "postgresql-pitr-validation"
 IMAGE = "ghcr.io/cloudnative-pg/postgresql:18.6-system-bookworm@sha256:b4bec141fa5ca2bab490b197c814fb1342147c8405be1fb0673951fa6db7f699"
 
 
+@cache
+def api_settings() -> tuple[dict[str, str], ssl.SSLContext]:
+    """Load the in-cluster configuration on the first API call, not on import."""
+    service_account = Path("/var/run/secrets/kubernetes.io/serviceaccount")
+    token = (service_account / "token").read_text().strip()
+    tls = ssl.create_default_context(cafile=str(service_account / "ca.crt"))
+    return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}, tls
+
+
 def api(path, method="GET", body=None, allowed=()):
+    headers, tls = api_settings()
     data = None if body is None else json.dumps(body).encode()
     try:
-        with urlopen(Request(API + path, data=data, method=method, headers=HEADERS), context=TLS, timeout=30) as response:
+        with urlopen(Request(API + path, data=data, method=method, headers=headers), context=tls, timeout=30) as response:
             payload = response.read()
             return json.loads(payload) if payload else {}
     except HTTPError as exc:
@@ -34,6 +41,8 @@ def secret(namespace, name):
 
 
 def connect(values, host):
+    import psycopg2
+
     return psycopg2.connect(host=host, port=values.get("port", "5432"), dbname=values.get("dbname", "app"), user=values["username"], password=values["password"], connect_timeout=15, sslmode="require")
 
 
@@ -68,6 +77,27 @@ def mirror_matches_catalog():
     return bool(ids) and ids <= mirrored
 
 
+def validation_store(source: dict, endpoint: str) -> dict:
+    """Clone the store without inheriting the production endpoint Secret reference."""
+    spec = copy.deepcopy(source["spec"])
+    sidecar = spec.get("instanceSidecarConfiguration", {})
+    if "env" in sidecar:
+        sidecar["env"] = [
+            env for env in sidecar["env"] if env["name"] != "AWS_ENDPOINT_URL_S3"
+        ]
+    spec["configuration"]["endpointURL"] = endpoint
+    creds = spec["configuration"]["s3Credentials"]
+    creds["accessKeyId"]["name"] = creds["secretAccessKey"]["name"] = "postgresql-validation-r2"
+    if "region" in creds:
+        creds["region"]["name"] = "postgresql-validation-r2"
+    return {
+        "apiVersion": source["apiVersion"],
+        "kind": "ObjectStore",
+        "metadata": {"name": STORE, "namespace": VALIDATION_NS},
+        "spec": spec,
+    }
+
+
 def main():
     run = uuid.uuid4().hex
     source_credentials = secret(SOURCE_NS, f"{SOURCE}-app")
@@ -87,10 +117,7 @@ def main():
         time.sleep(360)
 
         source_store = api(f"/apis/barmancloud.cnpg.io/v1/namespaces/{SOURCE_NS}/objectstores/k3s-postgres-backups")
-        store = {"apiVersion":source_store["apiVersion"],"kind":"ObjectStore","metadata":{"name":STORE,"namespace":VALIDATION_NS},"spec":copy.deepcopy(source_store["spec"])}
-        store["spec"]["configuration"]["endpointURL"] = os.environ["S3_ENDPOINT"]
-        creds = store["spec"]["configuration"]["s3Credentials"]
-        creds["accessKeyId"]["name"] = creds["secretAccessKey"]["name"] = "postgresql-validation-r2"
+        store = validation_store(source_store, os.environ["S3_ENDPOINT"])
         api(f"/apis/barmancloud.cnpg.io/v1/namespaces/{VALIDATION_NS}/objectstores", "POST", store)
         cluster = {"apiVersion":"postgresql.cnpg.io/v1","kind":"Cluster","metadata":{"name":RESTORE,"namespace":VALIDATION_NS},"spec":{"instances":1,"imageName":IMAGE,"storage":{"storageClass":"longhorn-local","size":"5Gi"},"bootstrap":{"recovery":{"source":"origin","recoveryTarget":{"targetTime":target}}},"externalClusters":[{"name":"origin","plugin":{"enabled":True,"name":"barman-cloud.cloudnative-pg.io","parameters":{"barmanObjectName":STORE,"serverName":SOURCE}}}]}}
         api(f"/apis/postgresql.cnpg.io/v1/namespaces/{VALIDATION_NS}/clusters", "POST", cluster)

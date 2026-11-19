@@ -1,8 +1,9 @@
 # Consumption-based resource request targets
 
 **Native request targets are authored in the paired PRs, not deployed.**
-CSI/global-manager requests use the supported Longhorn chart fields; Barman
-sidecar resources are owned by the resource-only GitOps ObjectStore manifest.
+CSI/global-manager requests use the supported Longhorn chart fields. The Barman
+request target below is historical; [ObjectStore adoption](backup-contract.md#ordered-adoption-not-authorization)
+keeps deployed requests of 50m/64Mi and limits of 250m/256Mi.
 Argo/operator reconciliation owns Kubernetes objects. Only the host-level Pi
 kubelet reserve converges through the normal idempotent Bootstrap deployment.
 Existing database Pods may need a separately approved operator rollout. Source
@@ -43,8 +44,8 @@ controller leader or backup responsibility to move without a new profile.
 | Barman **instance sidecar** | 168.9 | 220.4 | 230.0 | 250m | 192Mi |
 
 The seven CSI rows and global-manager row are now in the Infra Application.
-The Barman row is in the paired Bootstrap contract; it is not a plugin-controller
-resource change and does not force database Pod restarts or a switchover.
+The Barman row is a historical sizing target, not part of the ObjectStore
+adoption or a plugin-controller resource change.
 
 The CSI plugin's rare 305Mi peak is deliberately not its request; retain burst
 capacity and inspect it if it recurs. Barman's proposed CPU request stays at its
@@ -65,13 +66,10 @@ Native ownership/configuration paths:
   a native `resources` override; their targets are listed separately below.
 - Barman instance sidecar resources come from the ObjectStore's
   `instanceSidecarConfiguration.resources`, **not** the plugin controller chart's
-  `resources`. The existing postgres Application now reconciles a resource-only
-  `ObjectStore` SSA manifest. Bootstrap continues first creation and verifies only
-  protected configuration; it seeds initial resources from that same public GitOps
-  profile, never hardcodes or reapplies them on resume. Client-side apply migration
-  is disabled at the Application level, server-side diff preserves omitted fields,
-  and prune/delete protection retains the shared object. Endpoint/credential custody
-  is unchanged; no extra maintenance playbook or credential ceremony is required.
+  `resources`. The existing postgres Application renders the complete ObjectStore
+  with deployed sizing and adopts it in place using SSA without client-side
+  migration. Prune/delete protection retains it. The paired Bootstrap revision
+  does not write the ObjectStore.
 
 ## Measured targets without a native override in this version
 

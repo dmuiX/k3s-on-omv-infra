@@ -1,8 +1,10 @@
+import copy
+import sys
 import unittest
 from datetime import datetime, timedelta, timezone
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
-import sys
+from unittest.mock import patch
 
 import yaml
 
@@ -53,6 +55,46 @@ class RetentionManifestTest(unittest.TestCase):
                 "AWS_REGION": "region", "S3_ENDPOINT": "S3_ENDPOINT",
             }.items()
         })
+
+    def test_validation_store_keeps_local_r2_credentials_during_and_after_bridge(self):
+        root = PATH.parents[2]
+        store = yaml.safe_load((root / "07-k3s-postgres/resources/objectstore.yaml").read_text())
+        validator = root / "08-backup-validation/resources/postgresql_pitr.py"
+        spec = spec_from_file_location("postgresql_pitr", validator)
+        adapter = module_from_spec(spec)
+        self.enterContext(patch.object(Path, "read_text", side_effect=AssertionError("read a runtime file")))
+        self.enterContext(patch("ssl.create_default_context", side_effect=AssertionError("initialized TLS")))
+        self.enterContext(patch("urllib.request.urlopen", side_effect=AssertionError("called the API")))
+        self.enterContext(patch.dict(sys.modules, {"psycopg2": None}))
+        spec.loader.exec_module(adapter)
+        local_url = "https://validation.example.invalid"
+        extra_env = {"name": "FIXTURE", "value": "unchanged"}
+        for phase in ("legacy", "bridge", "env-only"):
+            with self.subTest(phase=phase):
+                source = copy.deepcopy(store)
+                sidecar = source["spec"]["instanceSidecarConfiguration"]
+                sidecar["env"].append(extra_env)
+                if phase != "env-only":
+                    source["spec"]["configuration"]["endpointURL"] = "https://source.example.invalid"
+                if phase == "legacy":
+                    sidecar["env"].pop(0)
+                baseline = copy.deepcopy(source)
+                clone = adapter.validation_store(source, local_url)
+                self.assertEqual(source, baseline)
+                self.assertEqual(clone["metadata"], {
+                    "name": "postgresql-pitr-validation", "namespace": "backup-validation",
+                })
+                self.assertEqual(clone["spec"]["instanceSidecarConfiguration"], {
+                    **sidecar, "env": [extra_env],
+                })
+                self.assertEqual(clone["spec"]["configuration"], {
+                    **source["spec"]["configuration"], "endpointURL": local_url,
+                    "s3Credentials": {
+                        "accessKeyId": {"name": "postgresql-validation-r2", "key": "access-key-id"},
+                        "secretAccessKey": {"name": "postgresql-validation-r2", "key": "secret-access-key"},
+                        "region": {"name": "postgresql-validation-r2", "key": "region"},
+                    },
+                })
 
     def test_r2_credentials_are_mapped_without_duplicate_secret_keys(self):
         root = PATH.parents[2]

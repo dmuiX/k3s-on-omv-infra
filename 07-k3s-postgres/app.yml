@@ -32,6 +32,6 @@ spec:
       allowEmpty: false
     syncOptions:
       - ServerSideApply=true
-      # Do not migrate Bootstrap's configuration fields into Argo's ownership.
+      # Adopt the existing ObjectStore in place with SSA, without client-side migration.
       - ClientSideApplyMigration=false
       - SkipDryRunOnMissingResource=true

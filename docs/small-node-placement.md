@@ -21,9 +21,10 @@ Deployment patch is used; existing clusters need an attended owner transition.
   retain CPU limits; [separate RAM sizing](memory-limit-profile.md) caps ztunnel
   at256Mi without changing these requests. [Measured follow-up](request-rightsizing.md) also reduces
   OpenBao server requests256Mi ->224Mi, retaining3 replicas and512Mi limits.
-- GitOps owns Barman ObjectStore sidecar requests 250m/192Mi and unchanged
-  250m/256Mi limits through a resource-only SSA manifest in the existing postgres
-  Application. Endpoint and credential custody remain Bootstrap/OpenBao-owned.
+- The historical Barman request target was 250m/192Mi. The separate
+  [ObjectStore adoption](backup-contract.md#ordered-adoption-not-authorization)
+  supersedes that profile: it keeps deployed requests 50m/64Mi and limits
+  250m/256Mi in the existing postgres Application. Credential custody is unchanged.
 - Paired Bootstrap: candidate Pi kubeReserved 1536Mi -> 992Mi, unchanged system
   and eviction reserves. No SQL, credentials or primary role is changed.
 
@@ -58,7 +59,7 @@ see scoped-resource-admission.md. No data-HA reduction is hidden in this change.
    does not approve these additional operations. Do not merge Infra first. If
    Infra is already merged, inspect the root operation's pinned revision and
    child state: Pi recovery can release the old operation and then automatically
-   start newer CSI/ObjectStore changes. Approve that continuation or explicitly
+   start newer CSI changes. Approve that continuation or explicitly
    arrange an operator hold before restarting; no automatic hold is assumed.
 2. Use the ordinary reviewed Bootstrap `ansible/deploy.py` run. It recognizes an
    accepted base without reinstalling it and automatically reconciles managed Pi
@@ -82,18 +83,11 @@ see scoped-resource-admission.md. No data-HA reduction is hidden in this change.
    changes. ztunnel must converge before resource headroom is consumed. Verify SMB
    placement, CSI requests and distribution, healthy local plugins and unchanged
    data-replica counts. Do not directly patch operator-owned CSI Deployments.
-4. Reconcile the resource-only ObjectStore manifest through the existing
-   `k3s-postgres` Application, not a Barman maintenance playbook. Before activation,
-   check projected CPU/RAM on **every** affected host, retaining at least 128Mi RAM
-   and 100m CPU request headroom. Argo's client-side apply migration is disabled;
-   SSA owns only sidecar resources, not endpoint/credential configuration. The
-   object is protected against prune/delete. Do not replace or client-side-apply
-   the partial manifest. No credential ceremony or forced switchover is run.
-5. Inspect actual database sidecars: an updated ObjectStore is desired state, not
-   proof that existing Pods use new requests. If CNPG requires rolling Pods or a
-   supervised primary operation, obtain separate approval and use its supported
-   procedure. Until then report the sidecar change as pending activation, not done.
-6. Verify DNS/metrics unchanged, a fresh approved disposable storage lifecycle,
+4. Keep Barman sizing out of this rollout. A future request change requires
+   checking projected CPU/RAM on **every** affected host (at least 128Mi RAM and
+   100m CPU request headroom), separate approval for any Pod rollout or
+   supervised primary operation, and confirmation on actual sidecars.
+5. Verify DNS/metrics unchanged, a fresh approved disposable storage lifecycle,
    database replication/backups, unchanged primary/data-replica counts, and OpenBao
    3/3 plus a fresh functional check. Compare actual RAM and requests separately.
 

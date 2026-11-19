@@ -1,4 +1,5 @@
 """Shared required-value contracts and offline rendering with the upstream VSO engine."""
+import hashlib
 import importlib.util
 import json
 import os
@@ -17,6 +18,21 @@ REFERENCE = [{'name': 'required-openbao-value', 'namespace': 'vault-secrets-oper
 HELPER = yaml.safe_load((ROOT / '02-controllers/vault-secrets-operator/resources/required-values.yaml').read_text())
 VSO_SOURCE = os.environ.get('VSO_TEMPLATE_SOURCE')
 VSO_CHART_SOURCE = os.environ.get('VSO_CHART_SOURCE')
+# Exact files consumed by the harness from the official VSO v1.6.0 tag archive.
+VSO_TEMPLATE_FILES = {
+    'go.mod': '478b4aeaefa46c4a319b6d4acb645ff0a23c7ef9971cff6ab03d704f8160cc29',
+    'go.sum': '01bf01c303f0b3415cea6332549828e00dfe563d7da0bb0289e27ab1aa6b0e00',
+    'template/template.go': 'db8a811c08317c70c0a00828df65495fba5dc0eeb7a32009e297b0d967bae341',
+    'template/funcs.go': '9279f8ede9b9aafb31a12535c04a10eb3a8cad53d71735c16e0cac89e0aa130f',
+}
+R2_ACCOUNT = '0' * 31 + 'a'
+R2_HOST = 'r2.cloudflarestorage.com'
+POSTGRES_R2_ENDPOINT_ERROR = 'OpenBao endpoint must be an HTTPS R2 account URL'
+
+
+def postgres_r2_endpoint(secret, output):
+    return (secret['kind'], secret['metadata'].get('namespace'), secret['metadata']['name'], output) == (
+        'VaultStaticSecret', 'cloudnative-pg', 'postgresql-r2-credentials', 'S3_ENDPOINT')
 
 
 def consumers(documents):
@@ -150,27 +166,39 @@ class RequiredValueContracts(unittest.TestCase):
                 mapped.update(re.findall(r'\.Secrets\.([\w-]+)', texts))
                 self.assertTrue(mapped)
                 self.assertEqual(required_keys(texts), mapped)
-                self.assertNotIn('fail ', texts)
+                for output, template in transform['templates'].items():
+                    text = template['text']
+                    if postgres_r2_endpoint(secret, output):
+                        self.assertEqual(re.findall(r'fail "([^"]+)"', text), [POSTGRES_R2_ENDPOINT_ERROR])
+                        text = text.replace(f'fail "{POSTGRES_R2_ENDPOINT_ERROR}"', '')
+                    self.assertNotIn('fail ', text)
                 self.assertNotIn('define "requiredValue"', texts)
 
 
-@unittest.skipUnless(VSO_SOURCE and shutil.which('go'),
-                     'Set VSO_TEMPLATE_SOURCE to cached VSO v1.6.0 sources')
+@unittest.skipUnless(VSO_SOURCE, 'Set VSO_TEMPLATE_SOURCE to cached VSO v1.6.0 sources')
 class RequiredValueRendering(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.temp = tempfile.TemporaryDirectory(prefix='vso-template-test-')
         cls.addClassCleanup(cls.temp.cleanup)
         directory = Path(cls.temp.name)
-        for name in ('go.mod', 'go.sum', 'template/template.go', 'template/funcs.go'):
+        for name, digest in VSO_TEMPLATE_FILES.items():
+            data = (Path(VSO_SOURCE) / name).read_bytes()
+            if hashlib.sha256(data).hexdigest() != digest:
+                raise ValueError(f'VSO v1.6.0 source checksum mismatch: {name}')
             destination = directory / name
             destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(Path(VSO_SOURCE) / name, destination)
+            destination.write_bytes(data)
         (directory / 'main.go').write_text(HARNESS)
         cls.binary = directory / 'render'
-        subprocess.run(['go', 'build', '-mod=readonly', '-o', str(cls.binary), '.'],
+        result = subprocess.run(['go', 'build', '-mod=readonly', '-o', str(cls.binary), '.'],
             cwd=directory, env={**os.environ, 'GOPROXY': 'off', 'GOSUMDB': 'off',
-                               'GOTOOLCHAIN': 'local'}, check=True, capture_output=True, timeout=120)
+                               'GONOPROXY': 'none', 'GOVCS': '*:off', 'GOTOOLCHAIN': 'local',
+                               'GOENV': 'off', 'GOWORK': 'off', 'GOFLAGS': ''},
+            capture_output=True, text=True, timeout=120)
+        if result.returncode:
+            raise RuntimeError('Offline VSO parser build failed. See docs/vso-required-values.md.\n'
+                               + result.stderr)
 
     def render(self, templates, values):
         result = subprocess.run([str(self.binary)], input=json.dumps({
@@ -184,7 +212,8 @@ class RequiredValueRendering(unittest.TestCase):
                 keys = required_keys(template['text'])
                 values = {key: ' fixture+/:' + key + '\n' for key in keys}
                 if 'endpoint' in keys:
-                    values['endpoint'] = 'https://fixture.invalid/path'
+                    values['endpoint'] = (f'https://{R2_ACCOUNT}.{R2_HOST}' if postgres_r2_endpoint(secret, output)
+                                          else 'https://fixture.invalid/path')
                 with self.subTest(secret=secret['metadata']['name'], output=output):
                     result = self.render({output: template}, values)
                     self.assertEqual(result['Error'], '')
@@ -226,6 +255,38 @@ class RequiredValueRendering(unittest.TestCase):
                             result = self.render({output: template}, invalid)
                             self.assertIsNone(result['Data'])
                             self.assertIn('missing or empty OpenBao key: ' + key, result['Error'])
+
+    def test_postgres_endpoint_requires_exact_r2_url_without_echoing_input(self):
+        secret, = [d for d in consumers(yaml.safe_load_all(
+            (ROOT / '07-k3s-postgres/resources/credentials.yaml').read_text()))
+            if postgres_r2_endpoint(d, 'S3_ENDPOINT')]
+        templates = secret['spec']['destination']['transformation']['templates']
+        values = {'access-key-id': 'fixture-id', 'secret-access-key': 'fixture-key', 'region': 'auto'}
+        for jurisdiction in ('', '.eu', '.fedramp'):
+            with self.subTest(jurisdiction=jurisdiction):
+                valid = f'https://{R2_ACCOUNT}{jurisdiction}.{R2_HOST}'
+                self.assertEqual(self.render(templates, {**values, 'endpoint': valid}), {
+                    'Data': {**values, 'S3_ENDPOINT': valid}, 'Error': ''})
+        endpoint = f'https://{R2_ACCOUNT}.{R2_HOST}'
+        for invalid in (
+            True, 1, ['fixture-list'], {'nested': 'fixture-map'},
+            f'http://{R2_ACCOUNT}.{R2_HOST}', f'https://{R2_ACCOUNT.upper()}.{R2_HOST}',
+            f'https://{R2_ACCOUNT[:-1]}.{R2_HOST}', f'https://{R2_ACCOUNT}.us.{R2_HOST}',
+            f'{endpoint}.example.invalid', f'{endpoint}:443', f'{endpoint}/',
+            f'{endpoint}?query=fixture', f'{endpoint}#fixture',
+            f'https://fixture-user@{R2_ACCOUNT}.{R2_HOST}',
+            f'{endpoint}\n', f'{endpoint}\r', f'{endpoint} ', f' {endpoint}',
+        ):
+            with self.subTest(invalid=invalid):
+                result = self.render(templates, {**values, 'endpoint': invalid})
+                self.assertIsNone(result['Data'])
+                self.assertTrue(result['Error'].endswith('error calling fail: ' + POSTGRES_R2_ENDPOINT_ERROR))
+                if isinstance(invalid, str):
+                    self.assertNotIn(invalid.strip(), result['Error'])
+        for values_without_endpoint in (values, {**values, 'endpoint': ''}):
+            result = self.render(templates, values_without_endpoint)
+            self.assertIsNone(result['Data'])
+            self.assertIn('missing or empty OpenBao key: endpoint', result['Error'])
 
     def test_historical_postgres_outputs_keep_identical_successful_bytes(self):
         actual = {d['metadata']['name']: d for d in consumers(desired_documents()) + consumers(chart_documents())}

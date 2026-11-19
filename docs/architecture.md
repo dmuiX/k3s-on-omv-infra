@@ -163,10 +163,9 @@ Restore tests use isolated new targets and never overwrite production data. A su
 | PostgreSQL size-retention adapter | Native time retention does not implement the chosen size-budget policy | Barman catalog only, minimum recoverable backups, bounded deletion, dry-run/revalidation and no deletion on ambiguous state |
 | OpenBao snapshot/retention adapter | Native snapshot APIs do not provide the complete chosen upload/calendar-retention workflow | Verify snapshot/upload state; uncertainty retains data |
 | Protected credential issuance/custody helpers | Certain consumer APIs require bounded credential creation or handoff | Consumer-owned resources, scoped identities, no secret output and no parallel steady-state writer |
-| Barman ObjectStore endpoint custody | The API's endpoint field lacks a Secret reference | Protected Bootstrap endpoint/configuration ownership; Argo's resource-only SSA owns separate sidecar resource fields, not those protected fields |
 | Encrypted Longhorn discard helper | The reviewed upstream interface lacks the required global encrypted-discard behavior | Explicit storage-admin privilege and allocation-pattern leakage trade-offs; native Longhorn trim remains the scheduler |
 
-The current endpoint handoff spans private Bootstrap/Live and public Infra, so its cross-repository implementation must be reviewed together rather than inferred from a public render. Prometheus tool-image and success-gated cleanup requirements remain explicit deployment gates. Adding a manifest around a missing mechanism is not proof that it works.
+Argo manages the complete Barman ObjectStore without an endpoint literal. Barman gets its R2 endpoint through a required environment reference to the existing VSO Secret. The [two-phase adoption](backup-contract.md#ordered-adoption-not-authorization) protects existing Pods from falling back to AWS S3; a public render does not prove adoption. Prometheus tool-image and success-gated cleanup requirements remain explicit deployment gates. Adding a manifest around a missing mechanism is not proof that it works.
 
 See [service credential ownership](service-credentials.md), [backup contracts](backup-contract.md), [encrypted discard](longhorn-encrypted-discard.md) and [its security review](longhorn-encrypted-discard-review.md).
 
@@ -193,7 +192,7 @@ The original specification records intent and trade-offs. Current manifests and 
 | A later certificate/gateway bootstrap stage | Certificates are explicit early prerequisites; the Gateway no longer creates its own prerequisite through a shim |
 | Apps root activated only after the platform | Apps-owned identity prerequisites may reconcile earlier; full Apps acceptance still follows Infra acceptance |
 | A compact fixed wave/layout table | Certificate-first negative waves, consolidated Istio Applications, later monitoring and separated credentials changed the layout; actual annotations are authoritative |
-| Whole-object create-once ownership for the Barman ObjectStore | Protected configuration and Argo-managed sidecar resources now use documented, disjoint field ownership |
+| Whole-object create-once ownership for the Barman ObjectStore | Argo manages the complete ObjectStore in the existing PostgreSQL Application; Bootstrap owns credentials and host mirror setup, not the ObjectStore |
 | Only the original two runtime adapters | Later narrowly scoped credential/discard helpers exist and require their own justification and security boundaries |
 | Full monitoring HA as a target | Prometheus/Grafana configuration does not establish alerting HA while Alertmanager replicas remain disabled |
 | Original hardware/resource/storage figures | Placement, server roles, storage sizes and resource profiles evolved; use consumed manifests and fresh evidence |
