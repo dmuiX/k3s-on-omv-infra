@@ -356,6 +356,14 @@ class RepositoryWorkloads(unittest.TestCase):
             ),
             ("DoNotSchedule", "kubernetes.io/hostname", 2, 2),
         )
+        self.assertEqual(
+            spread["labelSelector"],
+            {
+                "matchLabels": {
+                    "gateway.networking.k8s.io/gateway-name": "istio-gateway"
+                }
+            },
+        )
         self.assertEqual(spread["labelSelector"], budget["selector"])
         self.assertEqual(
             deployment["template"]["spec"]["securityContext"]["seccompProfile"]["type"],
