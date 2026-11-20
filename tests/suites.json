@@ -79,6 +79,9 @@
       "OpenBaoMetricsTests.test_no_metrics_token_producers_or_provider_grants",
       "OpenBaoMetricsTests.test_rollout_documents_security_and_orphan_retirement_gates"
     ],
+    "test_phase_one_network": [
+      "PhaseOneNetwork.test_sources_select_one_file_per_application"
+    ],
     "test_postgres_api_network": [
       "PostgresAPINetwork.test_only_approved_broad_api_rule_changed_from_published_baseline",
       "PostgresAPINetwork.test_infra_has_no_unrestricted_api_egress"

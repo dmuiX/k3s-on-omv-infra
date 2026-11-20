@@ -43,8 +43,10 @@ class PostgresAPINetwork(unittest.TestCase):
                          {'matchLabels': {'cnpg.io/cluster': 'k3s-postgres'}})
         self.assertEqual(policy['spec']['policyTypes'], ['Egress'])
         rules = policy['spec']['egress']
-        self.assertEqual(len(rules), 2)
-        for rule, port, addresses in zip(rules, (443, 6443), (
+        self.assertEqual(len(rules), 3)
+        # Existing Barman/R2 exception: HTTPS to any destination, never broad 6443.
+        self.assertEqual(rules[2], {'ports': [{'protocol': 'TCP', 'port': 443}]})
+        for rule, port, addresses in zip(rules[:2], (443, 6443), (
                 ['10.43.0.1/32'],
                 ['192.168.1.2/32', '192.168.1.5/32', '192.168.1.7/32'])):
             self.assertEqual(rule, {
