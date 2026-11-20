@@ -66,7 +66,10 @@ OpenBao snapshots and the PostgreSQL manager, Longhorn proxy and Grafana admin
 credential Jobs use native `restartPolicy: OnFailure`: container retries normally
 reuse the Pod network namespace/IP rather than creating a fresh Pod for each
 process failure. This is bounded by the existing deadlines (snapshot 1800s,
-credentials 600s) and backoff limits (snapshot explicitly 6, credentials 2).
+credentials 600s) and backoff limits (snapshot 6, Grafana admin 10, other
+Infra credential producers 2). Grafana uses a larger budget because some new
+Pods saw repeated HBONE refusals before OpenBao was reachable; the 600-second
+deadline still caps the Job.
 It does not prove or cure an underlying mesh/network startup race; Pod replacement
 can still occur. No custom retry loop is added. Retention and restore-validation
 Jobs are excluded because their retry safety has not been demonstrated here.

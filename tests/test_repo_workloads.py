@@ -67,7 +67,11 @@ class RepositoryWorkloads(unittest.TestCase):
                     )
                     native = spec
                     self.assertNotIn("ttlSecondsAfterFinished", native)
-                    self.assertEqual(native["backoffLimit"], 2)
+                    self.assertEqual(
+                        native["backoffLimit"],
+                        10 if name == "grafana-admin-provisioner" else 2,
+                    )
+                    native["backoffLimit"] = 2
                 pod = native["template"]["spec"]
                 self.assertEqual(pod["restartPolicy"], "OnFailure")
                 pod["restartPolicy"] = "Never"
