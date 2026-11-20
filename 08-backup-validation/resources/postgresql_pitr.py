@@ -98,6 +98,24 @@ def validation_store(source: dict, endpoint: str) -> dict:
     }
 
 
+def validation_cluster(target: str) -> dict:
+    """Build the disposable restore cluster, not a production storage profile."""
+    return {
+        "apiVersion": "postgresql.cnpg.io/v1", "kind": "Cluster",
+        "metadata": {"name": RESTORE, "namespace": VALIDATION_NS},
+        "spec": {
+            "instances": 1, "imageName": IMAGE,
+            "storage": {"storageClass": "longhorn-restore-test", "size": "5Gi"},
+            "inheritedMetadata": {"annotations": {"k8up.io/backup": "false"}},
+            "bootstrap": {"recovery": {"source": "origin", "recoveryTarget": {"targetTime": target}}},
+            "externalClusters": [{"name": "origin", "plugin": {
+                "enabled": True, "name": "barman-cloud.cloudnative-pg.io",
+                "parameters": {"barmanObjectName": STORE, "serverName": SOURCE},
+            }}],
+        },
+    }
+
+
 def main():
     run = uuid.uuid4().hex
     source_credentials = secret(SOURCE_NS, f"{SOURCE}-app")
@@ -119,8 +137,7 @@ def main():
         source_store = api(f"/apis/barmancloud.cnpg.io/v1/namespaces/{SOURCE_NS}/objectstores/k3s-postgres-backups")
         store = validation_store(source_store, os.environ["S3_ENDPOINT"])
         api(f"/apis/barmancloud.cnpg.io/v1/namespaces/{VALIDATION_NS}/objectstores", "POST", store)
-        cluster = {"apiVersion":"postgresql.cnpg.io/v1","kind":"Cluster","metadata":{"name":RESTORE,"namespace":VALIDATION_NS},"spec":{"instances":1,"imageName":IMAGE,"storage":{"storageClass":"longhorn-local","size":"5Gi"},"bootstrap":{"recovery":{"source":"origin","recoveryTarget":{"targetTime":target}}},"externalClusters":[{"name":"origin","plugin":{"enabled":True,"name":"barman-cloud.cloudnative-pg.io","parameters":{"barmanObjectName":STORE,"serverName":SOURCE}}}]}}
-        api(f"/apis/postgresql.cnpg.io/v1/namespaces/{VALIDATION_NS}/clusters", "POST", cluster)
+        api(f"/apis/postgresql.cnpg.io/v1/namespaces/{VALIDATION_NS}/clusters", "POST", validation_cluster(target))
         wait_ready()
         restored = secret(VALIDATION_NS, f"{RESTORE}-app")
         with connect(restored, f"{RESTORE}-rw.{VALIDATION_NS}.svc") as db, db.cursor() as cursor:

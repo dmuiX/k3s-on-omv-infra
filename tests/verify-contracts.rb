@@ -362,7 +362,11 @@ class PlatformContractTest < Minitest::Test
   def test_storage_classes_encode_replication_encryption_and_locality
     documents = yaml_documents(INFRA / "02-controllers/longhorn/resources/storageclasses.yaml")
     classes = documents.to_h { |document| [document.dig("metadata", "name"), document] }
-    assert_equal %w[longhorn longhorn-local longhorn-monitoring], classes.keys.sort
+    assert_equal %w[longhorn longhorn-local longhorn-monitoring longhorn-restore-test], classes.keys.sort
+    restore_test = classes.fetch("longhorn-restore-test")
+    assert_equal classes.fetch("longhorn-local").merge(
+      "metadata" => {"name" => "longhorn-restore-test"}, "reclaimPolicy" => "Delete"
+    ), restore_test
     assert_equal "Retain", classes["longhorn"]["reclaimPolicy"]
     assert_equal "true", classes["longhorn"].dig("parameters", "encrypted")
     assert_equal "3", classes["longhorn"].dig("parameters", "numberOfReplicas")
