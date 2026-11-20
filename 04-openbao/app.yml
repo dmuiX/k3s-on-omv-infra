@@ -14,7 +14,7 @@ spec:
   sources:
   - repoURL: https://openbao.github.io/openbao-helm
     chart: openbao
-    targetRevision: 0.30.6
+    targetRevision: 0.30.8
     helm:
       valuesObject:
         injector:
@@ -155,8 +155,8 @@ spec:
                   - ALL
           gateway:
             httpRoute:
-              # Chart 0.30.4 (still unfixed in 0.30.6) omits backendRefs group/weight
-              # and has no rules override. Kubernetes defaults cause Argo CD drift.
+              # Chart 0.30.8 omits backendRefs group/weight and has no rules override.
+              # Kubernetes defaults cause Argo CD drift.
               # charts/service-route below preserves this route with explicit defaults;
               # restore native routing once upstream supports these fields.
               enabled: false
