@@ -1,0 +1,131 @@
+# Start manually only, after verifying the new namespace's isolation.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: k3s-etcd-restore-smoke
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-all
+  namespace: k3s-etcd-restore-smoke
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+  ingress: []
+  egress: []
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: k3s-etcd-restore-smoke
+  namespace: k3s-etcd-restore-smoke
+spec:
+  suspend: true
+  backoffLimit: 0
+  activeDeadlineSeconds: 300
+  ttlSecondsAfterFinished: 1800
+  template:
+    metadata:
+      labels:
+        istio.io/dataplane-mode: none
+      annotations:
+        sidecar.istio.io/inject: "false"
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      nodeSelector:
+        kubernetes.io/arch: amd64
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: restore-test
+          image: docker.io/rancher/k3s:v1.37.1-k3s1@sha256:8d298cb81ca94e875d31e804e5aa10b56355d1d7d95d7e1ef8a8d9239f15ada0
+          env:
+            - {name: HOME, value: /scratch}
+            - {name: TMPDIR, value: /scratch}
+            - {name: KUBECONFIG, value: /scratch/kubeconfig}
+          command: [/bin/sh, -eu, -c]
+          args:
+            - |
+              umask 077
+              unset KUBERNETES_SERVICE_HOST KUBERNETES_SERVICE_PORT KUBERNETES_SERVICE_PORT_HTTPS
+              mkdir -p /scratch/snapshots /scratch/restored/server
+              server() {
+                exec k3s server --disable-agent --disable-scheduler --disable-controller-manager \
+                  --disable-cloud-controller --disable-helm-controller --disable-network-policy \
+                  --disable=servicelb,traefik,local-storage,coredns,metrics-server,gateway-api \
+                  --etcd-disable-snapshots --etcd-s3=false --secrets-encryption \
+                  --bind-address 127.0.0.1 --node-ip 127.0.0.1 --advertise-address 192.0.2.10 \
+                  --kube-apiserver-arg=endpoint-reconciler-type=none --node-name restore-probe \
+                  --write-kubeconfig "$KUBECONFIG" "$@"
+              }
+              k() { kubectl --server=https://127.0.0.1:6443 --request-timeout=3s "$@"; }
+              pid=
+              stop() {
+                if [ -n "$pid" ]; then
+                  kill "$pid" 2>/dev/null || :
+                  wait "$pid" 2>/dev/null || :
+                  pid=
+                fi
+              }
+              trap stop EXIT
+              ready() {
+                for i in $(seq 1 60); do
+                  if k get --raw /readyz >/dev/null 2>&1; then return; fi
+                  kill -0 "$pid" 2>/dev/null || break
+                  sleep 1
+                done
+                echo "Synthetic API did not become ready during $1" >&2
+                return 1
+              }
+              echo 'Starting synthetic K3s source'
+              server --cluster-init --data-dir /scratch/source >/scratch/source.log 2>&1 & pid=$!
+              ready source
+              k create configmap restore-probe-before --from-literal=marker=expected-recovered-state >/dev/null
+              expected=$(k get configmap restore-probe-before -o 'jsonpath={.metadata.uid}')
+              test -n "$expected"
+              k3s etcd-snapshot save --data-dir /scratch/source --name restore-probe \
+                --dir /scratch/snapshots --snapshot-compress --s3=false >/scratch/save.log 2>&1
+              set -- /scratch/snapshots/restore-probe-*.zip
+              test "$#" = 1
+              test -s "$1"
+              snapshot=$1
+              k create configmap restore-probe-after --from-literal=marker=must-not-be-restored >/dev/null
+              cp /scratch/source/server/token /scratch/restored/server/token
+              stop
+              echo 'Restoring compressed snapshot in fresh storage'
+              (server --data-dir /scratch/restored --token-file /scratch/restored/server/token \
+                --cluster-reset --cluster-reset-restore-path "$snapshot") >/scratch/reset.log 2>&1
+              grep -F 'Managed etcd cluster membership has been reset' /scratch/reset.log >/dev/null
+              server --data-dir /scratch/restored --token-file /scratch/restored/server/token \
+                >/scratch/restored.log 2>&1 & pid=$!
+              ready restored
+              uid=$(k get configmap restore-probe-before -o 'jsonpath={.metadata.uid}')
+              value=$(k get configmap restore-probe-before -o 'jsonpath={.data.marker}')
+              after=$(k get configmap restore-probe-after --ignore-not-found -o name)
+              nodes=$(k get nodes -o name)
+              test "$uid" = "$expected"
+              test "$value" = expected-recovered-state
+              test -z "$after"
+              test -z "$nodes"
+              echo 'PASS: compressed etcd snapshot restored; API ready; original UID and value present; later write and nodes absent'
+          resources:
+            requests: {cpu: 500m, memory: 1Gi}
+            limits: {cpu: "2", memory: 2Gi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: scratch, mountPath: /scratch}
+      volumes:
+        - name: scratch
+          emptyDir: {medium: Memory, sizeLimit: 768Mi}

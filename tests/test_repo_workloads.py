@@ -662,6 +662,72 @@ class RepositoryWorkloads(unittest.TestCase):
                     job["spec"]["jobTemplate"]["spec"].get("activeDeadlineSeconds")
                 )
 
+    def test_manual_k3s_restore_smoke_has_no_host_or_cluster_access(self) -> None:
+        import subprocess
+
+        from workload_contracts import Repository, parse_documents
+
+        repo = Repository()
+        path = repo.root / "08-backup-validation/manual/k3s-etcd-restore-smoke.yaml"
+        namespace, policy, job = parse_documents(path.read_text())
+        name = namespace["metadata"]["name"]
+        self.assertEqual(name, "k3s-etcd-restore-smoke")
+        self.assertEqual(
+            [d["kind"] for d in (namespace, policy, job)],
+            ["Namespace", "NetworkPolicy", "Job"],
+        )
+        self.assertEqual(
+            namespace["metadata"]["labels"]["pod-security.kubernetes.io/enforce"],
+            "restricted",
+        )
+        self.assertEqual(policy["metadata"]["namespace"], name)
+        self.assertEqual(job["metadata"]["namespace"], name)
+        self.assertEqual(
+            policy["spec"],
+            {
+                "podSelector": {},
+                "policyTypes": ["Ingress", "Egress"],
+                "ingress": [],
+                "egress": [],
+            },
+        )
+        job_spec = job["spec"]
+        self.assertIs(job_spec["suspend"], True)
+        self.assertEqual(job_spec["backoffLimit"], 0)
+        self.assertEqual(job_spec["activeDeadlineSeconds"], 300)
+        self.assertEqual(job_spec["ttlSecondsAfterFinished"], 1800)
+        pod = job_spec["template"]["spec"]
+        self.assertIs(pod["automountServiceAccountToken"], False)
+        self.assertFalse(pod.get("hostNetwork", False))
+        self.assertTrue(pod["securityContext"]["runAsNonRoot"])
+        self.assertEqual(
+            pod["volumes"],
+            [
+                {
+                    "name": "scratch",
+                    "emptyDir": {"medium": "Memory", "sizeLimit": "768Mi"},
+                }
+            ],
+        )
+        (container,) = pod["containers"]
+        self.assertEqual(
+            container["securityContext"]["capabilities"], {"drop": ["ALL"]}
+        )
+        self.assertTrue(container["securityContext"]["readOnlyRootFilesystem"])
+        self.assertNotIn(
+            name, {d["metadata"]["name"] for d in repo.render("backup-validation")}
+        )
+        (script,) = container["args"]
+        for option in (
+            "--disable-agent",
+            "--bind-address 127.0.0.1",
+            "--etcd-s3=false",
+            "--server=https://127.0.0.1:6443",
+            "--cluster-reset-restore-path",
+        ):
+            self.assertIn(option, script)
+        subprocess.run(["sh", "-n"], input=script, text=True, check=True)
+
 
 if __name__ == "__main__":
     unittest.main()
