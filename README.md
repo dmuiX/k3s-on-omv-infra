@@ -106,7 +106,6 @@ See [tests/README.md](tests/README.md) for commands, prerequisites and the exact
 - [Mesh chart evidence and compatibility](docs/mesh-chart-evidence.md).
 - [Backup destinations and recovery gates](docs/backup-contract.md).
 - [PostgreSQL WAL recovery](docs/postgresql-wal-recovery.md).
-- [Native etcd member metrics: collection, alerts and rollout](docs/etcd-member-metrics.md).
 - [Prometheus snapshot-first backup runbook](docs/prometheus-tsdb-backup-runbook.md).
 - [Small-node placement](docs/small-node-placement.md) and [resource request profile](docs/resource-request-profile.md).
 - [Compatibility and remaining runtime gates](COMPATIBILITY.md).
