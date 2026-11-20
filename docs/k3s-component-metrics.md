@@ -26,6 +26,24 @@ Leave mixed rule objects such as `kube-prometheus-stack-kubernetes-system` under
 
 **Rollback:** revert the component changes in Git and sync. Confirm the previous Services, monitors, alert groups, scheduler expressions and dashboard labels are restored. Once both replicas load the prior rules, explicitly retire only the now-undesired `PrometheusRule/k3s-component-rules` in `kube-prometheus-stack`; pruning is still off.
 
+## Embedded etcd
+
+The chart's dedicated etcd integration is disabled: its Service selects static
+etcd pods that do not exist here, and the Service has no endpoints. The matching
+ServiceMonitor, native etcd rules and dashboard depend on that scrape and are no
+longer rendered. This does not add per-member etcd monitoring or change the
+existing K3s scrape jobs. The former custom member collector was reverted in #112.
+
+Before retiring anything, confirm the Service still has no endpoints and an
+instant query for `etcd_server_has_leader` returns no series on either Prometheus
+replica. With automatic pruning disabled, verify the new render and review the
+exact stack-owned retirement candidates: `kube-prometheus-stack-kube-etcd` (Service in
+`kube-system` and ServiceMonitor in `kube-prometheus-stack`) and
+`kube-prometheus-stack-etcd` (PrometheusRule and dashboard ConfigMap in
+`kube-prometheus-stack`). Do not enable blanket pruning. After the scoped retirement,
+verify the dedicated monitor and rule group are gone and the existing apiserver
+and kubelet scrapes and rules remain healthy on both Prometheus replicas. Revert the Helm value and sync to restore the previous objects.
+
 ## Public test
 
 From the repository root, use the public chart cache and synthetic values (no cluster or private values):
