@@ -413,6 +413,39 @@ class RepositoryWorkloads(unittest.TestCase):
         )
         self.assertTrue(node["spec"]["template"]["spec"]["containers"])
 
+    def test_longhorn_replacement_storage_classes_preserve_volume_settings(
+        self,
+    ) -> None:
+        from workload_contracts import Repository
+
+        classes = [
+            d for d in Repository().render("longhorn") if d["kind"] == "StorageClass"
+        ]
+        by_name = {d["metadata"]["name"]: d for d in classes}
+        self.assertEqual(
+            len(by_name), len(classes), "StorageClass names must be unique"
+        )
+        replacements = {
+            "longhorn": "longhorn-replicated-retain",
+            "longhorn-local": "longhorn-single-node-retain",
+            "longhorn-monitoring": "longhorn-single-node-omv-wyse-retain",
+            "longhorn-restore-test": "longhorn-single-node-delete",
+        }
+        for old, new in replacements.items():
+            with self.subTest(storage_class=new):
+                self.assertEqual(
+                    by_name[new], {**by_name[old], "metadata": {"name": new}}
+                )
+        annotation = "storageclass.kubernetes.io/is-default-class"
+        self.assertEqual(
+            [
+                name
+                for name, doc in by_name.items()
+                if doc["metadata"].get("annotations", {}).get(annotation) == "true"
+            ],
+            ["longhorn"],
+        )
+
     def test_longhorn_preserves_encrypted_local_storage_and_trim_only_maintenance(
         self,
     ) -> None:
