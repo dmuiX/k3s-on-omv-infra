@@ -235,6 +235,11 @@ class RepositoryWorkloads(unittest.TestCase):
                     )
                     for d in docs
                 ]
+                self.assertNotIn(
+                    ("batch/v1", "Job", "backup-validation", "k8up-canary-seed-v1"),
+                    identities,
+                    "The supervised seed Job must never have a GitOps owner",
+                )
                 if name == "longhorn":
                     # Helm and the later raw override must each supply this exact UI.
                     ui = ("apps/v1", "Deployment", "longhorn", "longhorn-ui")

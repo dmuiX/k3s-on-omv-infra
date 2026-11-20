@@ -2,10 +2,10 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: k8up-canary-seed-v1
+  namespace: backup-validation
 spec:
-  # Retain the completed declarative Job: TTL + Argo self-heal would re-run it.
-  # Start only in a supervised RWO maintenance window, before the fixture backup.
-  suspend: true
+  # Manual create only. TTL reclaims this Job and its Pods, not the fixture PVC.
+  ttlSecondsAfterFinished: 3600
   backoffLimit: 0
   activeDeadlineSeconds: 300
   template:
@@ -43,4 +43,4 @@ spec:
         - name: fixture
           persistentVolumeClaim: {claimName: k8up-validation-canary}
         - name: tool
-          configMap: {name: k8up-canary-seed, defaultMode: 0444}
+          configMap: {name: k8up-canary-seed-v1, defaultMode: 0444}

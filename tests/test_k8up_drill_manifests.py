@@ -2,12 +2,12 @@
 import os
 from pathlib import Path
 import runpy
-import shutil
-import subprocess
 import tempfile
 import unittest
 
 import yaml
+
+from workload_contracts import public_path, render_kustomization
 
 ROOT = Path(__file__).resolve().parents[1]
 NAME = 'k8up-restore-drill'
@@ -21,15 +21,14 @@ TARGETS = {
 
 
 def render(path):
-    cmd = ['kustomize', 'build'] if shutil.which('kustomize') else ['kubectl', 'kustomize']
-    return {(d['kind'], d['metadata']['name']): d for d in yaml.safe_load_all(
-        subprocess.check_output([*cmd, str(ROOT / path)]))}
+    return {(d['kind'], d['metadata']['name']): d for d in render_kustomization(ROOT, ROOT / path)}
 
 
 class DrillManifests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.docs = {ns: render(t[0]) for ns, t in TARGETS.items()}
+        cls.seed = yaml.safe_load(public_path(ROOT, f'{BACKUP}/manual/seed-job.yaml').read_text())
 
     def test_sources_and_schedule_ownership(self):
         schedules = set()
@@ -41,7 +40,9 @@ class DrillManifests(unittest.TestCase):
                 self.assertEqual(app['spec']['destination']['namespace'], ns)
                 self.assertEqual(docs['CronJob', NAME]['metadata']['namespace'], ns)
                 cron = docs['CronJob', NAME]['spec']; job = cron['jobTemplate']['spec']
-                self.assertTrue(cron['suspend']); self.assertEqual(cron['timeZone'], 'Europe/Berlin')
+                self.assertIs(cron['suspend'], True); self.assertEqual(cron['timeZone'], 'Europe/Berlin')
+                self.assertNotIn('argocd.argoproj.io/ignore-healthcheck',
+                                 docs['CronJob', NAME]['metadata'].get('annotations', {}))
                 self.assertEqual(cron['concurrencyPolicy'], 'Forbid')
                 self.assertRegex(cron['schedule'], r'^\d+ \d+ \* \* [0-6]$')
                 schedules.add(cron['schedule'])
@@ -94,6 +95,7 @@ class DrillManifests(unittest.TestCase):
                     self.assertEqual([c['name'] for c in stages], ['restore', 'verify'])
                     self.assertEqual(stages[-1]['args'], ['canary'])
                 else:
+                    self.assertEqual(pod['nodeSelector'], {'monitoring': 'true'})
                     self.assertEqual(restore['args'], ['prometheus-stream', '691200'])
                     self.assertEqual([c['name'] for c in stages], ['restore', 'validate-archive', 'verify'])
                     self.assertEqual(stages[1]['command'][-2:], ['/tools/verify.py', 'prometheus'])
@@ -104,7 +106,7 @@ class DrillManifests(unittest.TestCase):
             job = docs['CronJob', NAME]['spec']['jobTemplate']['spec']
             pods = [job['template']]
             if ns == 'backup-validation':
-                pods.append(docs['Job', 'k8up-canary-seed-v1']['spec']['template'])
+                pods.append(self.seed['spec']['template'])
                 for name in ('allow-backup-validation-egress', 'allow-backup-validation-metrics'):
                     selector = docs['NetworkPolicy', name]['spec']['podSelector']
                     self.assertIn({'key': LABEL, 'operator': 'NotIn', 'values': [NAME]}, selector['matchExpressions'])
@@ -117,16 +119,24 @@ class DrillManifests(unittest.TestCase):
                              'policyTypes': ['Ingress', 'Egress'], 'ingress': [], 'egress': []})
 
     def test_one_shot_seed_is_confined_and_non_destructive(self):
-        docs = self.docs['backup-validation']; job = docs['Job', 'k8up-canary-seed-v1']['spec']
-        self.assertTrue(job['suspend']); self.assertNotIn('ttlSecondsAfterFinished', job)
+        identity = ('Job', 'k8up-canary-seed-v1')
+        self.assertEqual(self.seed['kind'], identity[0])
+        self.assertEqual(self.seed['metadata'], {'name': identity[1], 'namespace': 'backup-validation'})
+        for rendered in self.docs.values():
+            self.assertNotIn(identity, rendered)
+        docs = self.docs['backup-validation']; job = self.seed['spec']
+        self.assertFalse(job.get('suspend', False)); self.assertEqual(job['ttlSecondsAfterFinished'], 3600)
+        self.assertEqual(job['backoffLimit'], 0); self.assertEqual(job['activeDeadlineSeconds'], 300)
         pod = job['template']['spec']; self.assertFalse(pod['automountServiceAccountToken'])
         fixture, tool = pod['volumes']; self.assertEqual(fixture['persistentVolumeClaim'], {'claimName': 'k8up-validation-canary'})
         pvc = docs['PersistentVolumeClaim', 'k8up-validation-canary']; self.assertEqual(pvc['spec']['resources']['requests']['storage'], '128Mi')
         self.assertEqual(pvc['metadata']['annotations']['k8up.io/backup'], 'true')
         self.assertNotIn('env', pod['containers'][0])
-        self.assertNotIn(('Job', 'k8up-canary-seed-v1'), self.docs['kube-prometheus-stack'])
         script = ROOT / BACKUP / 'restore-drill/seed.py'
-        self.assertEqual(docs['ConfigMap', tool['configMap']['name']]['data']['seed.py'], script.read_text())
+        cm = docs['ConfigMap', tool['configMap']['name']]
+        self.assertEqual(cm['metadata']['namespace'], self.seed['metadata']['namespace'])
+        self.assertIs(cm['immutable'], True)
+        self.assertEqual(cm['data'], {'seed.py': script.read_text()})
         seed = runpy.run_path(str(script))['seed']
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp); marker = root / 'marker.txt'; other = root / 'other'

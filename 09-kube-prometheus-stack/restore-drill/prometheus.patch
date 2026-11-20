@@ -8,6 +8,7 @@ spec:
     spec:
       template:
         spec:
+          nodeSelector: {monitoring: 'true'}
           initContainers:
             - name: restore
               args: [prometheus-stream, '691200']

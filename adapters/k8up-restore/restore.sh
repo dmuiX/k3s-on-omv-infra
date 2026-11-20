@@ -43,7 +43,11 @@ selected=$(jq -ers --arg host "$host" --arg path "$path" --argjson age "$2" '
     select(length == 1) | .[0] | select(type == "array" and (length == 1 or length == 2))
     | sort_by(.time | epoch) | select(length == 1 or (.[0].time|epoch) < (.[1].time|epoch)) | last
     | select(.hostname == $host and .paths == [$path] and (.id | test("\\A[0-9a-f]{64}\\z")))
-    | select($host == "backup-validation" or (.tags | sort) == ["prometheus-replica-0", "prometheus-tsdb"])
+    # The validation Schedule has no backup.tags; K8up v2.16 adds no default
+    # tag. Restic 0.19 omits tags for an empty list. Check *after* choosing
+    # the newest snapshot, so a tagged manual run cannot cause fallback.
+    | select(if $host == "backup-validation" then (has("tags") | not) or .tags == []
+             else (.tags | sort) == ["prometheus-replica-0", "prometheus-tsdb"] end)
     | (now - (.time | epoch)) as $elapsed | select($elapsed >= 0 and $elapsed <= $age)
     | [.id, .time, (.time | epoch | floor)] | @tsv
 ' .stage/list 2>/dev/null) || die 'no unambiguous fresh snapshot of expected source'

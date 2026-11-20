@@ -7,6 +7,8 @@ import unittest
 
 import yaml
 
+from workload_contracts import render_kustomization
+
 INFRA = Path(__file__).resolve().parents[1]
 LIVE = Path(os.environ.get('PLATFORM_LIVE_REPO', INFRA.parent / 'k3s-on-omv-live'))
 APPS = Path(os.environ.get('PLATFORM_APPS_REPO', INFRA.parent / 'k3s-on-omv-apps'))
@@ -91,8 +93,7 @@ class RemainingAPINetwork(unittest.TestCase):
                                    'cnpg.io/podRole': 'instance'}}
         validator = {'matchLabels': {'app.kubernetes.io/name': 'postgresql-restore-validation'}}
 
-        output = subprocess.check_output(['kustomize', 'build', INFRA / '08-backup-validation/resources'])
-        docs = list(yaml.safe_load_all(output))
+        docs = render_kustomization(INFRA, INFRA / '08-backup-validation/resources')
         job, = (d for d in docs if d['kind'] == 'CronJob' and d['metadata']['name'] == 'postgresql-restore-validation')
         labels = job['spec']['jobTemplate']['spec']['template']['metadata']['labels']
         self.assertLessEqual(validator['matchLabels'].items(), labels.items())

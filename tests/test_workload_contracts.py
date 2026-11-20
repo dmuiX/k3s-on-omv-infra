@@ -5,6 +5,9 @@ from pathlib import Path
 import tempfile
 from typing import Any
 import unittest
+from unittest.mock import patch
+
+import yaml
 
 
 class WorkloadContractBoundaries(unittest.TestCase):
@@ -35,17 +38,110 @@ class WorkloadContractBoundaries(unittest.TestCase):
             base.mkdir()
             (app / "kustomization.yaml").write_text("resources: [../base]")
             config = base / "kustomization.yaml"
-            config.write_text("resources: []")
+            (base / "source").touch()
+            config.write_text(
+                "configMapGenerator: [{name: fixture, files: [key=source]}]"
+            )
             validate_kustomization(root, app)
             config.write_text("resources: [../../private.yml]")
             with self.assertRaisesRegex(ValueError, "escapes repository"):
                 validate_kustomization(root, app)
 
+    def test_kustomize_rejects_unconfined_inputs_before_invoking_renderer(self) -> None:
+        from workload_contracts import render_kustomization
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve() / "repo"
+            app, base = root / "app", root / "base"
+            app.mkdir(parents=True)
+            base.mkdir()
+            (app / "kustomization.yaml").write_text("resources: [../base]")
+            outside = root.parent / "outside.yaml"
+            outside.touch()
+            checkout = base / "nested-checkout"
+            checkout.mkdir()
+            (checkout / ".git").touch()
+            (checkout / "input").touch()
+            (base / "link").symlink_to(outside)
+            config = base / "Kustomization"
+            cases: list[dict[str, Any]] = [
+                {key: ["link"]} for key in ("resources", "bases", "components")
+            ]
+            cases += [
+                {"patches": [{"path": str(outside)}]},
+                {"patches": [{"path": "link"}]},
+                {"resources": ["https://example.invalid/repo?ref=main"]},
+                {"resources": ["git@example.invalid:org/repo"]},
+                {"resources": ["missing.yaml"]},
+                {"resources": ["nested-checkout/input"]},
+                {"resources": ["../app/kustomization.yaml"]},
+                {"patches": [{"path": "../app"}]},
+            ]
+            for kind in ("configMapGenerator", "secretGenerator"):
+                for source in (
+                    {"files": ["link"]},
+                    {"files": ["entry=link"]},
+                    {"env": "link"},
+                    {"envs": ["link"]},
+                ):
+                    cases.append({kind: [{"name": "fixture", **source}]})
+            # Unsupported loaders are denied outright rather than trusting the tool's
+            # default restrictions (some can read further files or fetch remote bases).
+            for key in (
+                "patchesJson6902",
+                "patchesStrategicMerge",
+                "replacements",
+                "crds",
+                "configurations",
+                "generators",
+                "transformers",
+                "validators",
+                "openapi",
+                "helmCharts",
+                "helmGlobals",
+            ):
+                cases.append({key: ["link"]})
+            for name in (
+                ".git",
+                "private",
+                "credentials",
+                "secrets",
+                "k3s-on-omv-live",
+                "k3s-on-omv-apps",
+                "k3s-on-omv-bootstrap",
+            ):
+                hidden = base / name
+                hidden.mkdir()
+                (hidden / "input").touch()
+                alias = base / ("alias-" + name)
+                alias.symlink_to(hidden, target_is_directory=True)
+                for parent in (name, alias.name):
+                    cases.append(
+                        {
+                            "configMapGenerator": [
+                                {"name": "cm", "files": [f"key={parent}/input"]}
+                            ]
+                        }
+                    )
+            with patch("workload_contracts.subprocess.run") as run:
+                for case in cases:
+                    with self.subTest(case=case):
+                        config.write_text(yaml.safe_dump(case))
+                        with self.assertRaises(ValueError):
+                            render_kustomization(root, app)
+                        run.assert_not_called()
+                config.unlink()
+                config.symlink_to(outside)
+                with self.assertRaises(ValueError):
+                    render_kustomization(root, app)
+                with self.assertRaises(ValueError):
+                    render_kustomization(root, root.parent)
+                run.assert_not_called()
+
     def test_crd_operator_enum_is_a_string_and_python_yaml_tags_are_rejected(
         self,
     ) -> None:
         from workload_contracts import parse_documents
-        import yaml
 
         result = parse_documents(
             'kind: CustomResourceDefinition\nmetadata: {name: fixture}\nspec: {enum: [=, "!="]}\n'

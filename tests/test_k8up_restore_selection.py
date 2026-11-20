@@ -3,6 +3,7 @@ import datetime as dt
 import json
 import os
 from pathlib import Path
+import shlex
 import shutil
 import subprocess
 import tempfile
@@ -57,8 +58,8 @@ esac
 ''')
         stub.chmod(0o700)
 
-    def invoke(self, source, success):
-        proc = subprocess.run(['sh', SCRIPT, source, '3600'], env=self.env, capture_output=True)
+    def invoke(self, source, success, script=SCRIPT):
+        proc = subprocess.run(['sh', script, source, '3600'], env=self.env, capture_output=True)
         self.assertEqual(proc.returncode == 0, success, proc.stderr)
         self.assertNotIn(b'PASS', proc.stdout + proc.stderr)
         self.assertEqual(b'result=FAIL' in proc.stderr, not success)
@@ -106,6 +107,21 @@ esac
                 self.scratch.mkdir()
         self.assertNotIn(' restore ', (self.root / 'calls').read_text())
 
+    def test_newest_canary_must_be_untagged(self):
+        older = snapshot(id='c'*64, time=timestamp(-400))
+        for tags in (['manual'], ['unexpected'], TAGS, False, None, ''):
+            with self.subTest(tags=tags):
+                self.assertEqual(self.exercise([older, snapshot(tags=tags)]), b'')
+                shutil.rmtree(self.scratch)
+                self.scratch.mkdir()
+        self.assertNotIn(' restore ', (self.root / 'calls').read_text())
+
+    def test_reject_invalid_calendar_date(self):
+        # A normalizing date parser could roll this older record into March
+        # and silently accept the newer one instead of failing the listing.
+        self.assertEqual(self.exercise([snapshot(time='2025-02-29T04:17:00Z'), snapshot()]), b'')
+        self.assertNotIn(' restore ', (self.root / 'calls').read_text())
+
     def test_reject_canary_prefix(self):
         self.exercise([snapshot(CANARY + '-other')])
         self.assertNotIn(' restore ', (self.root / 'calls').read_text())
@@ -123,17 +139,46 @@ esac
         (self.scratch / '.stale').touch()
         self.exercise([snapshot()])
 
-    def test_actual_verified_stream(self):
+    def restic(self, *args, data=None):
+        return subprocess.run(['restic', '--no-cache', *args], input=data, env=self.env,
+                              check=True, capture_output=True).stdout
+
+    def init_real_repo(self):
         self.env['PATH'] = os.environ['PATH']  # No stub. Never use caller repo or credentials.
-        def restic(*args, data=None):
-            return subprocess.run(['restic', '--no-cache', *args], input=data, env=self.env,
-                                  check=True, capture_output=True).stdout
-        self.assertEqual(restic('version').split()[:2], [b'restic', b'0.19.0'])
-        restic('init')
-        restic('backup', '--stdin', '--stdin-filename', STREAM, '--host', 'kube-prometheus-stack',
-               '--tag', ','.join(TAGS), data=b'synthetic bytes')
-        restic('backup', '--stdin', '--stdin-filename', '/other', data=b'unrelated')
-        snapshots = json.loads(restic('snapshots', '--json', '--path', STREAM))
+        self.assertEqual(self.restic('version').split()[:2], [b'restic', b'0.19.0'])
+        self.restic('init')
+
+    def test_actual_verified_canary_directory(self):
+        self.init_real_repo()
+        # Restic records the absolute source path even for a relative backup.
+        # Relocate only the fixed source in a test copy; never create host /data
+        # or give the deployed script a configurable source root.
+        source = self.root.resolve() / CANARY[1:]
+        source.mkdir(parents=True)
+        marker = b'k8up-validation-canary:v1\n'
+        (source / 'marker.txt').write_bytes(marker)
+        script = self.root / 'restore.sh'
+        assignment = 'path=' + CANARY
+        original = SCRIPT.read_text()
+        self.assertEqual(original.count(assignment), 1)
+        script.write_text(original.replace(assignment, 'path=' + shlex.quote(str(source))))
+        self.restic('backup', '--host', 'backup-validation', str(source))
+        record, = json.loads(self.restic('snapshots', '--json'))
+        self.assertEqual(record['paths'], [str(source)])
+        self.assertNotIn('tags', record)
+        shutil.rmtree(source)
+        log = self.invoke('canary', True, script)
+        self.assertEqual(log.decode(), f'snapshot_id={record["id"]} time={record["time"]}\n')
+        restored = self.scratch / 'restored' / source.relative_to('/')
+        self.assertEqual((restored / 'marker.txt').read_bytes(), marker)
+        self.assertFalse((self.scratch / 'snapshot-seconds').exists())
+
+    def test_actual_verified_stream(self):
+        self.init_real_repo()
+        self.restic('backup', '--stdin', '--stdin-filename', STREAM, '--host', 'kube-prometheus-stack',
+                    '--tag', ','.join(TAGS), data=b'synthetic bytes')
+        self.restic('backup', '--stdin', '--stdin-filename', '/other', data=b'unrelated')
+        snapshots = json.loads(self.restic('snapshots', '--json', '--path', STREAM))
         # Make repository writes (including a transient lock) impossible for non-root callers.
         dirs = [self.repo, *(p for p in self.repo.rglob('*') if p.is_dir())]
         for p in dirs:
@@ -144,7 +189,10 @@ esac
         self.env['RESTIC_PASSWORD'] = 'disposable-test-only'
         log = self.invoke('prometheus-stream', True)
         self.assertEqual((self.scratch / 'restored' / STREAM[1:]).read_bytes(), b'synthetic bytes')
-        self.assertIn(f'snapshot_id={snapshots[0]["id"]} '.encode(), log)
+        record, = snapshots
+        self.assertEqual(log.decode(), f'snapshot_id={record["id"]} time={record["time"]}\n')
+        seconds = int(dt.datetime.fromisoformat(record['time'].replace('Z', '+00:00')).timestamp())
+        self.assertEqual((self.scratch / 'snapshot-seconds').read_text(), f'{seconds}\n')
 
 
 if __name__ == '__main__':

@@ -9,7 +9,7 @@ resources:
   - ../restore-drill
 # Policies are additive. Keep the existing general grants for other workloads,
 # not the offline drill or seed. Live's namespace-wide API and HTTPS grants
-# must receive the same exclusion before either suspended workload is run.
+# must receive the same exclusion before a drill or the manual seed is run.
 patches:
   - target:
       group: networking.k8s.io

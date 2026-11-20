@@ -3,7 +3,8 @@ kind: Kustomization
 namespace: backup-validation
 resources:
   - ../../adapters/k8up-restore
-  - seed-job.yaml
 configMapGenerator:
-  - name: k8up-canary-seed
+  # Stable, versioned reference for the separately created manual/seed-job.yaml.
+  - name: k8up-canary-seed-v1
+    options: {disableNameSuffixHash: true, immutable: true}
     files: [seed.py]
