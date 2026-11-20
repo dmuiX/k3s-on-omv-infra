@@ -2,11 +2,10 @@
 
 ## Ownership and limitations
 
-`kube-prometheus-stack` owns the ServiceAccount, Policy, AuthBackendRole,
-ConfigMap and NetworkPolicy named `grafana-admin-provisioner`. The standalone
-`grafana-admin-bootstrap` Job uses that account, pod label and
-`vault://grafana-admin-provisioner` audience. It is not part of any Argo CD
-source and a full monitoring sync never starts it.
+`kube-prometheus-stack` owns the create-once `grafana-admin-provisioner` Sync
+hook and ServiceAccount. Its Policy, AuthBackendRole, ConfigMap, NetworkPolicy,
+labels, script login, volume references and `vault://grafana-admin-provisioner`
+audience all use the same producer name.
 It uses the existing shared custody helper, audience-bound Kubernetes login,
 CAS-0 writes and a read/create-only ACL for `kv/data/monitoring/grafana-admin`.
 The fixed login is `admin`; the password is generated in memory. Repeated syncs
@@ -36,14 +35,14 @@ password changes require an attended KV/DB alignment and pod rollout as well;
 there is no continuous reset controller or automatic restart target here.
 
 Reader resources (VaultAuth, Secret delivery, reader ACL and login role) are
-colocated in `resources/grafana.yaml`. Producer prerequisites stay in
-`resources/provision-credentials.yaml`; the Job lives in
-[`bootstrap/grafana-admin-job.yaml`](../09-kube-prometheus-stack/bootstrap/grafana-admin-job.yaml),
-outside Argo's `resources` source. Shared transport is handled separately by
-Infra #70, not duplicated here.
+colocated in `resources/grafana.yaml`. Producer resources stay together in
+`resources/provision-credentials.yaml`; mixing their Kubernetes kinds is
+intentional because they implement one bounded producer. Shared transport is
+handled separately by Infra #70, not duplicated here.
 
-If a legacy producer is still running, wait for it to finish before starting
-another. Pruning is disabled: old Jobs/accounts require separate retirement. Keep
+If the previous Job/ServiceAccount name was deployed, stop or await any active
+old producer before an approved renamed-hook sync. Pruning is disabled: old
+Jobs/accounts can remain after rename and require separate retirement. Keep
 existing policies, roles, KV history and Secrets; never recreate credentials to
 clean up names. The new account remains distinct from the normal Grafana reader. Bootstrap #64
 must authorize the canonical management paths before producer reconciliation.
@@ -75,37 +74,13 @@ Native capabilities checked before implementation:
   and refuses non-admin accounts. It may report a missing admin without a nonzero
   exit, so verify the success message and authenticated login, not just exit code.
 
-## Bootstrap and existing-cluster handoff
+## Attended rollout (not executed by this change)
 
-**New clusters:** Use the paired Bootstrap change for `ansible/gitops-openbao.yml`.
-It runs this step after `openbao-config` is Synced and before final Infra
-acceptance. It waits for Argo to apply the `grafana-admin` VaultStaticSecret and
-skips Job creation when VSO has already synced it. Otherwise it requires the
-producer Policy and AuthBackendRole to be Ready and Synced and creates the
-standalone Job from the exact Infra revision Argo resolved for monitoring. A
-resumed run observes that same Job; it does not recreate a failed Job. The Job’s
-native retry budget permits the third container to run and is still bounded by
-its 600-second deadline. The procedure stops on Job failure and requires VSO
-`SecretSynced`/`Ready` and a completed Grafana rollout before accepting Infra.
-Do not start a new install during rollout of the paired changes. A retained
-failed standalone Job needs attended diagnosis and cleanup before a retry;
-never delete OpenBao credential history to repair it.
-
-**Already initialized:** Before merging the cutover, verify a fresh successful
-`grafana-admin` VSO reconciliation and both Grafana replicas Ready. After the
-change, verify a full monitoring sync succeeds without creating any provisioner
-Pod. Do not create the standalone Job or adopt the failed hook. With pruning
-disabled, the old `grafana-admin-provisioner` Job will remain as a prune
-candidate; retire only that exact Job in a separately approved cleanup. Keep
-its ServiceAccount, the OpenBao entry, the VSO Secret and PostgreSQL unchanged.
-Do not enable blanket pruning to remove it.
-
-## Attended legacy password alignment
-
-This is only for deployments that still have a password mismatch between the
-existing PostgreSQL admin account and OpenBao; it is not part of the Job
-handoff. Every live mutation requires separate approval. Provider access
-maintenance remains a separate admin/MFA playbook.
+Every live mutation requires separate approval. This draft is stacked on the
+platform adoption draft; it does not authorize that adoption or bypass its gates.
+Do not run the full bootstrap or change unrelated in-progress migrations for
+this repair. Provider access maintenance is a separate admin/MFA playbook;
+review and approve its exact versioned ACL changes before execution.
 
 1. Review/publish only this scoped change through the normal process. Before the
    monitoring sync, an authorized OpenBao operator must update the existing
@@ -119,10 +94,11 @@ maintenance remains a separate admin/MFA playbook.
    that the existing admin login is `admin` and its numeric user ID is 1 through
    an authorized account or a narrowly reviewed, non-secret DB query. If not,
    stop and adapt the fixed identity/user ID; do not create a second admin.
-3. Require the standalone bootstrap or existing-cluster handoff above to have
-   succeeded. Confirm VSO delivery and the expected owner on `grafana-admin`.
-   Inspect metadata/conditions only, never `kubectl get secret -o yaml`, decoded
-   data, pod environment or debug logs.
+3. Sync `kube-prometheus-stack` normally. Helper and producer prerequisites are
+   wave -2, create-once hook -1, and native chart/VSO consumers wave 0. Require
+   Ready/Synced producer policy/login role, successful hook, VSO Ready and a
+   VSO ownerReference on `grafana-admin`. Inspect metadata/conditions only, never
+   `kubectl get secret -o yaml`, decoded data, pod environment or debug logs.
    Confirm the chart render has no admin Secret and both replicas/sidecars refer
    to `grafana-admin`. Existing prune-disabled policy retains the old chart
    Secret; leave it unused, not adopted or overwritten. If the old `grafana-vso`
@@ -178,8 +154,8 @@ maintenance remains a separate admin/MFA playbook.
 6. Verify UI login as `admin` over the existing TLS route, successful sidecar
    reloads without 401, both replicas Ready and Argo/VSO healthy. Both pods must
    have been recreated with the new Secret references; if cutover left an old
-   pod, authorize a normal Grafana-only rollout. Confirm a later monitoring sync
-   does not rerun provisioning, reset the DB or change the credential. Observe no
+   pod, authorize a normal Grafana-only rollout. Test a second sync reuses KV
+   version 1 and does not reset the DB or change the credential. Observe no
    credential values during validation. Cleanup of the unused old Secret is a
    separate approved operation after acceptance, not required to restore login.
 

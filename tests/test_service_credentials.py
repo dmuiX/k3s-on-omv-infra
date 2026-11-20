@@ -32,8 +32,6 @@ MANIFESTS = {
     'k3s-postgres': INFRA / '07-k3s-postgres/resources/provision-credentials.yaml',
 }
 DOCUMENTS = {name: list(yaml.safe_load_all(path.read_text())) for name, path in MANIFESTS.items()}
-DOCUMENTS['grafana'].append(yaml.safe_load(
-    (INFRA / '09-kube-prometheus-stack/bootstrap/grafana-admin-job.yaml').read_text()))
 MANIFEST = INFRA / 'adapters/credential-custody/resources.yaml'
 SCRIPT = next(d['data']['credential_helpers.py'] for d in yaml.safe_load_all(MANIFEST.read_text())
               if d['kind'] == 'ConfigMap')
@@ -112,21 +110,18 @@ class ServiceCredentialContracts(unittest.TestCase):
                     checked += 1
         self.assertGreater(checked, 20, 'The lifecycle contract must cover the actual consumers')
 
-    def test_jobs_keep_narrow_identity_and_bounded_lifecycle(self):
+    def test_jobs_are_consumer_owned_before_secret_consumers_and_bounded(self):
         for name, documents in DOCUMENTS.items():
             with self.subTest(consumer=name):
                 script = next(d['data']['provision.py'] for d in documents if d['kind'] == 'ConfigMap')
                 compile(script, '<' + name + '-provision>', 'exec')
                 job = next(d for d in documents if d['kind'] == 'Job')
-                if name == 'grafana':
-                    self.assertNotIn('annotations', job['metadata'])
-                else:
-                    wave = '-1' if name in ('k3s-postgres', 'radar') else '1'
-                    self.assertEqual(job['metadata']['annotations']['argocd.argoproj.io/sync-wave'], wave)
+                wave = '-1' if name in ('k3s-postgres', 'radar', 'grafana') else '1'
+                self.assertEqual(job['metadata']['annotations']['argocd.argoproj.io/sync-wave'], wave)
                 self.assertEqual(job['spec']['activeDeadlineSeconds'], 600)
                 pod = job['spec']['template']['spec']
                 self.assertFalse(pod['automountServiceAccountToken'])
-                self.assertEqual(pod['restartPolicy'], 'Never' if name == 'radar' else 'OnFailure')
+                self.assertEqual(pod['restartPolicy'], 'Never')
                 self.assertEqual(job['metadata']['namespace'], {
                     'k3s-postgres': 'cloudnative-pg', 'grafana': 'kube-prometheus-stack'}.get(name, name))
                 self.assertEqual(job['spec']['template']['metadata']['labels']['istio.io/dataplane-mode'], 'ambient')

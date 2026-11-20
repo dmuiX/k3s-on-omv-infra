@@ -36,6 +36,12 @@ class RepositoryWorkloads(unittest.TestCase):
                 "Job",
                 "5f81c185c941619867900e214e96812eb0e978c7452bd66df99004f33448a0b3",
             ),
+            (
+                "kube-prometheus-stack",
+                "grafana-admin-provisioner",
+                "Job",
+                "74cd024b8b115a9b9cb97b28be6d2575402444b5e179b3c07f5a14d0514164e8",
+            ),
         )
         repo = Repository()
         for app, name, kind, baseline in cases:
@@ -61,7 +67,11 @@ class RepositoryWorkloads(unittest.TestCase):
                     )
                     native = spec
                     self.assertNotIn("ttlSecondsAfterFinished", native)
-                    self.assertEqual(native["backoffLimit"], 2)
+                    self.assertEqual(
+                        native["backoffLimit"],
+                        10 if name == "grafana-admin-provisioner" else 2,
+                    )
+                    native["backoffLimit"] = 2
                 pod = native["template"]["spec"]
                 self.assertEqual(pod["restartPolicy"], "OnFailure")
                 pod["restartPolicy"] = "Never"
@@ -146,64 +156,6 @@ class RepositoryWorkloads(unittest.TestCase):
                 self.assertEqual(stored, first)
                 self.assertEqual(len(writes), 1)
                 self.assertEqual(login.call_count, 2)
-
-    def test_grafana_producer_is_an_explicit_bootstrap_job_not_a_sync_hook(
-        self,
-    ) -> None:
-        from workload_contracts import Repository, parse_documents
-
-        repo = Repository()
-        docs = repo.render("kube-prometheus-stack")
-        producer = "grafana-admin-provisioner"
-        self.assertFalse(
-            any(
-                d["kind"] in {"Job", "CronJob"} and producer in str(d["spec"])
-                for d in docs
-            ),
-            "Monitoring sync must not run the Grafana administrator bootstrap",
-        )
-
-        path = repo.root / "09-kube-prometheus-stack/bootstrap/grafana-admin-job.yaml"
-        (job,) = parse_documents(path.read_text())
-        self.assertEqual(job["kind"], "Job")
-        self.assertEqual(job["metadata"]["name"], "grafana-admin-bootstrap")
-        self.assertEqual(job["metadata"]["namespace"], "kube-prometheus-stack")
-        self.assertNotIn("annotations", job["metadata"])
-        spec = job["spec"]
-        self.assertNotIn("ttlSecondsAfterFinished", spec)
-        self.assertEqual(spec["activeDeadlineSeconds"], 600)
-        self.assertEqual(spec["backoffLimit"], 3)
-        template = spec["template"]
-        pod = template["spec"]
-        self.assertEqual(pod["restartPolicy"], "OnFailure")
-        self.assertEqual(pod["serviceAccountName"], producer)
-        self.assertFalse(pod["automountServiceAccountToken"])
-        self.assertEqual(
-            template["metadata"]["labels"]["app.kubernetes.io/name"], producer
-        )
-        self.assertEqual(
-            {d["kind"] for d in docs if d["metadata"]["name"] == producer},
-            {
-                "ConfigMap",
-                "ServiceAccount",
-                "NetworkPolicy",
-                "Policy",
-                "AuthBackendRole",
-            },
-        )
-        auth = next(
-            d
-            for d in docs
-            if d["kind"] == "AuthBackendRole" and d["metadata"]["name"] == producer
-        )
-        self.assertEqual(auth["spec"]["forProvider"]["audience"], f"vault://{producer}")
-        self.assertEqual(
-            auth["spec"]["forProvider"]["boundServiceAccountNames"], [producer]
-        )
-        self.assertEqual(
-            {v["configMap"]["name"] for v in pod["volumes"] if "configMap" in v},
-            {producer, "credential-custody"},
-        )
 
     def test_barman_controller_is_ha_bounded_and_uses_its_native_account(self) -> None:
         from workload_contracts import Repository
