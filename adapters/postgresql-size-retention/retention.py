@@ -119,8 +119,8 @@ def _lease() -> tuple[str, datetime]:
     with urllib.request.urlopen(request, context=context, timeout=15) as response:
         payload = json.load(response)
     annotations = payload.get("metadata", {}).get("annotations", {})
-    if annotations.get("k3s-on-omv.io/pitr-verified") != "true" or annotations.get("k3s-on-omv.io/omv-mirror-verified") != "true":
-        raise RuntimeError("restore evidence does not cover PITR and the OMV mirror")
+    if annotations.get("k3s-on-omv.io/restore-target-verified") != "true" or annotations.get("k3s-on-omv.io/omv-mirror-verified") != "true":
+        raise RuntimeError("restore evidence does not verify the recovery target time and OMV mirror")
     renewed = payload.get("spec", {}).get("renewTime")
     if not renewed:
         raise RuntimeError("restore evidence has no renewal timestamp")
