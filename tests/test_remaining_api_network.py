@@ -76,6 +76,33 @@ class RemainingAPINetwork(unittest.TestCase):
                 'cnpg.io/cluster': 'k3s-postgres', 'cnpg.io/podRole': 'instance'}}}], 'ports': tcp(15008)}],
         })
 
+    def test_rendered_restore_instance_paths(self):
+        from test_native_chart_migrations import render
+
+        app = load(INFRA / '02-controllers/cloudnative-pg/app.yml')
+        deployment, = (d for d in render(app) if d['kind'] == 'Deployment')
+        operator = {**namespace(app['spec']['destination']['namespace']),
+                    'podSelector': deployment['spec']['selector']}
+        restore = {'matchLabels': {'cnpg.io/cluster': 'postgresql-pitr-validation',
+                                   'cnpg.io/podRole': 'instance'}}
+        validator = {'matchLabels': {'app.kubernetes.io/name': 'postgresql-restore-validation'}}
+
+        output = subprocess.check_output(['kustomize', 'build', INFRA / '08-backup-validation/resources'])
+        docs = list(yaml.safe_load_all(output))
+        job, = (d for d in docs if d['kind'] == 'CronJob' and d['metadata']['name'] == 'postgresql-restore-validation')
+        labels = job['spec']['jobTemplate']['spec']['template']['metadata']['labels']
+        self.assertLessEqual(validator['matchLabels'].items(), labels.items())
+        self.assertEqual(job['metadata']['namespace'], 'backup-validation')
+        policies = {d['metadata']['name']: d['spec'] for d in docs if d['kind'] == 'NetworkPolicy'
+                    and d['metadata']['namespace'] == 'backup-validation'}
+        self.assertEqual(policies.get('allow-restore-instance-ingress'), {
+            'podSelector': restore, 'policyTypes': ['Ingress'], 'ingress': [
+                {'from': [operator], 'ports': tcp(8000, 15008)},
+                {'from': [{'podSelector': validator}], 'ports': tcp(5432, 15008)}]})
+        self.assertEqual(policies.get('allow-validator-to-restore-instance'), {
+            'podSelector': validator, 'policyTypes': ['Egress'],
+            'egress': [{'to': [{'podSelector': restore}], 'ports': tcp(5432, 15008)}]})
+
     def test_live_https_exceptions_preserve_exact_targeting(self):
         for directory, resource, policy_name in (
             ('backup-validation', '08-backup-validation/resources/network-policy.yaml',
