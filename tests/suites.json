@@ -5,7 +5,7 @@
     "test_cloudnativepg_vso_account",
     "test_credential_resource_ownership",
     "test_k3s_component_metrics",
-    "test_k8up_drill_manifests",
+    "test_k8up_restore_manifests",
     "test_k8up_restore_selection",
     "test_k8up_restore_verify",
     "test_longhorn_discard",

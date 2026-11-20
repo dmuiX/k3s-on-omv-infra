@@ -11,7 +11,7 @@ spec:
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: k8up-restore-drill
+        app.kubernetes.io/name: k8up-restore-test
         istio.io/dataplane-mode: none
         sidecar.istio.io/inject: 'false'
     spec:

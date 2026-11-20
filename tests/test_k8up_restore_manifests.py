@@ -10,13 +10,13 @@ import yaml
 from workload_contracts import public_path, render_kustomization
 
 ROOT = Path(__file__).resolve().parents[1]
-NAME = 'k8up-restore-drill'
+NAME = 'k8up-restore-test'
 LABEL = 'app.kubernetes.io/name'
 BACKUP = '08-backup-validation'
 PROM = '09-kube-prometheus-stack'
 TARGETS = {
     'backup-validation': (f'{BACKUP}/resources', 'k8up-omv-repository', 'k8up-repository', '256Mi'),
-    'kube-prometheus-stack': (f'{PROM}/restore-drill', 'prometheus-k8up-repository', 'prometheus-k8up-repository', '48Gi'),
+    'kube-prometheus-stack': (f'{PROM}/restore-test', 'prometheus-k8up-repository', 'prometheus-k8up-repository', '48Gi'),
 }
 
 
@@ -24,7 +24,7 @@ def render(path):
     return {(d['kind'], d['metadata']['name']): d for d in render_kustomization(ROOT, ROOT / path)}
 
 
-class DrillManifests(unittest.TestCase):
+class RestoreTestManifests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.docs = {ns: render(t[0]) for ns, t in TARGETS.items()}
@@ -113,7 +113,7 @@ class DrillManifests(unittest.TestCase):
             for pod in pods:
                 self.assertEqual(pod['metadata']['labels'][LABEL], NAME)
                 self.assertEqual(pod['metadata']['labels']['istio.io/dataplane-mode'], 'none')
-            policy = docs['NetworkPolicy', 'isolate-k8up-restore-drill']
+            policy = docs['NetworkPolicy', 'isolate-k8up-restore-test']
             self.assertEqual(policy['metadata']['namespace'], ns)
             self.assertEqual(policy['spec'], {'podSelector': {'matchLabels': {LABEL: NAME}},
                              'policyTypes': ['Ingress', 'Egress'], 'ingress': [], 'egress': []})
@@ -132,7 +132,7 @@ class DrillManifests(unittest.TestCase):
         pvc = docs['PersistentVolumeClaim', 'k8up-validation-canary']; self.assertEqual(pvc['spec']['resources']['requests']['storage'], '128Mi')
         self.assertEqual(pvc['metadata']['annotations']['k8up.io/backup'], 'true')
         self.assertNotIn('env', pod['containers'][0])
-        script = ROOT / BACKUP / 'restore-drill/seed.py'
+        script = ROOT / BACKUP / 'restore-test/seed.py'
         cm = docs['ConfigMap', tool['configMap']['name']]
         self.assertEqual(cm['metadata']['namespace'], self.seed['metadata']['namespace'])
         self.assertIs(cm['immutable'], True)

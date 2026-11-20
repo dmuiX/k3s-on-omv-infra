@@ -1,11 +1,11 @@
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
-  name: isolate-k8up-restore-drill
+  name: isolate-k8up-restore-test
 spec:
   podSelector:
     matchLabels:
-      app.kubernetes.io/name: k8up-restore-drill
+      app.kubernetes.io/name: k8up-restore-test
   policyTypes: [Ingress, Egress]
   ingress: []
   egress: []

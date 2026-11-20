@@ -640,14 +640,14 @@ class RepositoryWorkloads(unittest.TestCase):
                 "openbao-snapshot",
                 "postgresql-size-retention",
                 "postgresql-restore-validation",
-                "k8up-restore-drill",
+                "k8up-restore-test",
             },
         )
         for job in jobs:
             with self.subTest(job=job["metadata"]["name"]):
                 self.assertEqual(job["spec"]["concurrencyPolicy"], "Forbid")
                 pod = job["spec"]["jobTemplate"]["spec"]["template"]["spec"]
-                if job["metadata"]["name"] == "k8up-restore-drill":
+                if job["metadata"]["name"] == "k8up-restore-test":
                     self.assertIs(pod["automountServiceAccountToken"], False)
                 else:
                     self.assertNotEqual(pod["serviceAccountName"], "default")

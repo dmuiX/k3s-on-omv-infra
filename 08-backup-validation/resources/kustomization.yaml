@@ -6,10 +6,10 @@ resources:
   - postgresql-retention-access.yaml
   - network-policy.yaml
   - validation.yaml
-  - ../restore-drill
+  - ../restore-test
 # Policies are additive. Keep the existing general grants for other workloads,
-# not the offline drill or seed. Live's namespace-wide API and HTTPS grants
-# must receive the same exclusion before a drill or the manual seed is run.
+# not the offline restore test or seed. Live's namespace-wide API and HTTPS
+# grants must exclude the same Pods before either Job runs.
 patches:
   - target:
       group: networking.k8s.io
@@ -23,7 +23,7 @@ patches:
           matchExpressions:
             - key: app.kubernetes.io/name
               operator: NotIn
-              values: [k8up-restore-drill]
+              values: [k8up-restore-test]
 generatorOptions:
   disableNameSuffixHash: true
 configMapGenerator:

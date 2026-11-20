@@ -51,7 +51,7 @@ class ApplicationHealthTest < Minitest::Test
     assert_match(/\b#{expected}\b/, assess(app))
   end
 
-  # The wave-8 and monitoring drill templates rely on the pinned native CronJob
+  # The wave-8 and monitoring restore test templates rely on the pinned native CronJob
   # check, not an ignore-health annotation. Recheck this contract on upgrades.
   def test_suspended_cronjob_does_not_block_but_an_enabled_failure_degrades
     cron = YAML.safe_load(File.read(File.join(ROOT, "adapters/k8up-restore/cronjob.yaml")), aliases: true)
