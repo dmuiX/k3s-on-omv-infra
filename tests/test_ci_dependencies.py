@@ -74,7 +74,14 @@ class DependencyIntegrity(unittest.TestCase):
                 "url": "https://github.com/example/tool",
                 "sha256": "a" * 64,
             }
-            for name in ("helm", "argocd", "kustomize", "promtool", "restic")
+            for name in (
+                "helm",
+                "argocd",
+                "kustomize",
+                "prometheus",
+                "promtool",
+                "restic",
+            )
         }
         validate_tools(tools)
         tools["../escaped"] = tools.pop("helm")

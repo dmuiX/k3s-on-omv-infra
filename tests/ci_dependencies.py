@@ -81,7 +81,14 @@ class PublicRedirects(HTTPRedirectHandler):
 
 def validate_tools(tools: dict[str, Any]) -> None:
     """Close executable names and integrity/version inputs before writing files."""
-    if set(tools) != {"helm", "argocd", "kustomize", "promtool", "restic"}:
+    if set(tools) != {
+        "helm",
+        "argocd",
+        "kustomize",
+        "prometheus",
+        "promtool",
+        "restic",
+    }:
         raise ValueError("Invalid tool names")
     for tool in tools.values():
         if (
@@ -173,7 +180,8 @@ def main() -> int:
             if args.only and args.only != name:
                 continue
             context = name + "-" + tool["version"]
-            archive = args.cache / context
+            # Prometheus and promtool are unpacked from the same pinned archive.
+            archive = args.cache / ("tool-" + tool["sha256"])
             download(tool, archive)
             binary = args.bin / name
             if binary.is_symlink():

@@ -66,6 +66,6 @@ case $1 in
 esac
 [ ! -L "$target" ] && [ -f "$target" ] && [ -s "$target" ] || die 'empty or invalid restored source'
 mv .stage/tree restored
-# Trusted scalar handoff for promtool's native time filter, never shell code.
+# Trusted scalar handoff for the API query evaluation time, never shell code.
 if [ "$1" = prometheus-stream ]; then printf '%s\n' "$seconds" >snapshot-seconds; fi
 rmdir .stage
