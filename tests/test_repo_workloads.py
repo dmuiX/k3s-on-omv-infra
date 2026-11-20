@@ -140,8 +140,10 @@ class RepositoryWorkloads(unittest.TestCase):
                     patch.object(
                         helper, "login", return_value="fixture-token"
                     ) as login,
+                    patch("urllib.request.urlopen") as openbao_health,
                     contextlib.redirect_stdout(io.StringIO()),
                 ):
+                    openbao_health.return_value.__enter__.return_value.status = 200
                     exec(compile(producer, "provision.py", "exec"), namespace)
                     main = namespace["main"]
                     if not callable(main):
@@ -152,6 +154,54 @@ class RepositoryWorkloads(unittest.TestCase):
                 self.assertEqual(stored, first)
                 self.assertEqual(len(writes), 1)
                 self.assertEqual(login.call_count, 2)
+
+    def test_grafana_producer_waits_for_openbao_before_login(self) -> None:
+        import types
+        from unittest.mock import call, patch
+        from urllib.error import URLError
+
+        from workload_contracts import Repository
+
+        docs = Repository().render("kube-prometheus-stack")
+        configs = {
+            d["metadata"]["name"]: d["data"] for d in docs if d["kind"] == "ConfigMap"
+        }
+        helper = types.ModuleType("credential_helpers")
+        exec(configs["credential-custody"]["credential_helpers.py"], vars(helper))
+        script = configs["grafana-admin-provisioner"]["provision.py"]
+        probe = call(vars(helper)["BAO"] + "sys/health", timeout=2)
+
+        with (
+            patch.dict("sys.modules", {"credential_helpers": helper}),
+            patch.object(helper, "login") as login,
+            patch.object(helper, "ensure") as ensure,
+            patch("urllib.request.urlopen") as health,
+            patch("time.sleep"),
+        ):
+            entrypoint = types.ModuleType("grafana_producer")
+            exec(script, vars(entrypoint))
+            main = vars(entrypoint)["main"]
+            unavailable = URLError(ConnectionRefusedError())
+            health.side_effect = unavailable
+            with self.assertRaisesRegex(
+                vars(helper)["Failure"], "OpenBao did not become ready"
+            ):
+                main()
+            self.assertEqual(health.call_args_list, [probe] * 15)
+            login.assert_not_called()
+            ensure.assert_not_called()
+
+            health.reset_mock()
+            response = health.return_value
+            response.__enter__.return_value.status = 200
+            health.side_effect = [unavailable, unavailable, response]
+            # Login must run after the two refused connections and the healthy response.
+            login.side_effect = lambda _: self.assertEqual(
+                health.call_args_list, [probe] * 3
+            )
+            main()
+            login.assert_called_once_with("grafana-admin-provisioner")
+            ensure.assert_called_once()
 
     def test_barman_controller_is_ha_bounded_and_uses_its_native_account(self) -> None:
         from workload_contracts import Repository

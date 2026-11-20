@@ -151,7 +151,8 @@ class GrafanaAdmin(unittest.TestCase):
             store.update(data['data'])
             return {}
 
-        with patch.object(entrypoint, 'login', return_value='test-token'), \
+        with patch.object(entrypoint, 'wait_for_openbao'), \
+                patch.object(entrypoint, 'login', return_value='test-token'), \
                 patch.object(helper, 'request', side_effect=request), \
                 contextlib.redirect_stdout(io.StringIO()) as output:
             entrypoint.main()
