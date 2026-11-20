@@ -14,6 +14,39 @@ All OMV storage is beneath the dedicated `k3s-cluster` Btrfs subvolume on the ve
 
 For the November 2026 WAL-retention incident, recovery gates and the planned December CNPG update follow-up, see [PostgreSQL WAL recovery](postgresql-wal-recovery.md).
 
+## OpenBao synthetic restore smoke test
+
+The one-off [Kubernetes Job](../08-backup-validation/manual/openbao-restore-smoke.yaml)
+is outside Argo CD's source paths. Create it only for an approved run in a fresh
+namespace. It starts two loopback-only OpenBao instances in sequence, saves a
+synthetic Raft snapshot, and restores it without `-force`. The recovered metadata
+must predate the second write, and the restored instance must be the only active
+voter. The Job has no Service, service-account token or persistent volume; it
+uses an isolated namespace with ingress and egress denied and RAM-only scratch.
+The script only makes loopback requests. This is not isolation from privileged
+node or control-plane access.
+
+Confirm the test namespace does not exist. Create the manifest; the Job starts
+suspended. Stop if creation is partial or if the namespace is not dedicated to
+this test. Verify that `deny-all` is the only NetworkPolicy and denies both
+directions for every pod. Then separately release the Job.
+
+```sh
+kubectl --context k3s-on-omv create -f 08-backup-validation/manual/openbao-restore-smoke.yaml
+kubectl --context k3s-on-omv -n openbao-restore-smoke get networkpolicy -o yaml
+```
+
+```sh
+kubectl --context k3s-on-omv -n openbao-restore-smoke patch job openbao-restore-smoke --type=merge -p '{"spec":{"suspend":false}}'
+kubectl --context k3s-on-omv -n openbao-restore-smoke wait --for=condition=complete --timeout=4m job/openbao-restore-smoke
+kubectl --context k3s-on-omv -n openbao-restore-smoke logs job/openbao-restore-smoke
+```
+
+Record Job completion and `PASS` before its TTL clears the Job and Pod. Retire
+only the test namespace after reviewing that it contains no unrelated resources.
+No real backup or seal key is allowed here. Restore testing after a real backup
+requires a separate design and approval for protected handoff and custody.
+
 ## Disposable PITR storage
 
 Only the temporary `backup-validation/postgresql-pitr-validation` Cluster requests the non-default `longhorn-restore-test` class. Its 5 GiB working copy has the same encryption and local placement as `longhorn-local`, but its PV uses `Delete`. CNPG propagates `k8up.io/backup: "false"` so generic backups should not mount the disposable PVC. After success or failure, the validator requests deletion of the temporary Cluster in `finally`; normal owner-reference and CSI cleanup reclaims the disk **after** the PVC is released. A killed Job or an in-use PVC can delay or prevent cleanup. Never force a finalizer. Production PVCs, the mirror, backups and existing retained PVs are unchanged.

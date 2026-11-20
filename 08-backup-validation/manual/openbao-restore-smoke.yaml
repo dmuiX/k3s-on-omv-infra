@@ -1,0 +1,137 @@
+# Run once by hand; not part of an Argo CD source.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: openbao-restore-smoke
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: deny-all
+  namespace: openbao-restore-smoke
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+  ingress: []
+  egress: []
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: openbao-restore-smoke
+  namespace: openbao-restore-smoke
+spec:
+  # Verify the effective namespace isolation before releasing the Pod.
+  suspend: true
+  backoffLimit: 0
+  activeDeadlineSeconds: 240
+  ttlSecondsAfterFinished: 1800
+  template:
+    metadata:
+      labels:
+        istio.io/dataplane-mode: none
+      annotations:
+        sidecar.istio.io/inject: "false"
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile: {type: RuntimeDefault}
+      containers:
+        - name: restore-test
+          image: quay.io/openbao/openbao:2.7.2@sha256:5046911075e137e154ce49ab051502f4ec7cf367d484ae4a4dce665d9b90561f
+          env:
+            - {name: BAO_ADDR, value: "http://127.0.0.1:8200"}
+            - {name: HOME, value: /scratch}
+            - {name: TMPDIR, value: /scratch}
+          command: [/bin/sh, -eu, -c]
+          args:
+            - |
+              umask 077
+              mkdir /scratch/source /scratch/target
+              od -An -N32 -tx1 /dev/urandom | tr -d ' \n' >/scratch/seal-key
+              pid=
+              stop() { if [ -n "$pid" ]; then kill "$pid" 2>/dev/null || :; wait "$pid" 2>/dev/null || :; pid=; fi; }
+              trap stop EXIT
+              start() {
+                cat >"/scratch/$1.hcl" <<EOF
+              ui = false
+              disable_mlock = true
+              api_addr = "http://127.0.0.1:8200"
+              cluster_addr = "https://127.0.0.1:8201"
+              storage "raft" {
+                path = "/scratch/$1"
+                node_id = "$1"
+              }
+              listener "tcp" {
+                address = "127.0.0.1:8200"
+                cluster_address = "127.0.0.1:8201"
+                tls_disable = true
+              }
+              seal "static" {
+                current_key_id = "1"
+                current_key = "file:///scratch/seal-key"
+              }
+              EOF
+                bao server -config="/scratch/$1.hcl" >"/scratch/$1.log" 2>&1 & pid=$!
+                for i in $(seq 1 30); do
+                  if bao status -format=json >/scratch/status.json 2>/dev/null || grep -q '"initialized"' /scratch/status.json; then return; fi
+                  kill -0 "$pid" 2>/dev/null || break
+                  sleep 1
+                done
+                echo "Synthetic $1 process failed to start" >&2
+                return 1
+              }
+              active() {
+                for i in $(seq 1 30); do
+                  if bao status -format=json >/scratch/status.json 2>/dev/null && grep -q '"is_self": true' /scratch/status.json; then return; fi
+                  sleep 1
+                done
+                echo 'Synthetic OpenBao did not become active' >&2
+                return 1
+              }
+              init_token() {
+                bao operator init -format=json | sed -n 's/^ *"root_token": "\([^"]*\)".*/\1/p'
+              }
+              start source
+              source_token=$(init_token)
+              test -n "$source_token"
+              active
+              BAO_TOKEN="$source_token" bao secrets enable -path=restore-proof kv-v2 >/dev/null
+              BAO_TOKEN="$source_token" bao kv put -mount=restore-proof marker value=before >/dev/null
+              BAO_TOKEN="$source_token" bao operator raft snapshot save /scratch/selected.snap
+              BAO_TOKEN="$source_token" bao kv put -mount=restore-proof marker value=after >/dev/null
+              stop
+              start target
+              target_token=$(init_token)
+              test -n "$target_token"
+              active
+              BAO_TOKEN="$target_token" bao operator raft snapshot restore /scratch/selected.snap
+              for i in $(seq 1 30); do
+                if [ "$(BAO_TOKEN="$source_token" bao read -field=current_version restore-proof/metadata/marker 2>/dev/null)" = 1 ]; then break; fi
+                sleep 1
+              done
+              test "$(BAO_TOKEN="$source_token" bao read -field=current_version restore-proof/metadata/marker)" = 1
+              active
+              peers=$(BAO_TOKEN="$source_token" bao operator raft list-peers)
+              printf '%s\n' "$peers" | awk '$1=="target" && $2=="127.0.0.1:8201" && $3=="leader" && $4=="true" {matches++} NR>2 {count++} END {exit !(matches==1 && count==1)}'
+              echo 'PASS: static-seal snapshot restored without force; active single voter; pre-snapshot metadata verified'
+          resources:
+            requests: {cpu: 100m, memory: 192Mi}
+            limits: {cpu: "1", memory: 512Mi}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+          volumeMounts:
+            - {name: scratch, mountPath: /scratch}
+      volumes:
+        - name: scratch
+          emptyDir: {medium: Memory, sizeLimit: 128Mi}

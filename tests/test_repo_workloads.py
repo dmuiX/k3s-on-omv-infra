@@ -629,6 +629,75 @@ class RepositoryWorkloads(unittest.TestCase):
                 {"name": "grafana-admin", "key": key},
             )
 
+    def test_manual_openbao_restore_smoke_is_isolated(self) -> None:
+        import re
+        import subprocess
+
+        from workload_contracts import Repository, parse_documents
+
+        repo = Repository()
+        path = repo.root / "08-backup-validation/manual/openbao-restore-smoke.yaml"
+        namespace, policy, job = parse_documents(path.read_text())
+        self.assertEqual(
+            [d["kind"] for d in (namespace, policy, job)],
+            ["Namespace", "NetworkPolicy", "Job"],
+        )
+        name = namespace["metadata"]["name"]
+        self.assertEqual(name, "openbao-restore-smoke")
+        self.assertEqual(
+            namespace["metadata"]["labels"]["pod-security.kubernetes.io/enforce"],
+            "restricted",
+        )
+        self.assertEqual(policy["metadata"]["namespace"], name)
+        self.assertEqual(job["metadata"]["namespace"], name)
+        self.assertEqual(
+            policy["spec"],
+            {
+                "podSelector": {},
+                "policyTypes": ["Ingress", "Egress"],
+                "ingress": [],
+                "egress": [],
+            },
+        )
+        self.assertIs(job["spec"]["suspend"], True)
+        self.assertEqual(job["spec"]["backoffLimit"], 0)
+        self.assertEqual(job["spec"]["activeDeadlineSeconds"], 240)
+        self.assertEqual(job["spec"]["ttlSecondsAfterFinished"], 1800)
+        pod = job["spec"]["template"]
+        self.assertEqual(pod["metadata"]["labels"]["istio.io/dataplane-mode"], "none")
+        spec = pod["spec"]
+        self.assertIs(spec["automountServiceAccountToken"], False)
+        self.assertFalse(spec.get("hostNetwork", False))
+        self.assertEqual(
+            spec["volumes"],
+            [
+                {
+                    "name": "scratch",
+                    "emptyDir": {"medium": "Memory", "sizeLimit": "128Mi"},
+                }
+            ],
+        )
+        (container,) = spec["containers"]
+        self.assertTrue(container["securityContext"]["readOnlyRootFilesystem"])
+        self.assertEqual(
+            {env["name"]: env["value"] for env in container["env"]},
+            {
+                "BAO_ADDR": "http://127.0.0.1:8200",
+                "HOME": "/scratch",
+                "TMPDIR": "/scratch",
+            },
+        )
+        self.assertNotIn(
+            name, {d["metadata"]["name"] for d in repo.render("backup-validation")}
+        )
+        (script,) = container["args"]
+        self.assertEqual(
+            set(re.findall(r'https?://[^\s"]+', script)),
+            {"http://127.0.0.1:8200", "https://127.0.0.1:8201"},
+        )
+        self.assertNotIn("KUBERNETES_SERVICE", script)
+        subprocess.run(["sh", "-n"], input=script, text=True, check=True)
+
     def test_backup_cronjobs_are_bounded_exclusive_and_use_scoped_or_no_identity(
         self,
     ) -> None:
