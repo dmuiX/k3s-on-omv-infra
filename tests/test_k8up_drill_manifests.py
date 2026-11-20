@@ -65,7 +65,7 @@ class DrillManifests(unittest.TestCase):
                 self.assertEqual(vols['repository']['persistentVolumeClaim'], {'claimName': repo, 'readOnly': True})
                 claim = vols['scratch']['ephemeral']['volumeClaimTemplate']
                 self.assertEqual(claim['metadata']['annotations']['k8up.io/backup'], 'false')
-                self.assertEqual(claim['spec'], {'storageClassName': 'longhorn-restore-test',
+                self.assertEqual(claim['spec'], {'storageClassName': 'longhorn-single-node-delete',
                                  'accessModes': ['ReadWriteOnce'], 'resources': {'requests': {'storage': size}}})
                 tools = docs['ConfigMap', vols['tools']['configMap']['name']]['data']
                 self.assertEqual(set(tools), {'restore.sh', 'verify.py', 'read-samples.sh'})
