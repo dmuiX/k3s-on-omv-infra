@@ -105,7 +105,7 @@ def validation_cluster(target: str) -> dict:
         "metadata": {"name": RESTORE, "namespace": VALIDATION_NS},
         "spec": {
             "instances": 1, "imageName": IMAGE,
-            "storage": {"storageClass": "longhorn-restore-test", "size": "5Gi"},
+            "storage": {"storageClass": "longhorn-single-node-delete", "size": "5Gi"},
             "inheritedMetadata": {"annotations": {"k8up.io/backup": "false"}},
             "bootstrap": {"recovery": {"source": "origin", "recoveryTarget": {"targetTime": target}}},
             "externalClusters": [{"name": "origin", "plugin": {
