@@ -18,6 +18,9 @@ spec:
     helm:
       valuesObject:
         injector:
+          agentImage:
+            # The chart supplies the colon before the tag; use the OCI index digest.
+            tag: '2.7.3@sha256:ba4b133eb9586630024e71a617e66f37f29cc3534cdd46a6233e098ceded8dc9'
           resources:
             requests:
               cpu: 10m
@@ -25,6 +28,8 @@ spec:
             limits:
               memory: 128Mi
         server:
+          image:
+            tag: '2.7.3@sha256:ba4b133eb9586630024e71a617e66f37f29cc3534cdd46a6233e098ceded8dc9'
           # Replaces allow-openbao-raft-and-clients with the chart policy openbao.
           # Pruning is disabled: retain the old resource until reviewed retirement.
           # The accepted native selector adds instance=openbao (not component=server).

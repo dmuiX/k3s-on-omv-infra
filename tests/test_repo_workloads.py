@@ -546,6 +546,31 @@ class RepositoryWorkloads(unittest.TestCase):
             )
         )
 
+    def test_openbao_server_agent_and_test_share_a_digest_pin(self) -> None:
+        from workload_contracts import Repository
+
+        docs = {
+            (doc["kind"], doc["metadata"]["name"]): doc
+            for doc in Repository().render("openbao")
+        }
+        server = docs["StatefulSet", "openbao"]["spec"]["template"]["spec"]
+        image = next(c["image"] for c in server["containers"] if c["name"] == "openbao")
+        self.assertRegex(
+            image,
+            r"^quay\.io/openbao/openbao:[0-9]+\.[0-9]+\.[0-9]+@sha256:[0-9a-f]{64}$",
+        )
+        injector = docs["Deployment", "openbao-agent-injector"]
+        containers = injector["spec"]["template"]["spec"]["containers"]
+        sidecar = next(c for c in containers if c["name"] == "sidecar-injector")
+        (agent_image,) = [
+            e["value"]
+            for e in sidecar["env"]
+            if e["name"] == "AGENT_INJECT_VAULT_IMAGE"
+        ]
+        self.assertEqual(agent_image, image)
+        check = docs["Pod", "openbao-server-test"]["spec"]
+        self.assertEqual(check["containers"][0]["image"], image)
+
     def test_vso_shares_transport_but_has_no_default_authentication(self) -> None:
         from workload_contracts import Repository
 
