@@ -34,7 +34,7 @@ class RetentionManifestTest(unittest.TestCase):
                                      "SecretBackendConnection", "", "postgresql")],
                          "openbao-database-connection.yaml")
 
-    def test_only_restore_cluster_uses_disposable_storage(self):
+    def test_restore_uses_disposable_storage_and_production_retains_data(self):
         root = PATH.parents[2]
         script = root / "08-backup-validation/resources/postgresql_pitr.py"
         spec = spec_from_file_location("postgresql_pitr", script)
@@ -48,7 +48,9 @@ class RetentionManifestTest(unittest.TestCase):
         self.assertEqual(restore["spec"]["bootstrap"]["recovery"]["recoveryTarget"], {"targetTime": target})
         classes = {c["metadata"]["name"]: c for c in yaml.safe_load_all(
             (root / "02-controllers/longhorn/resources/storageclasses.yaml").read_text())}
-        production = yaml.safe_load((root / "07-k3s-postgres/resources/cluster.yaml").read_text())
+        production, = (doc for doc in yaml.safe_load_all(
+            (root / "07-k3s-postgres/resources/cluster.yaml").read_text())
+            if doc["kind"] == "Cluster" and doc["metadata"]["name"] == "k3s-postgres")
         self.assertEqual(classes[production["spec"]["storage"]["storageClass"]]["reclaimPolicy"], "Retain")
         self.assertEqual(classes[restore["spec"]["storage"]["storageClass"]]["reclaimPolicy"], "Delete")
 
