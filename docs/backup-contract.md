@@ -20,6 +20,19 @@ Only the temporary `backup-validation/postgresql-pitr-validation` Cluster reques
 
 Before the first new run, verify the class exists and the validator ConfigMap uses it. Record the new PVC UID/PV handle and verify the annotation, reclaim policy and eventual removal of that PVC, PV and Longhorn volume. Reverting the validator affects future claims only; it cannot restore a deleted scratch disk. Keep the class until outstanding claims have finished.
 
+## Longhorn StorageClass migration
+
+| Existing class | Replacement |
+| --- | --- |
+| `longhorn` | `longhorn-replicated-retain` |
+| `longhorn-local` | `longhorn-single-node-retain` |
+| `longhorn-monitoring` | `longhorn-single-node-omv-wyse-retain` |
+| `longhorn-restore-test` | `longhorn-single-node-delete` |
+
+The new classes preserve provisioning settings. The OMV/Wyse class still uses the `monitoring-storage` Longhorn tag, which must remain on `omv` and `wyse5070` only. The existing `longhorn` class remains the sole default during this phase. Confirm the four replacements exist before changing any consumer. The scheduled validator continues to use `longhorn-restore-test` until a separate change switches it to `longhorn-single-node-delete`; the two Applications reconcile independently.
+
+Existing PVCs do not move automatically. Test a restore on the intended production class before rebuilding PostgreSQL instances one at a time. Migrate monitoring and other workloads separately, including references in the Live and Apps repositories. Switch the default in a separate step, and retire the old classes only after checking GitOps references and PVCs/PVs. Do not prune legacy classes as part of this rollout.
+
 ## Scheduled PITR validator network (#100)
 
 The Nov 19 manual Job `postgresql-restore-manual-20261119181322` and Nov 20 scheduled Job `postgresql-restore-validation-29919060` timed out waiting for the disposable Cluster to become Ready, before the restored SQL check. During the manual run the operator logged 390 resets and 171 EOFs while reading `/pg/status` on TCP 8000. The missing ingress grant is confirmed; those errors do not identify which component closed the connections. The earlier pre-admission scheduled failure is a separate incident.
