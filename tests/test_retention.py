@@ -36,8 +36,8 @@ class RetentionManifestTest(unittest.TestCase):
 
     def test_restore_uses_disposable_storage_and_production_retains_data(self):
         root = PATH.parents[2]
-        script = root / "08-backup-validation/resources/postgresql_pitr.py"
-        spec = spec_from_file_location("postgresql_pitr", script)
+        script = root / "08-backup-validation/resources/postgresql_restore_test.py"
+        spec = spec_from_file_location("postgresql_restore_test", script)
         adapter = module_from_spec(spec)
         spec.loader.exec_module(adapter)
         target = "2026-11-20T03:06:00Z"
@@ -89,8 +89,8 @@ class RetentionManifestTest(unittest.TestCase):
     def test_validation_store_keeps_local_r2_credentials_during_and_after_bridge(self):
         root = PATH.parents[2]
         store = yaml.safe_load((root / "07-k3s-postgres/resources/objectstore.yaml").read_text())
-        validator = root / "08-backup-validation/resources/postgresql_pitr.py"
-        spec = spec_from_file_location("postgresql_pitr", validator)
+        validator = root / "08-backup-validation/resources/postgresql_restore_test.py"
+        spec = spec_from_file_location("postgresql_restore_test", validator)
         adapter = module_from_spec(spec)
         self.enterContext(patch.object(Path, "read_text", side_effect=AssertionError("read a runtime file")))
         self.enterContext(patch("ssl.create_default_context", side_effect=AssertionError("initialized TLS")))

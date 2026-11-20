@@ -30,4 +30,4 @@ configMapGenerator:
   - name: postgresql-pitr-validator
     namespace: backup-validation
     files:
-      - postgresql_pitr.py
+      - postgresql_restore_test.py

@@ -135,7 +135,7 @@ class BarmanSidecarResourcesTest(unittest.TestCase):
             and d["metadata"]["namespace"] == "backup-validation"
             and d["metadata"]["name"] == name
         ]
-        script = repo.root / "08-backup-validation/resources/postgresql_pitr.py"
+        script = repo.root / "08-backup-validation/resources/postgresql_restore_test.py"
         self.assertEqual(config["data"], {script.name: script.read_text()})
         (container,) = [c for c in pod["containers"] if c["name"] == "validate"]
         (mount,) = [m for m in container["volumeMounts"] if m["name"] == volume["name"]]
