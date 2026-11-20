@@ -3,6 +3,7 @@ import copy
 import json
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 
@@ -118,6 +119,76 @@ def shared_connection(docs):
 def keyed(docs):
     return {(doc["apiVersion"], doc["kind"], doc["metadata"].get("namespace", ""),
              doc["metadata"]["name"]): doc for doc in docs}
+
+
+def rotation_sql(manifests):
+    return subprocess.run(
+        [sys.executable, str(ROOT / "07-k3s-postgres/tools/render_rotation_grants.py"),
+         "--namespace", "cloudnative-pg", "--cluster", "k3s-postgres"],
+        input=manifests, text=True, capture_output=True,
+    )
+
+
+class RotationGrantTests(unittest.TestCase):
+    def test_rendered_consumers_opt_in_without_a_second_list(self):
+        manifests = render(values("radar")).stdout + render(values("grafana"), "kube-prometheus-stack").stdout
+        ordinary = copy.deepcopy(baseline("radar")[0])
+        ordinary["metadata"]["name"] = "ordinary"
+        ordinary["spec"].update(name="ordinary", owner="ordinary")
+        result = rotation_sql(manifests + "\n---\n" + yaml.safe_dump(ordinary))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("('grafana', 'grafana')", result.stdout)
+        self.assertIn("('radar', 'radar')", result.stdout)
+        self.assertNotIn("ordinary", result.stdout)
+        self.assertIn("WITH ADMIN TRUE, INHERIT FALSE, SET FALSE", result.stdout)
+
+    def test_renamed_app_and_login_are_taken_from_the_same_values(self):
+        config = values("radar")
+        config["postgresConsumer"].update(name="new-app", username="new_login", databaseName="new_db")
+        result = rotation_sql(render(config).stdout)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("('new_login', 'new_db')", result.stdout)
+        self.assertNotIn("('radar', 'radar')", result.stdout)
+
+    def test_invalid_or_conflicting_request_emits_no_migration(self):
+        docs = list(yaml.safe_load_all(render(values("radar")).stdout))
+        for username in ("postgres", "pg_read_all_data", "different_login", "bad'login"):
+            with self.subTest(username=username):
+                candidate = copy.deepcopy(docs)
+                candidate[1]["spec"]["forProvider"]["username"] = username
+                result = rotation_sql(yaml.safe_dump_all(candidate))
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(result.stdout, "")
+        result = rotation_sql(yaml.safe_dump_all(docs + docs))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(result.stdout, "")
+
+    def test_wrong_cluster_or_openbao_provider_does_not_get_grants(self):
+        for field in ("clusterName", "providerConfigRef"):
+            with self.subTest(field=field):
+                config = values("radar")
+                config["postgresConsumer"][field] = "unrelated"
+                result = rotation_sql(render(config).stdout)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(result.stdout, "-- No opted-in PostgreSQL logins.\n")
+
+    def test_nonrotated_database_cannot_share_an_opted_in_login(self):
+        docs = list(yaml.safe_load_all(render(values("radar")).stdout))
+        ordinary = copy.deepcopy(docs[0])
+        ordinary["metadata"]["name"] = "ordinary"
+        ordinary["spec"]["name"] = "ordinary"
+        result = rotation_sql(yaml.safe_dump_all(docs + [ordinary]))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("more than one declaration", result.stderr)
+        self.assertEqual(result.stdout, "")
+
+    def test_malformed_resource_emits_no_migration(self):
+        docs = list(yaml.safe_load_all(render(values("radar")).stdout))
+        docs[1]["spec"]["providerConfigRef"] = None
+        result = rotation_sql(yaml.safe_dump_all(docs))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("expected Kubernetes manifest mappings", result.stderr)
+        self.assertEqual(result.stdout, "")
 
 
 class PostgresConsumerTests(unittest.TestCase):
