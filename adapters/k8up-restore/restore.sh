@@ -28,11 +28,23 @@ for entry in * .[!.]* ..?*; do
 done
 mkdir .stage
 export TMPDIR="$PWD/.stage" TZ=UTC0
-# Native host/path filtering, bounded JSON, no grouping. A path match can still
-# include other PVCs. Do not fall back to an older snapshot if the newest is mixed.
-(ulimit -f 128 && repo snapshots --json --host "$host" --path "$path" --latest 2 >.stage/list 2>.stage/warnings) || die 'snapshot listing failed'
+expected=${EXPECTED_RESTIC_SNAPSHOT_ID:-}
+list_snapshots() {
+    ulimit -f 128 || return 1
+    if [ -n "$expected" ]; then
+        repo snapshots --json "$expected"
+    else
+        # Without an explicit ID, do not fall back if the newest is mixed.
+        repo snapshots --json --host "$host" --path "$path" --latest 2
+    fi
+}
+if [ "${EXPECTED_RESTIC_SNAPSHOT_ID+x}" = x ]; then
+    case $expected in ''|*[!0-9a-f]*) die 'expected a full Restic snapshot ID' ;; esac
+    [ "${#expected}" -eq 64 ] || die 'expected a full Restic snapshot ID'
+fi
+(list_snapshots) >.stage/list 2>.stage/warnings || die 'snapshot listing failed'
 [ ! -s .stage/warnings ] || die 'incomplete snapshot listing'
-selected=$(jq -ers --arg host "$host" --arg path "$path" --argjson age "$2" '
+selected=$(jq -ers --arg host "$host" --arg path "$path" --arg expected "$expected" --argjson age "$2" '
     # Go timestamps may have fractional seconds and a numeric timezone offset.
     def epoch:
         (capture("\\A(?<dt>[0-9-]{10}T[0-9:]{8})(?:\\.(?<frac>[0-9]{1,9}))?(?:Z|(?<sign>[+-])(?<h>[01][0-9]|2[0-3]):(?<m>[0-5][0-9]))\\z") // error("time")) as $t
@@ -40,8 +52,11 @@ selected=$(jq -ers --arg host "$host" --arg path "$path" --argjson age "$2" '
         | if ($sec | todateiso8601) != ($t.dt + "Z") then error("date") else $sec end
         + ("0." + ($t.frac // "0") | tonumber)
         - (if $t.sign then (($t.h|tonumber)*3600 + ($t.m|tonumber)*60) * (if $t.sign=="+" then 1 else -1 end) else 0 end);
-    select(length == 1) | .[0] | select(type == "array" and (length == 1 or length == 2))
-    | sort_by(.time | epoch) | select(length == 1 or (.[0].time|epoch) < (.[1].time|epoch)) | last
+    select(length == 1) | .[0] | select(type == "array")
+    | if $expected != "" then select(length == 1 and .[0].id == $expected) | .[0]
+      else select(length == 1 or length == 2) | sort_by(.time | epoch)
+           | select(length == 1 or (.[0].time|epoch) < (.[1].time|epoch)) | last
+      end
     | select(.hostname == $host and .paths == [$path] and (.id | test("\\A[0-9a-f]{64}\\z")))
     # The validation Schedule has no backup.tags; K8up v2.16 adds no default
     # tag. Restic 0.19 omits tags for an empty list. Check *after* choosing

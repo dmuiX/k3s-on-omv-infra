@@ -25,6 +25,16 @@ If either CronJob was already synced under its previous name, keep the existing 
 
    Record the returned Job UID. `create` starts it once; if the name already exists, stop and inspect ownership/status rather than applying, replacing or unsuspending it. The seed writes the marker without replacing conflicting data. Require `Complete=True` on that UID, record the result before its one-hour TTL, and verify its owned Pods release the RWO mount. Job TTL cleans up just the Job and its Pods, not the fixture PVC or Argo-owned tools. Never clean up by the shared restore test label. Require a fresh backup of the fixture PVC and a successful repository check. For Prometheus obtain a fresh tagged backup and successful check as above. A missing/stale or mismatched snapshot is a **failure**, not a skipped test. The observed monitoring namespace had no Snapshot or Backup CR when this change was written; this is not evidence its OMV repository is empty.
 3. With operator approval, clone **one** suspended CronJob at a time as a uniquely named Job (e.g. `kubectl -n backup-validation create job k8up-canary-test-<run-id> --from=cronjob/k8up-restore-test`). Observe the selected snapshot ID/time and terminal verification result in the respective container logs and Job condition. Record this bounded evidence before TTL, not raw application contents. Require `Complete=True`, not merely a successful restore init container.
+
+   To verify a specific backup, render the manual Job from the CronJob with
+   `--dry-run=client -o yaml` instead of creating it directly. Set
+   `EXPECTED_RESTIC_SNAPSHOT_ID` on its `restore` init container to the full
+   `.spec.id` of the K8up `Snapshot` that corresponds to the completed Backup,
+   then review and create that Job manifest. With a full ID, the script looks
+   up only that snapshot, even if a newer backup exists. The pinned snapshot
+   must still match the source, tags and freshness checks; there is no
+   fallback. Without a pin, it validates the newest host/path candidate as
+   before.
 4. Record the restore test Pod's **own** ephemeral PVC UID, bound PV and CSI handle; check `longhorn-single-node-delete`, `Delete` and `k8up.io/backup: 'false'`. After the Job TTL (one hour), verify that this exact Pod, PVC, PV and Longhorn volume disappear on success and failure. Never force a finalizer or delete another run's resources. Only then enable each schedule by reviewed change. The fixture and both retained repository PVCs are deliberately not cleaned up.
 
 ## Rollback order (both repositories)
