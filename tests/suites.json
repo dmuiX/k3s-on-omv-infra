@@ -8,6 +8,7 @@
     "test_longhorn_discard",
     "test_longhorn_discard_processes",
     "test_metrics_server",
+    "test_etcd_member_metrics",
     "test_native_alert_rules",
     "test_native_request_profile",
     "test_native_reader_accounts",

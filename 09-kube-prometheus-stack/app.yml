@@ -145,6 +145,18 @@ spec:
         prometheus-node-exporter:
           # Only host collectors require a Pod Security exception, not Grafana/Prometheus.
           namespaceOverride: node-exporter
+          # Helm replaces lists. Keep the pinned stack's filesystem exclusions.
+          extraArgs:
+          - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|run/containerd/.+|var/lib/docker/.+|var/lib/kubelet/.+)($|/)
+          - --collector.filesystem.fs-types-exclude=^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|iso9660|mqueue|nsfs|overlay|proc|procfs|pstore|rpc_pipefs|securityfs|selinuxfs|squashfs|sysfs|tracefs|erofs)$
+          - --collector.textfile.directory=/run/etcd-member-metrics
+          extraHostVolumeMounts:
+          - name: etcd-member-metrics
+            hostPath: /var/lib/etcd-member-metrics
+            mountPath: /run/etcd-member-metrics
+            readOnly: true
+            # Empty on non-members; never block an ordinary node-exporter pod.
+            type: DirectoryOrCreate
           resources:
             requests:
               cpu: 10m
