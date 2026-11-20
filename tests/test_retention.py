@@ -43,7 +43,7 @@ class RetentionManifestTest(unittest.TestCase):
         target = "2026-11-20T03:06:00Z"
         restore = adapter.validation_cluster(target)
         self.assertEqual(restore["metadata"], {"namespace": "backup-validation", "name": "postgresql-pitr-validation"})
-        self.assertEqual(restore["spec"]["storage"], {"size": "5Gi", "storageClass": "longhorn-pitr-scratch"})
+        self.assertEqual(restore["spec"]["storage"], {"size": "5Gi", "storageClass": "longhorn-restore-test"})
         self.assertEqual(restore["spec"]["inheritedMetadata"]["annotations"]["k8up.io/backup"], "false")
         self.assertEqual(restore["spec"]["bootstrap"]["recovery"]["recoveryTarget"], {"targetTime": target})
         classes = {c["metadata"]["name"]: c for c in yaml.safe_load_all(
