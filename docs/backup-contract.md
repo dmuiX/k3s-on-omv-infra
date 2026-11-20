@@ -14,6 +14,16 @@ All OMV storage is beneath the dedicated `k3s-cluster` Btrfs subvolume on the ve
 
 For the November 2026 WAL-retention incident, recovery gates and the planned December CNPG update follow-up, see [PostgreSQL WAL recovery](postgresql-wal-recovery.md).
 
+## Scheduled PITR validator network (#100)
+
+The Nov 19 manual Job `postgresql-restore-manual-20261119181322` and Nov 20 scheduled Job `postgresql-restore-validation-29919060` timed out waiting for the disposable Cluster to become Ready, before the restored SQL check. During the manual run the operator logged 390 resets and 171 EOFs while reading `/pg/status` on TCP 8000. The missing ingress grant is confirmed; those errors do not identify which component closed the connections. The earlier pre-admission scheduled failure is a separate incident.
+
+The new paths target only `postgresql-pitr-validation` instance pods in `backup-validation`: ingress from the `cloudnative-pg` operator on TCP 8000 (instance manager), and SQL from the local validator on TCP 5432 (both egress and ingress). Each path also permits TCP 15008 for ambient HBONE. This shared transport port is not an inner-port authorization rule. The existing path to the production database for writing markers is separate and unchanged.
+
+Production CNPG instances use kubelet probes on TCP 8000 and are Ready without an explicit `169.254.7.127/32` ambient probe allowance. No restore-specific probe denial was confirmed; do not add a node range or copy production's broader namespace grants. If readiness still stalls, check probe events and the observed source/port before changing policy.
+
+A policy render does not verify recovery. On an approved run, record the Job, actual base backup ID and WAL coverage through the target time, restore readiness, SQL result (before marker present, after marker absent), mirror check and cleanup of temporary resources. Keep #100 open until verified. For rollback, revert the two policy manifests. With `backup-validation` automated prune disabled, also arrange approved removal of **only** `allow-restore-instance-ingress` and `allow-validator-to-restore-instance` in that namespace once absent from desired state; verify default deny and the production marker path remain.
+
 ## Credentials and bucket separation
 
 A single credential object at OpenBao `kv/platform/r2` is read through separate namespace-scoped Kubernetes auth roles and service accounts. VSO creates distinct destination Secrets. Bucket selection remains declarative and separate for each backup path.

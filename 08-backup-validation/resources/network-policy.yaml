@@ -88,3 +88,64 @@ spec:
       ports:
         - protocol: TCP
           port: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-restore-instance-ingress
+  namespace: backup-validation
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: postgresql-pitr-validation
+      cnpg.io/podRole: instance
+  policyTypes:
+    - Ingress
+  ingress:
+    # CNPG operator -> instance manager (direct or ambient transport).
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: cloudnative-pg
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: cloudnative-pg
+              app.kubernetes.io/instance: cloudnative-pg
+      ports:
+        - protocol: TCP
+          port: 8000
+        - protocol: TCP
+          port: 15008
+    # The validator queries the restored primary after the Cluster is Ready.
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: postgresql-restore-validation
+      ports:
+        - protocol: TCP
+          port: 5432
+        - protocol: TCP
+          port: 15008
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-validator-to-restore-instance
+  namespace: backup-validation
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: postgresql-restore-validation
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              cnpg.io/cluster: postgresql-pitr-validation
+              cnpg.io/podRole: instance
+      ports:
+        - protocol: TCP
+          port: 5432
+        - protocol: TCP
+          port: 15008

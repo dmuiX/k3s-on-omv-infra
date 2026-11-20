@@ -30,6 +30,11 @@
       "MemoryLimitsContractTest.test_whole_rendered_delta_is_only_the_allowlisted_memory_caps",
       "MemoryLimitsContractTest.test_misspelled_native_resources_key_does_not_count_as_a_cap"
     ],
+    "test_remaining_api_network": [
+      "RemainingAPINetwork.test_backup_non_api_rules_are_unchanged",
+      "RemainingAPINetwork.test_restore_validator_hbone_targets_only_source_database_instances",
+      "RemainingAPINetwork.test_rendered_restore_instance_paths"
+    ],
     "test_resource_admission": [
       "ResourceAdmissionContractTest.test_only_two_namespaced_create_policies_and_their_bindings",
       "ResourceAdmissionContractTest.test_application_is_registered_and_does_not_own_workload_pods"
@@ -112,7 +117,6 @@
   "integration": [
     "test_grafana_admin",
     "test_injector_network_policy",
-    "test_remaining_api_network",
     "test_service_credentials"
   ]
 }
