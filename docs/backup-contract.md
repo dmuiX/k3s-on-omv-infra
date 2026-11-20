@@ -29,7 +29,8 @@ node or control-plane access.
 Confirm the test namespace does not exist. Create the manifest; the Job starts
 suspended. Stop if creation is partial or if the namespace is not dedicated to
 this test. Verify that `deny-all` is the only NetworkPolicy and denies both
-directions for every pod. Then separately release the Job.
+directions for every pod. Require evidence of enforcement by the cluster CNI,
+not just the policy manifest, before separately releasing the Job.
 
 ```sh
 kubectl --context k3s-on-omv create -f 08-backup-validation/manual/openbao-restore-smoke.yaml

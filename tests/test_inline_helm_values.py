@@ -209,9 +209,13 @@ class InlineHelmValuesTest(unittest.TestCase):
             self.assertIn('CreateNamespace=true', policy['syncOptions'])
         self.assertEqual(set(stewards), set(expected))
         explicit = {}
+        manual = {INFRA / '08-backup-validation/manual' / name for name in (
+            'openbao-restore-smoke.yaml', 'k3s-etcd-restore-smoke.yaml')}
         for path in INFRA.rglob('*'):
             if path.suffix not in ('.yaml', '.yml') or '.git' in path.parts or 'templates' in path.parts:
                 continue
+            if path in manual:
+                continue  # Attended runs have their own isolation contract, not an Argo steward.
             for doc in yaml.safe_load_all(path.read_text()):
                 if not isinstance(doc, dict) or doc.get('kind') != 'Namespace':
                     continue
