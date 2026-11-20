@@ -60,6 +60,34 @@ Grafana consumes the separate VSO-owned `grafana-admin` Secret through the nativ
 
 Each Job has a separate ServiceAccount, audience-bound login role, create-only policy and NetworkPolicy. Longhorn/database producers have no Argo permissions or Argo CLI. The central multi-service Job has been removed. A small `adapters/credential-custody` ConfigMap provides identical HTTP/CAS/ownership handling in each consumer namespace; it contains no consumer paths, identity decisions, Argo implementation or combined issuer permissions.
 
+## PostgreSQL password rotation grants (proposed)
+
+The `postgres-consumer` chart is the opt-in for OpenBao-managed database passwords. An application adds the chart to its Argo CD sources and sets its login role in `postgresConsumer.username` in its Live values (for example, `apps/radar/values.yml` in Live). Use the same enabled declaration that renders the OpenBao `SecretBackendStaticRole` to select both the target PostgreSQL cluster and the login role. Currently this selects `grafana` and `radar`. Do not grant membership based on database inventory, add a second global list, or require changes to Ansible bootstrap. A database without OpenBao password rotation needs no grant. The existing OpenBao connection `allowedRoles` and provider API policies still enumerate Grafana and Radar. Before promising onboarding from app values alone, resolve those controls from the same trusted declarations; do not replace them with wildcard access.
+
+On PostgreSQL 18, `CREATEROLE` alone does not allow `openbao_manager` to change a different, existing role's password. PostgreSQL grants admin membership automatically when the manager creates a role, but a restore can contain an existing login without that membership. The required membership is `ADMIN TRUE, INHERIT FALSE, SET FALSE`: allow the manager to administer the selected role, without automatically inheriting its privileges or receiving direct `SET ROLE` access. `ADMIN` itself is a delegation privilege, not a password-only privilege, so the target roles must be explicitly scoped.
+
+[CloudNativePG 1.30.1 membership reconciliation](https://github.com/cloudnative-pg/cloudnative-pg/blob/v1.30.1/internal/management/controller/roles/runnable.go) removes memberships of a managed login when they are absent from `inRoles`. `inRoles` is a list of names and [the operator issues a plain `GRANT`](https://github.com/cloudnative-pg/cloudnative-pg/blob/v1.30.1/internal/management/controller/roles/postgres.go) for missing entries. Do not ship an `inRoles`-only change: the auto-synced production Application could grant default membership privileges without enabling password rotation. Likewise, `postInitSQL` only covers empty clusters, not recovery from a backup or an existing database.
+
+The implementation must reconcile the exact grants from the consumer declarations after the target PostgreSQL primary is available and before OpenBao configures the static role. It must adopt an existing login without changing its password or ownership, or create the missing unprivileged role without waiting for OpenBao to create it. Keep application workloads and OpenBao unprivileged; the database-side grant writer needs an explicitly scoped trust boundary. The writer and CloudNativePG must not disagree about membership ownership. Do not open remote `postgres` access or recreate databases or login roles to work around missing rights. There is no automated grant writer in the current configuration.
+
+**Acceptance in an isolated GitOps environment:**
+
+1. Sync into a clean PostgreSQL cluster with two opted-in consumers and one ordinary database. Verify that the manager's membership in each opted-in login has the exact options and that it receives no membership in the ordinary database's login.
+2. Restore a backup containing the roles and their data, with one missing membership and one with permissive options. Sync with no manual SQL; require the exact options without conflicting memberships and verify the restored data. Test both paths using an isolated OpenBao connection, and verify rotation succeeds without inspecting passwords.
+3. Reject a consumer declaration targeting a privileged role or another application's login; it must not change any memberships. Sync the valid declarations again and wait for a CloudNativePG role reconciliation. Verify the options and app connectivity are unchanged and no extra memberships appeared. Run these rehearsals only against isolated clusters.
+
+Inspect direct membership options without reading any passwords:
+
+```sql
+SELECT target.rolname, membership.admin_option,
+       membership.inherit_option, membership.set_option
+FROM pg_catalog.pg_auth_members AS membership
+JOIN pg_catalog.pg_roles AS target ON target.oid = membership.roleid
+JOIN pg_catalog.pg_roles AS member ON member.oid = membership.member
+WHERE member.rolname = 'openbao_manager'
+ORDER BY target.rolname;
+```
+
 ## Producer retries and diagnostic lifetime
 
 OpenBao snapshots and the PostgreSQL manager, Longhorn proxy and Grafana admin
