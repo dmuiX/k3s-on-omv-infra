@@ -36,12 +36,6 @@ class RepositoryWorkloads(unittest.TestCase):
                 "Job",
                 "5f81c185c941619867900e214e96812eb0e978c7452bd66df99004f33448a0b3",
             ),
-            (
-                "kube-prometheus-stack",
-                "grafana-admin-provisioner",
-                "Job",
-                "74cd024b8b115a9b9cb97b28be6d2575402444b5e179b3c07f5a14d0514164e8",
-            ),
         )
         repo = Repository()
         for app, name, kind, baseline in cases:
@@ -140,10 +134,8 @@ class RepositoryWorkloads(unittest.TestCase):
                     patch.object(
                         helper, "login", return_value="fixture-token"
                     ) as login,
-                    patch("urllib.request.urlopen") as openbao_health,
                     contextlib.redirect_stdout(io.StringIO()),
                 ):
-                    openbao_health.return_value.__enter__.return_value.status = 200
                     exec(compile(producer, "provision.py", "exec"), namespace)
                     main = namespace["main"]
                     if not callable(main):
@@ -155,58 +147,63 @@ class RepositoryWorkloads(unittest.TestCase):
                 self.assertEqual(len(writes), 1)
                 self.assertEqual(login.call_count, 2)
 
-    def test_grafana_producer_waits_for_openbao_before_login(self) -> None:
-        import types
-        from unittest.mock import call, patch
-        from urllib.error import URLError
+    def test_grafana_producer_is_an_explicit_bootstrap_job_not_a_sync_hook(
+        self,
+    ) -> None:
+        from workload_contracts import Repository, parse_documents
 
-        from workload_contracts import Repository
+        repo = Repository()
+        docs = repo.render("kube-prometheus-stack")
+        producer = "grafana-admin-provisioner"
+        self.assertFalse(
+            any(
+                d["kind"] in {"Job", "CronJob"} and producer in str(d["spec"])
+                for d in docs
+            ),
+            "Monitoring sync must not run the Grafana administrator bootstrap",
+        )
 
-        docs = Repository().render("kube-prometheus-stack")
-        configs = {
-            d["metadata"]["name"]: d["data"] for d in docs if d["kind"] == "ConfigMap"
-        }
-        helper = types.ModuleType("credential_helpers")
-        exec(configs["credential-custody"]["credential_helpers.py"], vars(helper))
-        script = configs["grafana-admin-provisioner"]["provision.py"]
-        probe = call(vars(helper)["BAO"] + "sys/health", timeout=2)
-
-        with (
-            patch.dict("sys.modules", {"credential_helpers": helper}),
-            patch.object(helper, "login") as login,
-            patch.object(helper, "ensure") as ensure,
-            patch("urllib.request.urlopen") as health,
-            patch("time.sleep") as sleep,
-        ):
-            entrypoint = types.ModuleType("grafana_producer")
-            exec(script, vars(entrypoint))
-            main = vars(entrypoint)["main"]
-            unavailable = URLError(ConnectionRefusedError())
-            response = health.return_value
-            response.__enter__.return_value.status = 200
-            # Fast refusals through second 14 must not exhaust startup retries.
-            health.side_effect = [unavailable] * 15 + [response]
-            login.side_effect = lambda _: self.assertEqual(
-                health.call_args_list, [probe] * 16
-            )
-            main()
-            self.assertEqual(sleep.call_args_list, [call(1)] * 15)
-            login.assert_called_once_with("grafana-admin-provisioner")
-            ensure.assert_called_once()
-
-            health.reset_mock()
-            sleep.reset_mock()
-            login.reset_mock()
-            ensure.reset_mock()
-            health.side_effect = unavailable
-            with self.assertRaisesRegex(
-                vars(helper)["Failure"], "OpenBao did not become ready"
-            ):
-                main()
-            self.assertEqual(health.call_args_list, [probe] * 30)
-            self.assertEqual(sleep.call_args_list, [call(1)] * 29)
-            login.assert_not_called()
-            ensure.assert_not_called()
+        path = repo.root / "09-kube-prometheus-stack/bootstrap/grafana-admin-job.yaml"
+        (job,) = parse_documents(path.read_text())
+        self.assertEqual(job["kind"], "Job")
+        self.assertEqual(job["metadata"]["name"], "grafana-admin-bootstrap")
+        self.assertEqual(job["metadata"]["namespace"], "kube-prometheus-stack")
+        self.assertNotIn("annotations", job["metadata"])
+        spec = job["spec"]
+        self.assertNotIn("ttlSecondsAfterFinished", spec)
+        self.assertEqual(spec["activeDeadlineSeconds"], 600)
+        self.assertEqual(spec["backoffLimit"], 3)
+        template = spec["template"]
+        pod = template["spec"]
+        self.assertEqual(pod["restartPolicy"], "OnFailure")
+        self.assertEqual(pod["serviceAccountName"], producer)
+        self.assertFalse(pod["automountServiceAccountToken"])
+        self.assertEqual(
+            template["metadata"]["labels"]["app.kubernetes.io/name"], producer
+        )
+        self.assertEqual(
+            {d["kind"] for d in docs if d["metadata"]["name"] == producer},
+            {
+                "ConfigMap",
+                "ServiceAccount",
+                "NetworkPolicy",
+                "Policy",
+                "AuthBackendRole",
+            },
+        )
+        auth = next(
+            d
+            for d in docs
+            if d["kind"] == "AuthBackendRole" and d["metadata"]["name"] == producer
+        )
+        self.assertEqual(auth["spec"]["forProvider"]["audience"], f"vault://{producer}")
+        self.assertEqual(
+            auth["spec"]["forProvider"]["boundServiceAccountNames"], [producer]
+        )
+        self.assertEqual(
+            {v["configMap"]["name"] for v in pod["volumes"] if "configMap" in v},
+            {producer, "credential-custody"},
+        )
 
     def test_barman_controller_is_ha_bounded_and_uses_its_native_account(self) -> None:
         from workload_contracts import Repository

@@ -47,26 +47,26 @@ CloudNativePG's managed roles own the non-superuser `openbao_manager` login and 
 
 PostgreSQL backup and restore-validation R2 Secrets contain one copy of each credential: `access-key-id`, `secret-access-key`, `region`, and `S3_ENDPOINT`. Their CronJobs explicitly map these keys to `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`, `AWS_REGION`, and `S3_ENDPOINT` through `secretKeyRef`; AWS-named credential aliases are not stored in these Secrets.
 
-VSO delivers secrets but does not generate random values or Argo API tokens. Radar chart 1.17.0 and oauth2-proxy accept existing Secrets; Radar's empty-secret fallback is process-local, not durable custody. Consumer-owned Sync-hook Jobs fill only these gaps:
+VSO delivers secrets but does not generate random values or Argo API tokens. Radar chart 1.17.0 and oauth2-proxy accept existing Secrets; Radar's empty-secret fallback is process-local, not durable custody. Consumer-owned Sync hooks and the standalone Grafana bootstrap Job fill only these gaps:
 
 | Job / namespace | Allowed OpenBao KV data |
 | --- | --- |
 | `longhorn-proxy-provisioner` / `longhorn` | `longhorn/oidc-proxy`: native client credentials plus random 32-byte cookie key |
 | `k3s-postgres-manager-provisioner` / `cloudnative-pg` | `postgresql/openbao-manager`: fixed username plus random password |
 | `radar-auth-provisioner` / `radar` (Apps #5) | `radar/auth`: session key; `radar/argocd`: issued account token |
-| `grafana-admin-provisioner` / `kube-prometheus-stack` | `monitoring/grafana-admin`: fixed admin login plus random password |
+| `grafana-admin-bootstrap` / `kube-prometheus-stack` | `monitoring/grafana-admin`: fixed admin login plus random password |
 
-Grafana consumes the separate VSO-owned `grafana-admin` Secret through the native chart's `admin.existingSecret`, including reload sidecars. These are bootstrap credentials, not a declarative reset of the password persisted in PostgreSQL. See [Grafana administrator cutover](grafana-admin.md) for provider-policy prerequisites, the attended one-time stdin CLI reset, safe operator access and rollback. No live reset is performed by the Sync hook.
+Grafana consumes the separate VSO-owned `grafana-admin` Secret through the native chart's `admin.existingSecret`, including reload sidecars. These are bootstrap credentials, not a declarative reset of the password persisted in PostgreSQL. See [Grafana administrator cutover](grafana-admin.md) for provider-policy prerequisites, the attended one-time stdin CLI reset, safe operator access and rollback. The standalone Job never resets the database password.
 
 Each Job has a separate ServiceAccount, audience-bound login role, create-only policy and NetworkPolicy. Longhorn/database producers have no Argo permissions or Argo CLI. The central multi-service Job has been removed. A small `adapters/credential-custody` ConfigMap provides identical HTTP/CAS/ownership handling in each consumer namespace; it contains no consumer paths, identity decisions, Argo implementation or combined issuer permissions.
 
 ## Producer retries and diagnostic lifetime
 
 OpenBao snapshots and the PostgreSQL manager, Longhorn proxy and Grafana admin
-credential Jobs use native `restartPolicy: OnFailure`: container retries normally
-reuse the Pod network namespace/IP rather than creating a fresh Pod for each
-process failure. This is bounded by the existing deadlines (snapshot 1800s,
-credentials 600s) and backoff limits (snapshot explicitly 6, credentials 2).
+Jobs use native `restartPolicy: OnFailure`: container retries normally reuse the
+Pod network namespace/IP rather than creating a fresh Pod for each process
+failure. This is bounded by the deadlines (snapshot 1800s, credentials 600s) and
+backoff limits (snapshot 6, Grafana bootstrap 3, other Infra credential Jobs 2).
 It does not prove or cure an underlying mesh/network startup race; Pod replacement
 can still occur. No custom retry loop is added. Retention and restore-validation
 Jobs are excluded because their retry safety has not been demonstrated here.
@@ -75,7 +75,7 @@ Snapshot Jobs have `ttlSecondsAfterFinished: 86400` for both success and failure
 the CronJob also keeps at most one successful and one failed Job. This is not a
 guaranteed one-day log-retention window: history cleanup can happen sooner.
 
-Credential Jobs remain fixed-name `Sync` hooks, using
+The PostgreSQL manager and Longhorn proxy Jobs remain fixed-name `Sync` hooks, using
 `BeforeHookCreation,HookSucceeded`. Argo deletes a successful hook and all its
 Pod attempts only after observing success. Failed hooks remain for diagnosis
 until the next full sync recreates them; selective sync does not run hooks.
@@ -84,7 +84,11 @@ observes completion after an outage. This uses the supported [Argo CD hook
 lifecycle](https://argo-cd.readthedocs.io/en/stable/user-guide/sync-waves/#hook-lifecycle-and-cleanup),
 not a regular desired Job whose removal could cause a recreation loop.
 
-Both cleanup mechanisms remove access to Pod logs, including earlier failed
+The Grafana bootstrap Job is not an Argo hook. Bootstrap creates it explicitly
+and leaves its terminal state available for diagnosis. See the
+[Grafana bootstrap and handoff](grafana-admin.md#bootstrap-and-existing-cluster-handoff).
+
+Both automatic cleanup mechanisms remove access to Pod logs, including earlier failed
 attempts of an eventually successful Job. Capture current and previous-container
 logs when needed before cleanup. There is no log collector here: Grafana exposes
 metrics, **not these Pod logs**. Existing immutable Job templates are not patched;

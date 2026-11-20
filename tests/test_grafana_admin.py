@@ -103,12 +103,12 @@ class GrafanaAdmin(unittest.TestCase):
         role = next(d for d in DOCUMENTS['grafana'] if d['kind'] == 'AuthBackendRole')
         job = next(d for d in DOCUMENTS['grafana'] if d['kind'] == 'Job')
         account = next(d for d in DOCUMENTS['grafana'] if d['kind'] == 'ServiceAccount')
-        self.assertEqual(job['metadata']['name'], 'grafana-admin-provisioner')
-        self.assertEqual(account['metadata']['name'], job['metadata']['name'])
+        self.assertEqual(job['metadata']['name'], 'grafana-admin-bootstrap')
         self.assertEqual(job['spec']['template']['spec']['serviceAccountName'], account['metadata']['name'])
         self.assertEqual(role['spec']['forProvider']['boundServiceAccountNames'], [account['metadata']['name']])
         self.assertEqual(role['spec']['forProvider']['audience'], 'vault://grafana-admin-provisioner')
-        self.assertEqual({d['metadata']['name'] for d in DOCUMENTS['grafana']}, {'grafana-admin-provisioner'})
+        self.assertEqual({d['metadata']['name'] for d in DOCUMENTS['grafana'] if d['kind'] != 'Job'},
+                         {'grafana-admin-provisioner'})
         self.assertEqual(producer['spec']['forProvider']['name'], 'grafana-admin-provisioner')
         self.assertEqual(role['spec']['forProvider']['roleName'], 'grafana-admin-provisioner')
         self.assertEqual(role['spec']['forProvider']['tokenPolicies'], ['grafana-admin-provisioner'])
@@ -151,8 +151,7 @@ class GrafanaAdmin(unittest.TestCase):
             store.update(data['data'])
             return {}
 
-        with patch.object(entrypoint, 'wait_for_openbao'), \
-                patch.object(entrypoint, 'login', return_value='test-token'), \
+        with patch.object(entrypoint, 'login', return_value='test-token'), \
                 patch.object(helper, 'request', side_effect=request), \
                 contextlib.redirect_stdout(io.StringIO()) as output:
             entrypoint.main()
