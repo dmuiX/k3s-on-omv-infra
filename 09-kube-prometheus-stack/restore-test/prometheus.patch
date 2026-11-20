@@ -34,10 +34,10 @@ spec:
                 - {name: scratch, mountPath: /scratch}
           containers:
             - name: verify
-              image: quay.io/prometheus/prometheus:v3.15.0@sha256:efd719c99d83b060d9daefdcf00360461adf279f45ef5391f8d111892118753e
+              image: quay.io/prometheus/prometheus:v3.16.0@sha256:efd719c99d83b060d9daefdcf00360461adf279f45ef5391f8d111892118753e
               command: [/bin/sh, /tools/read-samples.sh]
               args: []
-              # promtool may need temporary sandbox space; only scratch is writable.
+              # The local Prometheus server writes runtime state only to scratch.
               env: [{name: TMPDIR, value: /scratch}]
               volumeMounts:
                 - {name: scratch, mountPath: /scratch, readOnly: false}

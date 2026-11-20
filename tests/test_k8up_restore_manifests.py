@@ -1,4 +1,5 @@
 """Render both Argo source paths offline. No Kubernetes context, Secrets or repositories."""
+import json
 import os
 from pathlib import Path
 import runpy
@@ -101,7 +102,18 @@ class RestoreTestManifests(unittest.TestCase):
                     self.assertEqual(restore['args'], ['prometheus-stream', '691200'])
                     self.assertEqual([c['name'] for c in stages], ['restore', 'validate-archive', 'verify'])
                     self.assertEqual(stages[1]['command'][-2:], ['/tools/verify.py', 'prometheus'])
-                    self.assertEqual(stages[-1]['command'], ['/bin/sh', '/tools/read-samples.sh'])
+                    verifier = stages[-1]
+                    self.assertEqual(verifier['command'], ['/bin/sh', '/tools/read-samples.sh'])
+                    self.assertEqual(verifier['volumeMounts'], [
+                        {'name': 'scratch', 'mountPath': '/scratch', 'readOnly': False},
+                        {'name': 'tools', 'mountPath': '/tools', 'readOnly': True},
+                    ])
+                    self.assertEqual(verifier['env'], [{'name': 'TMPDIR', 'value': '/scratch'}])
+                    self.assertNotIn('ports', verifier)
+                    tools_lock = json.loads((ROOT / 'tests/ci-dependencies.json').read_text())['tools']
+                    image = verifier['image'].split('@')[0]
+                    for name in ('prometheus', 'promtool'):
+                        self.assertEqual(image, f"quay.io/prometheus/prometheus:{tools_lock[name]['version']}")
 
     def test_network_isolation_in_infra_render(self):
         for ns, docs in self.docs.items():
