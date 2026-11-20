@@ -46,7 +46,7 @@ rules:
     resources:
       - secrets
     resourceNames:
-      - postgresql-pitr-validation-app
+      - postgresql-restore-test-app
     verbs:
       - get
 ---
@@ -220,7 +220,7 @@ spec:
           volumes:
             - name: validator
               configMap:
-                name: postgresql-pitr-validator
+                name: postgresql-restore-test-script
                 defaultMode: 0444
             - name: omv
               persistentVolumeClaim:

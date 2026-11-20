@@ -1,4 +1,5 @@
 import copy
+import io
 import json
 import sys
 import unittest
@@ -42,7 +43,7 @@ class RetentionManifestTest(unittest.TestCase):
         spec.loader.exec_module(adapter)
         target = "2026-11-20T03:06:00Z"
         restore = adapter.validation_cluster(target)
-        self.assertEqual(restore["metadata"], {"namespace": "backup-validation", "name": "postgresql-pitr-validation"})
+        self.assertEqual(restore["metadata"], {"namespace": "backup-validation", "name": "postgresql-restore-test"})
         self.assertEqual(restore["spec"]["storage"], {"size": "5Gi", "storageClass": "longhorn-single-node-delete"})
         self.assertEqual(restore["spec"]["inheritedMetadata"]["annotations"]["k8up.io/backup"], "false")
         self.assertEqual(restore["spec"]["bootstrap"]["recovery"]["recoveryTarget"], {"targetTime": target})
@@ -55,6 +56,44 @@ class RetentionManifestTest(unittest.TestCase):
             if doc["kind"] == "Cluster" and doc["metadata"]["name"] == "k3s-postgres")
         self.assertEqual(classes[production["spec"]["storage"]["storageClass"]]["reclaimPolicy"], "Retain")
         self.assertEqual(classes[restore["spec"]["storage"]["storageClass"]]["reclaimPolicy"], "Delete")
+
+    def test_restore_test_and_retention_agree_on_evidence(self):
+        script = PATH.parents[2] / "08-backup-validation/resources/postgresql_restore_test.py"
+        spec = spec_from_file_location("postgresql_restore_test", script)
+        adapter = module_from_spec(spec)
+        spec.loader.exec_module(adapter)
+        for result, flags, expected in (
+            ("success", {"restore_target_verified": True, "mirror_verified": True}, "true"),
+            ("failed", {}, "false"),
+        ):
+            with self.subTest(result=result), patch.object(adapter, "api", return_value=None) as api:
+                adapter.put_lease(result, **flags)
+                body = api.call_args.args[2]
+                self.assertEqual(body["metadata"]["annotations"], {
+                    "k3s-on-omv.io/result": result,
+                    "k3s-on-omv.io/restore-target-verified": expected,
+                    "k3s-on-omv.io/omv-mirror-verified": expected,
+                })
+                with (patch.dict(MODULE.os.environ, RESTORE_LEASE_NAMESPACE="backup-validation",
+                                 RESTORE_LEASE_NAME="postgresql-restore-status",
+                                 BASE_BACKUP_BUDGET_BYTES=str(MODULE.BUDGET)),
+                      patch.object(MODULE.Path, "read_text", return_value="mock-token"),
+                      patch.object(MODULE.ssl, "create_default_context"),
+                      patch.object(MODULE.urllib.request, "urlopen") as read_lease):
+                    read_lease.return_value = io.StringIO(json.dumps(body))
+                    if result == "success":
+                        self.assertEqual(MODULE._lease()[0], result)
+                        for key in ("restore-target-verified", "omv-mirror-verified"):
+                            missing = copy.deepcopy(body)
+                            del missing["metadata"]["annotations"][f"k3s-on-omv.io/{key}"]
+                            read_lease.return_value = io.StringIO(json.dumps(missing))
+                            with patch.object(MODULE, "_catalog") as catalog:
+                                with self.assertRaisesRegex(RuntimeError, "does not verify the recovery target time"):
+                                    MODULE.run(preview=True)
+                                catalog.assert_not_called()
+                    else:
+                        with self.assertRaisesRegex(RuntimeError, "does not verify the recovery target time"):
+                            MODULE._lease()
 
     def test_restore_validator_pod_uses_runtime_default_seccomp(self):
         path = PATH.parents[2] / "08-backup-validation/resources/validation.yaml"
@@ -112,7 +151,7 @@ class RetentionManifestTest(unittest.TestCase):
                 clone = adapter.validation_store(source, local_url)
                 self.assertEqual(source, baseline)
                 self.assertEqual(clone["metadata"], {
-                    "name": "postgresql-pitr-validation", "namespace": "backup-validation",
+                    "name": "postgresql-restore-test", "namespace": "backup-validation",
                 })
                 self.assertEqual(clone["spec"]["instanceSidecarConfiguration"], {
                     **sidecar, "env": [extra_env],

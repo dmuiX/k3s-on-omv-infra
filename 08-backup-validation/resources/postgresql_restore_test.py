@@ -9,7 +9,8 @@ from urllib.request import Request, urlopen
 
 API = "https://kubernetes.default.svc"
 SOURCE_NS, VALIDATION_NS = "cloudnative-pg", "backup-validation"
-SOURCE, RESTORE, STORE = "k3s-postgres", "postgresql-pitr-validation", "postgresql-pitr-validation"
+SOURCE = "k3s-postgres"
+RESTORE = STORE = "postgresql-restore-test"
 IMAGE = "ghcr.io/cloudnative-pg/postgresql:18.6-system-bookworm@sha256:b4bec141fa5ca2bab490b197c814fb1342147c8405be1fb0673951fa6db7f699"
 
 
@@ -46,9 +47,22 @@ def connect(values, host):
     return psycopg2.connect(host=host, port=values.get("port", "5432"), dbname=values.get("dbname", "app"), user=values["username"], password=values["password"], connect_timeout=15, sslmode="require")
 
 
-def put_lease(result, pitr=False, mirror=False):
+def put_lease(result: str, *, restore_target_verified: bool = False, mirror_verified: bool = False) -> None:
     now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-    body = {"apiVersion":"coordination.k8s.io/v1","kind":"Lease","metadata":{"name":"postgresql-restore-status","namespace":VALIDATION_NS,"annotations":{"k3s-on-omv.io/result":result,"k3s-on-omv.io/pitr-verified":str(pitr).lower(),"k3s-on-omv.io/omv-mirror-verified":str(mirror).lower()}},"spec":{"holderIdentity":"postgresql-pitr-validation","renewTime":now,"leaseDurationSeconds":691200}}
+    body = {
+        "apiVersion": "coordination.k8s.io/v1",
+        "kind": "Lease",
+        "metadata": {
+            "name": "postgresql-restore-status",
+            "namespace": VALIDATION_NS,
+            "annotations": {
+                "k3s-on-omv.io/result": result,
+                "k3s-on-omv.io/restore-target-verified": str(restore_target_verified).lower(),
+                "k3s-on-omv.io/omv-mirror-verified": str(mirror_verified).lower(),
+            },
+        },
+        "spec": {"holderIdentity": RESTORE, "renewTime": now, "leaseDurationSeconds": 691200},
+    }
     path = f"/apis/coordination.k8s.io/v1/namespaces/{VALIDATION_NS}/leases/postgresql-restore-status"
     current = api(path, allowed=(404,))
     if current:
@@ -144,10 +158,10 @@ def main():
             cursor.execute("SELECT run_id, phase FROM public.platform_backup_validation WHERE run_id IN (%s,%s)", (before, after))
             rows = set(cursor.fetchall())
         if rows != {(before, "before")}:
-            raise RuntimeError("PITR boundary validation failed")
+            raise RuntimeError("restored rows do not match the requested recovery time")
         if not mirror_matches_catalog():
             raise RuntimeError("OMV mirror does not contain every completed base-backup catalog entry")
-        put_lease("success", True, True)
+        put_lease("success", restore_target_verified=True, mirror_verified=True)
     except Exception:
         put_lease("failed")
         raise
