@@ -69,9 +69,20 @@ def render(config, namespace="radar", check=True):
 
 
 def shared_required_baseline(docs):
-    """Normalize only required-value syntax; engine tests cover its semantics."""
+    """Normalize only the intentional template changes from the historical baseline."""
     docs = copy.deepcopy(docs)
     for doc in docs:
+        if doc['kind'] == 'SecretBackendStaticRole':
+            provider = doc['spec']['forProvider']
+            login = provider['username']
+            for i, statement in enumerate(provider['rotationStatements']):
+                for command in ('ALTER ROLE', 'CREATE ROLE'):
+                    statement = statement.replace(f'{command} {login} ', f'{command} \\"{login}\\" ')
+                provider['rotationStatements'][i] = statement.replace(
+                    '(rolsuper OR rolreplication OR rolbypassrls)',
+                    '(NOT rolcanlogin OR rolsuper OR rolreplication OR rolbypassrls OR rolcreatedb OR rolcreaterole)',
+                ).replace('WITH LOGIN NOCREATEDB NOCREATEROLE INHERIT CONNECTION LIMIT',
+                          'WITH CONNECTION LIMIT')
         if doc['kind'] not in ('VaultStaticSecret', 'VaultDynamicSecret'):
             continue
         transform = doc['spec']['destination'].get('transformation', {})
@@ -121,21 +132,28 @@ def keyed(docs):
              doc["metadata"]["name"]): doc for doc in docs}
 
 
-def rotation_sql(manifests):
-    return subprocess.run(
-        [sys.executable, str(ROOT / "07-k3s-postgres/tools/render_rotation_grants.py"),
-         "--namespace", "cloudnative-pg", "--cluster", "k3s-postgres"],
-        input=manifests, text=True, capture_output=True,
-    )
+def rotation_sql(*renders):
+    with tempfile.TemporaryDirectory(prefix="rotation-grants-") as directory:
+        paths = []
+        for i, render_text in enumerate(renders):
+            path = Path(directory) / f"consumer-{i}.yaml"
+            path.write_text(render_text)
+            paths.append(path)
+        return subprocess.run(
+            [sys.executable, str(ROOT / "07-k3s-postgres/tools/render_rotation_grants.py"),
+             "--namespace", "cloudnative-pg", "--cluster", "k3s-postgres", *paths],
+            text=True, capture_output=True,
+        )
 
 
 class RotationGrantTests(unittest.TestCase):
     def test_rendered_consumers_opt_in_without_a_second_list(self):
-        manifests = render(values("radar")).stdout + render(values("grafana"), "kube-prometheus-stack").stdout
         ordinary = copy.deepcopy(baseline("radar")[0])
         ordinary["metadata"]["name"] = "ordinary"
         ordinary["spec"].update(name="ordinary", owner="ordinary")
-        result = rotation_sql(manifests + "\n---\n" + yaml.safe_dump(ordinary))
+        result = rotation_sql(render(values("radar")).stdout,
+                              render(values("grafana"), "kube-prometheus-stack").stdout,
+                              yaml.safe_dump(ordinary))
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertIn("('grafana', 'grafana')", result.stdout)
         self.assertIn("('radar', 'radar')", result.stdout)
@@ -152,16 +170,44 @@ class RotationGrantTests(unittest.TestCase):
 
     def test_invalid_or_conflicting_request_emits_no_migration(self):
         docs = list(yaml.safe_load_all(render(values("radar")).stdout))
-        for username in ("postgres", "pg_read_all_data", "different_login", "bad'login"):
+        for username, diagnostic in (
+            ("postgres", "refusing reserved login"),
+            ("pg_read_all_data", "refusing reserved login"),
+            ("different_login", "must match its own Database and owner"),
+            ("bad'login", "must be simple PostgreSQL identifiers"),
+        ):
             with self.subTest(username=username):
                 candidate = copy.deepcopy(docs)
-                candidate[1]["spec"]["forProvider"]["username"] = username
+                role, = (d for d in candidate if d["kind"] == "SecretBackendStaticRole")
+                database, = (d for d in candidate if d["kind"] == "Database")
+                role["spec"]["forProvider"]["username"] = username
+                if username != "different_login":
+                    database["spec"]["owner"] = username
                 result = rotation_sql(yaml.safe_dump_all(candidate))
-                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(result.returncode, 1)
+                self.assertIn(diagnostic, result.stderr)
                 self.assertEqual(result.stdout, "")
-        result = rotation_sql(yaml.safe_dump_all(docs + docs))
-        self.assertNotEqual(result.returncode, 0)
+        result = rotation_sql(yaml.safe_dump_all(docs), yaml.safe_dump_all(docs))
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("duplicate Database declaration", result.stderr)
         self.assertEqual(result.stdout, "")
+
+    def test_duplicate_identity_rejected_before_scope_filtering(self):
+        manifests = render(values("radar")).stdout
+        for kind, field, diagnostic in (
+            ("Database", "clusterName", "duplicate Database declaration"),
+            ("SecretBackendStaticRole", "clusterName", "duplicate static role declaration"),
+            ("SecretBackendStaticRole", "providerConfigRef", "duplicate static role declaration"),
+        ):
+            with self.subTest(kind=kind, field=field):
+                config = values("radar")
+                config["postgresConsumer"][field] = "other"
+                duplicate, = (d for d in yaml.safe_load_all(render(config).stdout) if d["kind"] == kind)
+                for sources in ((manifests, yaml.safe_dump(duplicate)), (yaml.safe_dump(duplicate), manifests)):
+                    result = rotation_sql(*sources)
+                    self.assertEqual(result.returncode, 1)
+                    self.assertIn(diagnostic, result.stderr)
+                    self.assertEqual(result.stdout, "")
 
     def test_wrong_cluster_or_openbao_provider_does_not_get_grants(self):
         for field in ("clusterName", "providerConfigRef"):
@@ -177,18 +223,66 @@ class RotationGrantTests(unittest.TestCase):
         ordinary = copy.deepcopy(docs[0])
         ordinary["metadata"]["name"] = "ordinary"
         ordinary["spec"]["name"] = "ordinary"
-        result = rotation_sql(yaml.safe_dump_all(docs + [ordinary]))
+        result = rotation_sql(yaml.safe_dump_all(docs), yaml.safe_dump(ordinary))
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("more than one declaration", result.stderr)
         self.assertEqual(result.stdout, "")
 
     def test_malformed_resource_emits_no_migration(self):
-        docs = list(yaml.safe_load_all(render(values("radar")).stdout))
-        docs[1]["spec"]["providerConfigRef"] = None
-        result = rotation_sql(yaml.safe_dump_all(docs))
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("expected Kubernetes manifest mappings", result.stderr)
+        manifests = render(values("radar")).stdout
+        for broken, diagnostic in (
+            (manifests.replace("providerConfigRef:", "providerConfigRef: null\n  ignored:"),
+             "expected Kubernetes manifest mappings"),
+            (manifests.replace('    dbName: "k3s-postgres"\n', ''), "spec.forProvider.dbName"),
+            (manifests.replace('    name: "k3s-postgres"', '    name: 42', 1), "spec.cluster.name"),
+            (manifests.replace('    username: "radar"', '    username: "radar"\n    username: "other"'),
+             "duplicate YAML key"),
+            (manifests + "\n---\ninvalid: [", "Cannot render rotation grants"),
+            (manifests + "\n---\nkind: Database\n", "at apiVersion"),
+            (manifests + "\n---\napiVersion: postgresql.cnpg.io/v1\nkind: 7\n", "at kind"),
+        ):
+            with self.subTest(diagnostic=diagnostic):
+                self.assertNotEqual(broken, manifests)
+                result = rotation_sql(broken)
+                self.assertEqual(result.returncode, 1)
+                self.assertIn(diagnostic, result.stderr)
+                self.assertEqual(result.stdout, "")
+
+    def test_foreign_namespace_static_role_cannot_pair_with_ordinary_database(self):
+        config = values("radar")
+        config["postgresConsumer"]["databaseNamespace"] = "foreign"
+        ordinary = baseline("radar")[0]
+        result = rotation_sql(render(config).stdout, yaml.safe_dump(ordinary))
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("in the same render", result.stderr)
         self.assertEqual(result.stdout, "")
+
+    def test_list_wrapper_cannot_hide_an_overlapping_database(self):
+        manifests = render(values("radar")).stdout
+        ordinary = copy.deepcopy(baseline("radar")[0])
+        ordinary["metadata"]["name"] = "ordinary"
+        ordinary["spec"]["name"] = "ordinary"
+        for kind in ("List", "ResourceCollection"):
+            with self.subTest(kind=kind):
+                wrapped = yaml.safe_dump({"apiVersion": "v1", "kind": kind, "items": [ordinary]})
+                for sources in ((manifests, wrapped), (wrapped, manifests)):
+                    result = rotation_sql(*sources)
+                    self.assertEqual(result.returncode, 1)
+                    self.assertIn("Kubernetes List input is not supported", result.stderr)
+                    self.assertEqual(result.stdout, "")
+
+    def test_keyword_login_is_quoted_in_rotation_and_migration(self):
+        config = values("radar")
+        config["postgresConsumer"]["username"] = "select"
+        manifests = render(config).stdout
+        docs = list(yaml.safe_load_all(manifests))
+        role, = (d for d in docs if d["kind"] == "SecretBackendStaticRole")
+        sql, = json.loads(role["spec"]["forProvider"]["rotationStatements"][0])
+        self.assertIn('ALTER ROLE "select" WITH CONNECTION LIMIT', sql)
+        self.assertIn('CREATE ROLE "select" WITH LOGIN', sql)
+        result = rotation_sql(manifests)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("('select', 'radar')", result.stdout)
 
 
 class PostgresConsumerTests(unittest.TestCase):
@@ -221,7 +315,10 @@ class PostgresConsumerTests(unittest.TestCase):
             statement = docs[1]["spec"]["forProvider"]["rotationStatements"][0]
             self.assertIn("PASSWORD '{{password}}'", statement)
             # OpenBao expects a JSON array encoded in a string, not raw SQL.
-            self.assertEqual(len(json.loads(statement)), 1)
+            sql, = json.loads(statement)
+            alter = sql.split("ALTER ROLE", 1)[1].split(";", 1)[0]
+            self.assertNotIn("CREATEDB", alter)
+            self.assertNotIn("CREATEROLE", alter)
             templates = docs[2]["spec"]["destination"]["transformation"]["templates"]
             self.assertEqual(set(templates), {"dsn"} if consumer == "radar" else {"username", "password"})
             for template in templates.values():
