@@ -34,6 +34,24 @@ class RetentionManifestTest(unittest.TestCase):
                                      "SecretBackendConnection", "", "postgresql")],
                          "openbao-database-connection.yaml")
 
+    def test_only_restore_cluster_uses_disposable_storage(self):
+        root = PATH.parents[2]
+        script = root / "08-backup-validation/resources/postgresql_pitr.py"
+        spec = spec_from_file_location("postgresql_pitr", script)
+        adapter = module_from_spec(spec)
+        spec.loader.exec_module(adapter)
+        target = "2026-11-20T03:06:00Z"
+        restore = adapter.validation_cluster(target)
+        self.assertEqual(restore["metadata"], {"namespace": "backup-validation", "name": "postgresql-pitr-validation"})
+        self.assertEqual(restore["spec"]["storage"], {"size": "5Gi", "storageClass": "longhorn-pitr-scratch"})
+        self.assertEqual(restore["spec"]["inheritedMetadata"]["annotations"]["k8up.io/backup"], "false")
+        self.assertEqual(restore["spec"]["bootstrap"]["recovery"]["recoveryTarget"], {"targetTime": target})
+        classes = {c["metadata"]["name"]: c for c in yaml.safe_load_all(
+            (root / "02-controllers/longhorn/resources/storageclasses.yaml").read_text())}
+        production = yaml.safe_load((root / "07-k3s-postgres/resources/cluster.yaml").read_text())
+        self.assertEqual(classes[production["spec"]["storage"]["storageClass"]]["reclaimPolicy"], "Retain")
+        self.assertEqual(classes[restore["spec"]["storage"]["storageClass"]]["reclaimPolicy"], "Delete")
+
     def test_restore_validator_pod_uses_runtime_default_seccomp(self):
         path = PATH.parents[2] / "08-backup-validation/resources/validation.yaml"
         job, = (doc for doc in yaml.safe_load_all(path.read_text())

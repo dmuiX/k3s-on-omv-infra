@@ -14,6 +14,12 @@ All OMV storage is beneath the dedicated `k3s-cluster` Btrfs subvolume on the ve
 
 For the November 2026 WAL-retention incident, recovery gates and the planned December CNPG update follow-up, see [PostgreSQL WAL recovery](postgresql-wal-recovery.md).
 
+## Disposable PITR storage
+
+Only the temporary `backup-validation/postgresql-pitr-validation` Cluster requests the non-default `longhorn-pitr-scratch` class. Its 5 GiB working copy has the same encryption and local placement as `longhorn-local`, but its PV uses `Delete`. CNPG propagates `k8up.io/backup: "false"` so generic backups should not mount the disposable PVC. After success or failure, the validator requests deletion of the temporary Cluster in `finally`; normal owner-reference and CSI cleanup reclaims the disk **after** the PVC is released. A killed Job or an in-use PVC can delay or prevent cleanup. Never force a finalizer. Production PVCs, the mirror, backups and existing retained PVs are unchanged.
+
+Before the first new run, verify the class exists and the validator ConfigMap uses it. Record the new PVC UID/PV handle and verify the annotation, reclaim policy and eventual removal of that PVC, PV and Longhorn volume. Reverting the validator affects future claims only; it cannot restore a deleted scratch disk. Keep the class until outstanding claims have finished.
+
 ## Scheduled PITR validator network (#100)
 
 The Nov 19 manual Job `postgresql-restore-manual-20261119181322` and Nov 20 scheduled Job `postgresql-restore-validation-29919060` timed out waiting for the disposable Cluster to become Ready, before the restored SQL check. During the manual run the operator logged 390 resets and 171 EOFs while reading `/pg/status` on TCP 8000. The missing ingress grant is confirmed; those errors do not identify which component closed the connections. The earlier pre-admission scheduled failure is a separate incident.
