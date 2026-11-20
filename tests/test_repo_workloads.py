@@ -235,6 +235,11 @@ class RepositoryWorkloads(unittest.TestCase):
                     )
                     for d in docs
                 ]
+                self.assertNotIn(
+                    ("batch/v1", "Job", "backup-validation", "k8up-canary-seed-v1"),
+                    identities,
+                    "The supervised seed Job must never have a GitOps owner",
+                )
                 if name == "longhorn":
                     # Helm and the later raw override must each supply this exact UI.
                     ui = ("apps/v1", "Deployment", "longhorn", "longhorn-ui")
@@ -617,7 +622,7 @@ class RepositoryWorkloads(unittest.TestCase):
                 {"name": "grafana-admin", "key": key},
             )
 
-    def test_backup_cronjobs_are_bounded_exclusive_and_not_default_identity(
+    def test_backup_cronjobs_are_bounded_exclusive_and_use_scoped_or_no_identity(
         self,
     ) -> None:
         from workload_contracts import Repository
@@ -635,13 +640,17 @@ class RepositoryWorkloads(unittest.TestCase):
                 "openbao-snapshot",
                 "postgresql-size-retention",
                 "postgresql-restore-validation",
+                "k8up-restore-test",
             },
         )
         for job in jobs:
             with self.subTest(job=job["metadata"]["name"]):
                 self.assertEqual(job["spec"]["concurrencyPolicy"], "Forbid")
                 pod = job["spec"]["jobTemplate"]["spec"]["template"]["spec"]
-                self.assertNotEqual(pod["serviceAccountName"], "default")
+                if job["metadata"]["name"] == "k8up-restore-test":
+                    self.assertIs(pod["automountServiceAccountToken"], False)
+                else:
+                    self.assertNotEqual(pod["serviceAccountName"], "default")
                 self.assertTrue(
                     job["spec"]["jobTemplate"]["spec"].get("activeDeadlineSeconds")
                 )

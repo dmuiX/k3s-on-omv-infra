@@ -96,7 +96,7 @@ The official K8up chart `4.10.0` uses K8up `v2.16.0`. Its API supports `backend.
 
 Live's validation PVC and Prometheus repository PVC are dynamically provisioned by StorageClass `smb`, are `ReadWriteMany`, use Kubernetes reclaim policy `Retain` plus driver parameter `onDelete: retain`, and are annotated `k8up.io/backup: "false"` to prevent recursive backup. The inspected chart/driver API supports `subDir`; `${pvc.metadata.namespace}/${pvc.metadata.name}` deterministically maps each retained repository beneath the share. K8up mounts each as its local Restic repository. There is no NFS PV, hostPath, or R2 fallback. Validate SMB dialect negotiation, CSI behavior on every eligible node, retained-subdirectory ownership, UID/GID 1000 permissions, locking, pruning, node loss, and isolated restore before approval.
 
-The validation Schedule keeps 7 daily, 4 weekly, and 6 monthly successful snapshots. A canary PVC is not a restore test: seed known data, back up/check, restore to a new isolated PVC, and compare checksums. Never overwrite production.
+The validation Schedule keeps 7 daily, 4 weekly, and 6 monthly successful snapshots. A canary PVC is not a restore test. See [K8up repository restore tests](k8up-restore-tests.md) for the seeded fixture, restored TSDB read, rollout gates and cleanup. Never overwrite production.
 
 ## Prometheus snapshot-first workflow
 
