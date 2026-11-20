@@ -238,6 +238,9 @@ spec:
     path: 09-kube-prometheus-stack/resources
   - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
     targetRevision: main
+    path: 09-kube-prometheus-stack/restore-test
+  - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
+    targetRevision: main
     path: adapters/credential-custody
   - repoURL: https://github.com/dmuiX/k3s-on-omv-live.git
     targetRevision: main

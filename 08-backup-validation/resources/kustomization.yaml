@@ -6,6 +6,24 @@ resources:
   - postgresql-retention-access.yaml
   - network-policy.yaml
   - validation.yaml
+  - ../restore-test
+# Policies are additive. Keep the existing general grants for other workloads,
+# not the offline restore test or seed. Live's namespace-wide API and HTTPS
+# grants must exclude the same Pods before either Job runs.
+patches:
+  - target:
+      group: networking.k8s.io
+      version: v1
+      kind: NetworkPolicy
+      name: 'allow-backup-validation-(egress|metrics)'
+    patch: |-
+      - op: replace
+        path: /spec/podSelector
+        value:
+          matchExpressions:
+            - key: app.kubernetes.io/name
+              operator: NotIn
+              values: [k8up-restore-test]
 generatorOptions:
   disableNameSuffixHash: true
 configMapGenerator:

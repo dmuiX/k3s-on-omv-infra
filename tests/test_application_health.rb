@@ -51,6 +51,17 @@ class ApplicationHealthTest < Minitest::Test
     assert_match(/\b#{expected}\b/, assess(app))
   end
 
+  # The wave-8 and monitoring restore test templates rely on the pinned native CronJob
+  # check, not an ignore-health annotation. Recheck this contract on upgrades.
+  def test_suspended_cronjob_does_not_block_but_an_enabled_failure_degrades
+    cron = YAML.safe_load(File.read(File.join(ROOT, "adapters/k8up-restore/cronjob.yaml")), aliases: true)
+    assert_equal true, cron.fetch("spec").fetch("suspend")
+    assert_health("Healthy", cron)
+    cron["spec"]["suspend"] = false
+    cron["status"] = {"lastSuccessfulTime" => "2026-01-01T00:00:00Z", "lastScheduleTime" => "2026-01-08T00:00:00Z"}
+    assert_health("Degraded", cron)
+  end
+
   def test_current_successful_sync_preserves_real_health
     [true, false].each do |multi|
       %w[Healthy Progressing Degraded Missing Suspended].each do |health|

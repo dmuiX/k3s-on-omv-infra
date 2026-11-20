@@ -287,6 +287,11 @@ class RepositoryWorkloads(unittest.TestCase):
                     )
                     for d in docs
                 ]
+                self.assertNotIn(
+                    ("batch/v1", "Job", "backup-validation", "k8up-canary-seed-v1"),
+                    identities,
+                    "The supervised seed Job must never have a GitOps owner",
+                )
                 if name == "longhorn":
                     # Helm and the later raw override must each supply this exact UI.
                     ui = ("apps/v1", "Deployment", "longhorn", "longhorn-ui")
@@ -465,6 +470,39 @@ class RepositoryWorkloads(unittest.TestCase):
         )
         self.assertTrue(node["spec"]["template"]["spec"]["containers"])
 
+    def test_longhorn_replacement_storage_classes_preserve_volume_settings(
+        self,
+    ) -> None:
+        from workload_contracts import Repository
+
+        classes = [
+            d for d in Repository().render("longhorn") if d["kind"] == "StorageClass"
+        ]
+        by_name = {d["metadata"]["name"]: d for d in classes}
+        self.assertEqual(
+            len(by_name), len(classes), "StorageClass names must be unique"
+        )
+        replacements = {
+            "longhorn": "longhorn-replicated-retain",
+            "longhorn-local": "longhorn-single-node-retain",
+            "longhorn-monitoring": "longhorn-single-node-omv-wyse-retain",
+            "longhorn-restore-test": "longhorn-single-node-delete",
+        }
+        for old, new in replacements.items():
+            with self.subTest(storage_class=new):
+                self.assertEqual(
+                    by_name[new], {**by_name[old], "metadata": {"name": new}}
+                )
+        annotation = "storageclass.kubernetes.io/is-default-class"
+        self.assertEqual(
+            [
+                name
+                for name, doc in by_name.items()
+                if doc["metadata"].get("annotations", {}).get(annotation) == "true"
+            ],
+            ["longhorn"],
+        )
+
     def test_longhorn_preserves_encrypted_local_storage_and_trim_only_maintenance(
         self,
     ) -> None:
@@ -636,7 +674,7 @@ class RepositoryWorkloads(unittest.TestCase):
                 {"name": "grafana-admin", "key": key},
             )
 
-    def test_backup_cronjobs_are_bounded_exclusive_and_not_default_identity(
+    def test_backup_cronjobs_are_bounded_exclusive_and_use_scoped_or_no_identity(
         self,
     ) -> None:
         from workload_contracts import Repository
@@ -654,13 +692,17 @@ class RepositoryWorkloads(unittest.TestCase):
                 "openbao-snapshot",
                 "postgresql-size-retention",
                 "postgresql-restore-validation",
+                "k8up-restore-test",
             },
         )
         for job in jobs:
             with self.subTest(job=job["metadata"]["name"]):
                 self.assertEqual(job["spec"]["concurrencyPolicy"], "Forbid")
                 pod = job["spec"]["jobTemplate"]["spec"]["template"]["spec"]
-                self.assertNotEqual(pod["serviceAccountName"], "default")
+                if job["metadata"]["name"] == "k8up-restore-test":
+                    self.assertIs(pod["automountServiceAccountToken"], False)
+                else:
+                    self.assertNotEqual(pod["serviceAccountName"], "default")
                 self.assertTrue(
                     job["spec"]["jobTemplate"]["spec"].get("activeDeadlineSeconds")
                 )

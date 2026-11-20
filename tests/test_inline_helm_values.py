@@ -1,12 +1,12 @@
 """Native Helm defaults, private value files and legacy overlay contracts."""
 from pathlib import Path
-import os
 import shutil
-import subprocess
 import tempfile
 import unittest
 
 import yaml
+
+from workload_contracts import public_path, render_kustomization
 
 INFRA = Path(__file__).resolve().parents[1]
 LIVE = INFRA.parent / 'k3s-on-omv-live'
@@ -56,31 +56,29 @@ class InlineHelmValuesTest(unittest.TestCase):
         self.assertIn('valuesObject', bootstrap)
         self.assertNotIn('/01-bootstrap/argocd-config/values.yml', bootstrap)
 
-    @unittest.skipUnless(shutil.which('kubectl'), 'kubectl Kustomize is required')
+    @unittest.skipUnless(shutil.which('kustomize') or shutil.which('kubectl'), 'Kustomize is required')
     def test_private_patches_render_into_native_application_values(self):
-        overlay_dir = LIVE / 'infra/applications'
-        overlay = yaml.safe_load((overlay_dir / 'kustomization.yaml').read_text())
+        overlay_dir = public_path(LIVE, 'infra/applications')
+        overlay = yaml.safe_load(public_path(overlay_dir, 'kustomization.yaml').read_text())
         expected = {
             'argocd-config': ('configs', 'cm', 'url'),
             'longhorn': ('defaultSettings', 'defaultDataPath'),
             'openbao': ('server', 'gateway', 'httpRoute', 'hosts'),
             'kube-prometheus-stack': ('grafana', 'grafana.ini', 'server', 'root_url'),
         }
-        apps = [yaml.safe_load(p.read_text()) for p in INFRA.glob('**/app.yml')]
+        apps = render_kustomization(INFRA, INFRA)
         for name, keys in expected.items():
             app = next(a for a in apps if a['metadata']['name'] == name)
             patch = next(p for p in overlay['patches'] if p['target']['name'] == name)
             with self.subTest(application=name), tempfile.TemporaryDirectory(prefix='inline-values-') as tmp:
-                root = Path(tmp)
+                root = Path(tmp).resolve()
                 (root / 'app.yaml').write_text(yaml.safe_dump(app, sort_keys=False))
-                operations = yaml.safe_load((overlay_dir / patch['path']).read_text())
+                operations = yaml.safe_load(public_path(overlay_dir, patch['path']).read_text())
                 (root / 'private.yaml').write_text(yaml.safe_dump(operations, sort_keys=False))
                 (root / 'kustomization.yaml').write_text(yaml.safe_dump({
                     'apiVersion': 'kustomize.config.k8s.io/v1beta1', 'kind': 'Kustomization',
                     'resources': ['app.yaml'], 'patches': [{**patch, 'path': 'private.yaml'}]}, sort_keys=False))
-                result = subprocess.run(['kubectl', 'kustomize', str(root)], capture_output=True, text=True, timeout=30)
-                self.assertEqual(result.returncode, 0, 'Native Kustomize overlay rendering failed')
-                rendered = yaml.safe_load(result.stdout)
+                rendered, = render_kustomization(root, root)
                 values = rendered['spec']['sources'][0]['helm']['valuesObject']
                 value = values
                 for key in keys:
@@ -97,24 +95,23 @@ class InlineHelmValuesTest(unittest.TestCase):
                 for operation in operations:
                     self.assertTrue(operation['path'].startswith('/spec/sources/0/helm/valuesObject/'))
 
-    @unittest.skipUnless(shutil.which('kubectl'), 'kubectl Kustomize is required')
+    @unittest.skipUnless(shutil.which('kustomize') or shutil.which('kubectl'), 'Kustomize is required')
     def test_full_private_overlay_builds_all_applications(self):
-        directory = LIVE / 'infra/applications'
-        overlay = yaml.safe_load((directory / 'kustomization.yaml').read_text())
+        directory = public_path(LIVE, 'infra/applications')
+        overlay = yaml.safe_load(public_path(directory, 'kustomization.yaml').read_text())
         with tempfile.TemporaryDirectory(prefix='private-applications-') as tmp:
             root = Path(tmp).resolve()
-            (root / 'patches').mkdir()
-            # Resolve the same public tree locally for a network-free native build.
-            # Kustomize requires a relative local base, not an absolute root.
-            overlay['resources'] = [os.path.relpath(INFRA, root)]
-            for patch in overlay['patches']:
-                (root / patch['path']).write_bytes((directory / patch['path']).read_bytes())
+            # Stage the validated public base without lifting Kustomize's load restrictor.
+            (root / 'base.yaml').write_text(yaml.safe_dump_all(render_kustomization(INFRA, INFRA)))
+            overlay['resources'] = ['base.yaml']
+            for index, patch in enumerate(overlay['patches']):
+                source = public_path(directory, patch['path'])
+                patch['path'] = f'patch-{index}.yaml'
+                (root / patch['path']).write_bytes(source.read_bytes())
             (root / 'kustomization.yaml').write_text(yaml.safe_dump(overlay, sort_keys=False))
-            result = subprocess.run(['kubectl', 'kustomize', str(root),
-                '--load-restrictor', 'LoadRestrictionsNone'], capture_output=True, text=True, timeout=30)
-            self.assertEqual(result.returncode, 0, 'Full native private overlay build failed')
-            applications = list(yaml.safe_load_all(result.stdout))
-            expected = [yaml.safe_load(p.read_text()) for p in INFRA.glob('**/app.yml')]
+            applications = render_kustomization(root, root)
+            expected = [yaml.safe_load(public_path(INFRA, str(p.relative_to(INFRA))).read_text())
+                        for p in INFRA.glob('**/app.yml')]
             identities = lambda docs: {(d['metadata']['namespace'], d['metadata']['name']) for d in docs}
             self.assertEqual(len(applications), len(expected))
             self.assertEqual(identities(applications), identities(expected))

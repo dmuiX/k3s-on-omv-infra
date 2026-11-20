@@ -2,13 +2,12 @@
 
 import copy
 import runpy
-import subprocess
 import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-import yaml
+from workload_contracts import render_kustomization
 
 ROOT = Path(__file__).resolve().parents[1]
 BUNDLE = ROOT / "06-platform/shutdown-pod-preview"
@@ -163,13 +162,7 @@ class ShutdownPodPreviewTest(unittest.TestCase):
     def test_rendered_bundle_is_suspended_unregistered_and_has_no_write_access(
         self,
     ) -> None:
-        render = subprocess.run(
-            ["kustomize", "build", str(BUNDLE)],
-            check=True,
-            capture_output=True,
-            text=True,
-        )
-        resources = list(yaml.safe_load_all(render.stdout))
+        resources = render_kustomization(ROOT, BUNDLE)
         self.assertFalse((BUNDLE / "app.yml").exists())
         self.assertFalse(any(d["kind"] == "ClusterRoleBinding" for d in resources))
         (role,) = [d for d in resources if d["kind"] == "ClusterRole"]
