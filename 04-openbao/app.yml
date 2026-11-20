@@ -14,10 +14,13 @@ spec:
   sources:
   - repoURL: https://openbao.github.io/openbao-helm
     chart: openbao
-    targetRevision: 0.30.6
+    targetRevision: 0.30.8
     helm:
       valuesObject:
         injector:
+          agentImage:
+            # The chart supplies the colon before the tag; use the OCI index digest.
+            tag: '2.7.3@sha256:ba4b133eb9586630024e71a617e66f37f29cc3534cdd46a6233e098ceded8dc9'
           resources:
             requests:
               cpu: 10m
@@ -25,6 +28,8 @@ spec:
             limits:
               memory: 128Mi
         server:
+          image:
+            tag: '2.7.3@sha256:ba4b133eb9586630024e71a617e66f37f29cc3534cdd46a6233e098ceded8dc9'
           # Replaces allow-openbao-raft-and-clients with the chart policy openbao.
           # Pruning is disabled: retain the old resource until reviewed retirement.
           # The accepted native selector adds instance=openbao (not component=server).
@@ -155,8 +160,8 @@ spec:
                   - ALL
           gateway:
             httpRoute:
-              # Chart 0.30.4 (still unfixed in 0.30.6) omits backendRefs group/weight
-              # and has no rules override. Kubernetes defaults cause Argo CD drift.
+              # Chart 0.30.8 omits backendRefs group/weight and has no rules override.
+              # Kubernetes defaults cause Argo CD drift.
               # charts/service-route below preserves this route with explicit defaults;
               # restore native routing once upstream supports these fields.
               enabled: false

@@ -1,4 +1,4 @@
-# Keep these policies as standalone resources: OpenBao chart 0.30.6 has no
+# Keep these policies as standalone resources: OpenBao chart 0.30.8 has no
 # suitable native values for namespace-wide default deny, the required injector
 # rules, or our custom snapshot workload's egress. server.networkPolicy only
 # covers server pods; the upstream injector policy is OpenShift-specific.
