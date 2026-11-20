@@ -507,7 +507,10 @@ class RepositoryWorkloads(unittest.TestCase):
         self.assertEqual(spec["primaryUpdateStrategy"], "supervised")
         self.assertFalse(spec["enableSuperuserAccess"])
         self.assertTrue(spec["enablePDB"])
-        self.assertEqual(spec["storage"]["storageClass"], "longhorn-local")
+        self.assertEqual(
+            spec["storage"],
+            {"size": "40Gi", "storageClass": "longhorn-single-node-retain"},
+        )
         self.assertEqual(spec["affinity"]["podAntiAffinityType"], "required")
         self.assertTrue(spec["postgresql"]["synchronous"]["failoverQuorum"])
         self.assertTrue(
