@@ -28,7 +28,7 @@ spec:
   primaryUpdateStrategy: supervised
   primaryUpdateMethod: switchover
   storage:
-    storageClass: longhorn-local
+    storageClass: longhorn-single-node-retain
     size: 40Gi
   resources:
     requests:

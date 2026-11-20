@@ -46,8 +46,10 @@ class RetentionManifestTest(unittest.TestCase):
         self.assertEqual(restore["spec"]["storage"], {"size": "5Gi", "storageClass": "longhorn-restore-test"})
         self.assertEqual(restore["spec"]["inheritedMetadata"]["annotations"]["k8up.io/backup"], "false")
         self.assertEqual(restore["spec"]["bootstrap"]["recovery"]["recoveryTarget"], {"targetTime": target})
-        classes = {c["metadata"]["name"]: c for c in yaml.safe_load_all(
-            (root / "02-controllers/longhorn/resources/storageclasses.yaml").read_text())}
+        resources = root / "02-controllers/longhorn/resources"
+        classes = {c["metadata"]["name"]: c
+                   for path in resources.glob("storageclasses*.yaml")
+                   for c in yaml.safe_load_all(path.read_text())}
         production, = (doc for doc in yaml.safe_load_all(
             (root / "07-k3s-postgres/resources/cluster.yaml").read_text())
             if doc["kind"] == "Cluster" and doc["metadata"]["name"] == "k3s-postgres")
