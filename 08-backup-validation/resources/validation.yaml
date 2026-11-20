@@ -168,7 +168,7 @@ spec:
               command:
                 - /venv/bin/python3
               args:
-                - /validator/postgresql_pitr.py
+                - /validator/postgresql_restore_test.py
               env:
                 - name: AWS_ACCESS_KEY_ID
                   valueFrom:
