@@ -17,6 +17,7 @@ RETIRED_GROUPS = {
     "kubernetes-system-controller-manager",
     "kubernetes-system-scheduler",
     "kubernetes-system-kube-proxy",
+    "etcd",
 }
 CUSTOM_ALERTS = {
     "K3sControllerManagerLeaseNotRenewing",
@@ -83,6 +84,10 @@ class K3sComponentMetricsTests(unittest.TestCase):
         }
         for source in ("apiserver", "kubelet", "kube-state-metrics"):
             self.assertIn(f"{STACK}-{source}", monitors)
+
+    def test_empty_etcd_scrape_and_dependent_resources_do_not_render(self):
+        retired = {f"{STACK}-kube-etcd", f"{STACK}-etcd"}
+        self.assertFalse(retired & {d["metadata"]["name"] for d in self.docs})
 
     def test_kubelet_main_endpoint_supplies_proxy_rule_labels(self):
         name = f"{STACK}-kubelet"
