@@ -12,6 +12,10 @@ LIVE = Path(os.environ.get('PLATFORM_LIVE_REPO', INFRA.parent / 'k3s-on-omv-live
 APPS = Path(os.environ.get('PLATFORM_APPS_REPO', INFRA.parent / 'k3s-on-omv-apps'))
 
 
+NON_DRILL_PODS = {'matchExpressions': [
+    {'key': 'app.kubernetes.io/name', 'operator': 'NotIn', 'values': ['k8up-restore-drill']}]}
+
+
 def load(path):
     return yaml.safe_load(path.read_text())
 
@@ -43,7 +47,7 @@ class RemainingAPINetwork(unittest.TestCase):
         policy = load(LIVE / source['path'] / 'api-network-policy.yaml')
         self.assertEqual(policy['metadata']['namespace'], 'backup-validation')
         self.assertEqual(policy['spec'], {
-            'podSelector': {}, 'policyTypes': ['Egress'], 'egress': api_rules()})
+            'podSelector': NON_DRILL_PODS, 'policyTypes': ['Egress'], 'egress': api_rules()})
 
     def test_backup_non_api_rules_are_unchanged(self):
         docs = list(yaml.safe_load_all(
@@ -117,8 +121,10 @@ class RemainingAPINetwork(unittest.TestCase):
                 self.assertEqual(external['metadata'], {
                     'name': f'allow-{directory if directory != "openbao" else "openbao-snapshot"}-external-https',
                     'namespace': internal['metadata']['namespace']})
+                # The backup-validation raw Infra file does not include its Kustomize exclusion.
+                selector = NON_DRILL_PODS if directory == 'backup-validation' else internal['spec']['podSelector']
                 self.assertEqual(external['spec'], {
-                    'podSelector': internal['spec']['podSelector'],
+                    'podSelector': selector,
                     'policyTypes': ['Egress'], 'egress': [{'ports': tcp(443)}]})
                 # Additive policies: this deliberately permits EVERY destination
                 # on TCP 443, including API Service 443; exact API rules cannot

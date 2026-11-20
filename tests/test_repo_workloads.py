@@ -584,7 +584,7 @@ class RepositoryWorkloads(unittest.TestCase):
                 {"name": "grafana-admin", "key": key},
             )
 
-    def test_backup_cronjobs_are_bounded_exclusive_and_not_default_identity(
+    def test_backup_cronjobs_are_bounded_exclusive_and_use_scoped_or_no_identity(
         self,
     ) -> None:
         from workload_contracts import Repository
@@ -602,13 +602,17 @@ class RepositoryWorkloads(unittest.TestCase):
                 "openbao-snapshot",
                 "postgresql-size-retention",
                 "postgresql-restore-validation",
+                "k8up-restore-drill",
             },
         )
         for job in jobs:
             with self.subTest(job=job["metadata"]["name"]):
                 self.assertEqual(job["spec"]["concurrencyPolicy"], "Forbid")
                 pod = job["spec"]["jobTemplate"]["spec"]["template"]["spec"]
-                self.assertNotEqual(pod["serviceAccountName"], "default")
+                if job["metadata"]["name"] == "k8up-restore-drill":
+                    self.assertIs(pod["automountServiceAccountToken"], False)
+                else:
+                    self.assertNotEqual(pod["serviceAccountName"], "default")
                 self.assertTrue(
                     job["spec"]["jobTemplate"]["spec"].get("activeDeadlineSeconds")
                 )

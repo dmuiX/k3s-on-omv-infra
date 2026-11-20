@@ -6,6 +6,24 @@ resources:
   - postgresql-retention-access.yaml
   - network-policy.yaml
   - validation.yaml
+  - ../restore-drill
+# Policies are additive. Keep the existing general grants for other workloads,
+# not the offline drill or seed. Live's namespace-wide API and HTTPS grants
+# must receive the same exclusion before either suspended workload is run.
+patches:
+  - target:
+      group: networking.k8s.io
+      version: v1
+      kind: NetworkPolicy
+      name: 'allow-backup-validation-(egress|metrics)'
+    patch: |-
+      - op: replace
+        path: /spec/podSelector
+        value:
+          matchExpressions:
+            - key: app.kubernetes.io/name
+              operator: NotIn
+              values: [k8up-restore-drill]
 generatorOptions:
   disableNameSuffixHash: true
 configMapGenerator:

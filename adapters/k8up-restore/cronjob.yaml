@@ -1,0 +1,87 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: k8up-restore-drill
+spec:
+  schedule: '15 9 * * 2'
+  timeZone: Europe/Berlin
+  suspend: true
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 600
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      activeDeadlineSeconds: 7200
+      backoffLimit: 0
+      # The TTL controller also covers supervised Jobs cloned from this template.
+      ttlSecondsAfterFinished: 3600
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: k8up-restore-drill
+            istio.io/dataplane-mode: none
+            sidecar.istio.io/inject: 'false'
+        spec:
+          automountServiceAccountToken: false
+          enableServiceLinks: false
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            fsGroup: 1000
+            seccompProfile: {type: RuntimeDefault}
+          initContainers:
+            - name: restore
+              terminationMessagePolicy: FallbackToLogsOnError
+              image: ghcr.io/k8up-io/k8up:v2.16.0@sha256:29458113b8b676b5b48ebf25b21be5194ee9dccc887b92b8fa27f7d3dfca6f50
+              command: [/bin/sh, /tools/restore.sh]
+              args: [canary, '172800']
+              env:
+                - {name: TMPDIR, value: /scratch}
+                - name: RESTIC_REPOSITORY
+                  value: /repository
+                - name: RESTIC_PASSWORD
+                  valueFrom:
+                    secretKeyRef: {name: k8up-repository, key: password}
+              securityContext: &hardened
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: {drop: [ALL]}
+              resources:
+                requests: {cpu: 100m, memory: 128Mi}
+                limits: {cpu: 500m, memory: 512Mi}
+              volumeMounts:
+                - {name: repository, mountPath: /repository, readOnly: true}
+                - {name: scratch, mountPath: /scratch}
+                - {name: tools, mountPath: /tools, readOnly: true}
+          containers:
+            - name: verify
+              terminationMessagePolicy: FallbackToLogsOnError
+              image: python:3.13-slim-bookworm@sha256:a1165e272e578941b84abc79e4ab38a0305cd12803a5c4247979ac7655f4d641
+              command: [/usr/local/bin/python, -IB, /tools/verify.py]
+              args: [canary]
+              securityContext: *hardened
+              resources:
+                requests: {cpu: 50m, memory: 64Mi}
+                limits: {cpu: 500m, memory: 256Mi}
+              volumeMounts:
+                - {name: scratch, mountPath: /scratch, readOnly: true}
+                - {name: tools, mountPath: /tools, readOnly: true}
+          volumes:
+            - name: repository
+              persistentVolumeClaim: {claimName: k8up-omv-repository, readOnly: true}
+            - name: tools
+              configMap: {name: k8up-restore-tools, defaultMode: 0444}
+            - name: scratch
+              ephemeral:
+                volumeClaimTemplate:
+                  metadata:
+                    annotations:
+                      k8up.io/backup: 'false'
+                  spec:
+                    storageClassName: longhorn-restore-test
+                    accessModes: [ReadWriteOnce]
+                    resources:
+                      requests: {storage: 256Mi}

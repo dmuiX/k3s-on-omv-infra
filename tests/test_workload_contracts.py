@@ -14,7 +14,7 @@ class WorkloadContractBoundaries(unittest.TestCase):
         from workload_contracts import public_path
 
         with tempfile.TemporaryDirectory(prefix="workload-boundary-") as directory:
-            root = Path(directory) / "repo"
+            root = Path(directory).resolve() / "repo"
             root.mkdir()
             outside = root.parent / "private.yml"
             outside.write_text("fixture: not-readable-through-source\n")
@@ -24,6 +24,22 @@ class WorkloadContractBoundaries(unittest.TestCase):
                     public_path(root, value)
             (root / "resource.yaml").write_text("kind: Service\n")
             self.assertEqual(public_path(root, "resource.yaml"), root / "resource.yaml")
+
+    def test_sibling_kustomize_base_cannot_reference_private_resources(self) -> None:
+        from workload_contracts import validate_kustomization
+
+        with tempfile.TemporaryDirectory(prefix="workload-boundary-") as directory:
+            root = Path(directory).resolve() / "repo"
+            app, base = root / "app", root / "base"
+            app.mkdir(parents=True)
+            base.mkdir()
+            (app / "kustomization.yaml").write_text("resources: [../base]")
+            config = base / "kustomization.yaml"
+            config.write_text("resources: []")
+            validate_kustomization(root, app)
+            config.write_text("resources: [../../private.yml]")
+            with self.assertRaisesRegex(ValueError, "escapes repository"):
+                validate_kustomization(root, app)
 
     def test_crd_operator_enum_is_a_string_and_python_yaml_tags_are_rejected(
         self,

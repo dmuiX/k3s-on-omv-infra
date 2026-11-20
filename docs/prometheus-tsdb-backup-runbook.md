@@ -58,7 +58,11 @@ spec:
   successfulJobsHistoryLimit: 3
 ```
 
-Require the same `Completed=True`, `reason=Succeeded` condition on the Check. A restore into an isolated target and checksum comparison remains the acceptance test; repository metadata alone is insufficient.
+Require the same `Completed=True`, `reason=Succeeded` condition on the Check. Repository metadata alone is insufficient. The suspended `k8up-restore-drill` template restores with Restic `--verify`, then validates the staged, uncompressed tar on private 48 GiB scratch (20 GiB archive cap, 32,768 members). It mounts neither the live TSDB nor any source Pod volume.
+
+The final reader must successfully dump at least one `kube_node_info{node!=""}` sample with the expected info-gauge value `1` from the 24 hours preceding the selected Restic snapshot time. This checks historical data against a known metric invariant, **not** an exact timestamp/value comparison against a separately captured source reference. A stack that was not collecting node info during this window will fail the drill.
+
+Collect `snapshot_id` and `time` from the Job Pod's `restore` container logs and `stage=read-samples result=PASS` from `verify`; also require Job completion. A successful restore or `validate-archive` exit alone is not a pass. These logs do not require the scratch PVC, but are not a permanent audit store: retain them before Job TTL/Pod cleanup. Do not collect repository contents, sample labels, or credentials.
 
 ## 3. Clean up the native snapshot
 

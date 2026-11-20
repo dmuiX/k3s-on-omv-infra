@@ -1,10 +1,12 @@
 """Pinned public-only CI tools/charts; no credentials or cluster access."""
 
 import argparse
+import bz2
 import hashlib
 import json
 from pathlib import Path
 import re
+import shutil
 import tarfile
 import tempfile
 from typing import Any
@@ -79,7 +81,7 @@ class PublicRedirects(HTTPRedirectHandler):
 
 def validate_tools(tools: dict[str, Any]) -> None:
     """Close executable names and integrity/version inputs before writing files."""
-    if set(tools) != {"helm", "argocd", "kustomize", "promtool"}:
+    if set(tools) != {"helm", "argocd", "kustomize", "promtool", "restic"}:
         raise ValueError("Invalid tool names")
     for tool in tools.values():
         if (
@@ -184,6 +186,9 @@ def main() -> int:
                     stream = source.extractfile(member)
                     assert stream is not None
                     binary.write_bytes(stream.read())
+            elif tool["url"].endswith(".bz2"):
+                with bz2.open(archive, "rb") as compressed, binary.open("wb") as output:
+                    shutil.copyfileobj(compressed, output)
             else:
                 binary.write_bytes(archive.read_bytes())
             binary.chmod(0o755)

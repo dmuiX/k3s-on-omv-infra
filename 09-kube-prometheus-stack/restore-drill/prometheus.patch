@@ -1,0 +1,52 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: k8up-restore-drill
+spec:
+  schedule: '15 12 * * 2'
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          initContainers:
+            - name: restore
+              args: [prometheus-stream, '691200']
+              env:
+                - name: RESTIC_PASSWORD
+                  valueFrom:
+                    secretKeyRef: {name: prometheus-k8up-repository, key: password}
+            - name: validate-archive
+              terminationMessagePolicy: FallbackToLogsOnError
+              image: python:3.13-slim-bookworm@sha256:a1165e272e578941b84abc79e4ab38a0305cd12803a5c4247979ac7655f4d641
+              command: [/usr/local/bin/python, -IB, /tools/verify.py, prometheus]
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: {drop: [ALL]}
+              resources:
+                requests: {cpu: 100m, memory: 64Mi}
+                limits: {cpu: 500m, memory: 256Mi}
+              volumeMounts:
+                - {name: tools, mountPath: /tools, readOnly: true}
+                - {name: scratch, mountPath: /scratch}
+          containers:
+            - name: verify
+              image: quay.io/prometheus/prometheus:v3.15.0@sha256:efd719c99d83b060d9daefdcf00360461adf279f45ef5391f8d111892118753e
+              command: [/bin/sh, /tools/read-samples.sh]
+              args: []
+              # promtool may need temporary sandbox space; only scratch is writable.
+              env: [{name: TMPDIR, value: /scratch}]
+              volumeMounts:
+                - {name: scratch, mountPath: /scratch, readOnly: false}
+              resources:
+                requests: {cpu: 100m, memory: 128Mi}
+                limits: {cpu: '1', memory: 1Gi}
+          volumes:
+            - name: repository
+              persistentVolumeClaim: {claimName: prometheus-k8up-repository, readOnly: true}
+            - name: scratch
+              ephemeral:
+                volumeClaimTemplate:
+                  spec:
+                    resources:
+                      requests: {storage: 48Gi}

@@ -191,10 +191,7 @@ class Repository:
                         command += ["--api-versions", version]
                 documents += self._run(command, self.values(source))
             elif (path / "kustomization.yaml").is_file():
-                config = yaml.safe_load((path / "kustomization.yaml").read_text())
-                for field in ("resources", "bases", "components"):
-                    for resource in config.get(field, []):
-                        public_path(path, resource)
+                validate_kustomization(self.root, path)
                 documents += self._run(["kustomize", "build", str(path)])
             else:
                 for file in sorted(path.iterdir()):
@@ -214,6 +211,26 @@ class Repository:
                 document["metadata"].setdefault("namespace", namespace)
         self._cache[key] = documents
         return copy.deepcopy(documents)
+
+
+def validate_kustomization(root: Path, directory: Path) -> None:
+    """Allow sibling bases, but never remote or out-of-repository resources."""
+    pending = [directory]
+    seen: set[Path] = set()
+    while pending:
+        base = pending.pop()
+        if base in seen:
+            continue
+        seen.add(base)
+        config = yaml.safe_load(public_path(base, "kustomization.yaml").read_text())
+        for key in ("resources", "bases", "components"):
+            for resource in config.get(key, []):
+                target = (base / resource).resolve()
+                if Path(resource).is_absolute() or not target.is_relative_to(root):
+                    raise ValueError("Kustomize source escapes repository")
+                target = public_path(root, str(target.relative_to(root)))
+                if target.is_dir():
+                    pending.append(target)
 
 
 def public_path(root: Path, relative: str) -> Path:
