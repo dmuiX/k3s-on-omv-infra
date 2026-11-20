@@ -4,9 +4,11 @@
     "test_ci_dependencies",
     "test_cloudnativepg_vso_account",
     "test_credential_resource_ownership",
+    "test_k3s_component_metrics",
     "test_longhorn_discard",
     "test_longhorn_discard_processes",
     "test_metrics_server",
+    "test_etcd_member_metrics",
     "test_native_alert_rules",
     "test_native_request_profile",
     "test_native_reader_accounts",
@@ -66,6 +68,7 @@
       "NativeChartMigrations.test_k8up_leader_and_monitor",
       "NativeChartMigrations.test_cert_manager_and_cnpg",
       "NativeChartMigrations.test_longhorn_only_adds_restricted_scrape_rule",
+      "LonghornUIOverride.test_only_ui_deployment_overrides_helm",
       "NativeChartMigrations.test_native_pdbs_preserve_replica_counts_and_protect_one_replica"
     ],
     "test_oidc_proxy": [
@@ -80,6 +83,9 @@
       "OpenBaoMetricsTests.test_prometheus_identity_from_exact_monitoring_chart_with_live_inputs",
       "OpenBaoMetricsTests.test_no_metrics_token_producers_or_provider_grants",
       "OpenBaoMetricsTests.test_rollout_documents_security_and_orphan_retirement_gates"
+    ],
+    "test_phase_one_network": [
+      "PhaseOneNetwork.test_sources_select_one_file_per_application"
     ],
     "test_postgres_api_network": [
       "PostgresAPINetwork.test_only_approved_broad_api_rule_changed_from_published_baseline",

@@ -451,6 +451,14 @@ class PlatformContractTest < Minitest::Test
             next unless key == "containers" && value.is_a?(Array)
             value.each do |container|
               next unless container.is_a?(Hash)
+              if path == INFRA / "02-controllers/longhorn/resources/longhorn-ui.yaml" &&
+                  document["kind"] == "Deployment" && document.dig("metadata", "namespace") == "longhorn" &&
+                  document.dig("metadata", "name") == "longhorn-ui" && container["name"] == "longhorn-ui"
+                # Pinned chart parity: requests only, no unrelated change to upstream capabilities.
+                assert_equal({"requests" => {"cpu" => "10m", "memory" => "16Mi"}}, container["resources"])
+                assert_equal({"allowPrivilegeEscalation" => false}, container["securityContext"])
+                next
+              end
               assert container.dig("resources", "requests"), "missing requests for #{container['name']} in #{path}"
               assert container.dig("resources", "limits"), "missing limits for #{container['name']} in #{path}"
               security = container["securityContext"] || {}

@@ -51,6 +51,8 @@ even after a workload assertion fails, unless the workflow is cancelled.
 
 ## Workload-specific coverage
 
+`test_etcd_member_metrics.py` renders the pinned exporter DaemonSet and checks that its only pod changes are a read-only textfile mount and collector argument. It runs the deployed member rules through pinned `promtool` with healthy, missing, stale, duplicate and unhealthy member series. For the producer's executable tests and systemd unit checks see the paired Bootstrap repository. Neither suite contacts etcd.
+
 The scope was checked against a read-only deployment inventory. Names/versions
 below describe public desired-state interfaces, **not current live health**.
 Every Infra child must be explicitly classified by the render contract; a new
@@ -120,7 +122,7 @@ is used. Native merge/admission is NOT full operator/runtime acceptance.
 | `csi-driver-smb` | Native controller reader identity, real node DaemonSet, Secret-based StorageClass and retained volumes | Mount/provisioning with private server configuration |
 | `k8up` | Two real controllers, enabled leader election and native monitor | Real repository access/backup/restore |
 | `longhorn` | Real chart/PDB, three CSI replica settings, encrypted local storage class | Operator-generated CSI placement, attachment, storage health and data replicas |
-| `vault-secrets-operator` | Native chart/shared transport, no default authentication, required-value transformation, identity isolation | Live OpenBao authentication, secret refresh and consumer adoption |
+| `vault-secrets-operator` | Native chart/shared transport, no default authentication, required-value transformation, isolated identity, exact-file Live policy source | Private policy tuples, authenticated scrape, OpenBao authentication, fresh reconciliation and consumer adoption |
 | `provider-vault` | Pinned Provider, linked runtime config, exactly 16 explicitly activated resource types | Provider reconciliation and real OpenBao policy/identity changes |
 | `provider-vault-connection` | Public resources render; dependency/credential ownership contracts | Private connection/custody and applied provider credentials |
 | `platform-credentials` | Public resources render; credential ownership and isolated native reader accounts | Private role bindings, real values and rotations |
@@ -131,8 +133,8 @@ is used. Native merge/admission is NOT full operator/runtime acceptance.
 | `openbao-backups` | Bounded exclusive CronJob/account and executable snapshot adapter transitions with fake endpoints | Real backup integrity, credentials, retention and recovery |
 | `openbao-config` | Public render, prerequisite waves and credential ownership | Mount/auth/identity operations and real policies |
 | `k3s-postgres` | Three-instance CNPG CR, required anti-affinity, supervised primary updates, encrypted local class, synchronous failover quorum, Barman plugin/ScheduledBackup; one complete raw ObjectStore with unchanged sizing and a required endpoint Secret reference; executable retention fixtures | [Opt-in pinned VSO parser](../docs/vso-required-values.md#focused-postgresql-endpoint-parser-rerun-no-sibling-repos), guarded Argo adoption, generated Pods, physical data health and backup/restore |
-| `backup-validation` | Bounded exclusive restore-validation CronJob/account, stable generated ConfigMap wired to the CronJob; rendered operator ingress and both directions of validator SQL to restore instance pods; actual import-safe store builder preserves local R2 references through the bridge | Private application chart consumers, safe selective sync on a suspended CronJob and actual database/application restores; the scheduled validator uses an explicit endpoint, not the env-only path |
-| `kube-prometheus-stack` | Real chart, two-replica Prometheus with hard host anti-affinity, native alert rules, two-replica Grafana with secret refs and bounded rollout, disabled Alertmanager | Private dashboards/SSO/credentials, real scrape delivery and alert notification |
+| `backup-validation` | Bounded exclusive restore-validation CronJob/account, stable generated ConfigMap wired to the CronJob; actual import-safe store builder preserves local R2 references through the bridge | Private application chart consumers, safe selective sync on a suspended CronJob and actual database/application restores; the scheduled validator uses an explicit endpoint, not the env-only path |
+| `kube-prometheus-stack` | Real chart, two-replica Prometheus with hard host anti-affinity, native alert rules, two-replica Grafana with secret refs and bounded rollout, disabled Alertmanager, independently staged Grafana policy source | Private policy tuples, gateway login, datasource queries and sidecar refresh on both replicas; real scrape delivery |
 
 K3s-owned DNS/service-LB, private Apps and Bootstrap host ceremonies are not
 owned or changed by this CI. Metrics Server's new GitOps chart is covered here;

@@ -19,7 +19,7 @@ chart-created ServiceAccount `kube-prometheus-stack-grafana`. There is no separa
 Grafana database/admin paths and token renewal; Grafana's workload identity now
 also has that direct OpenBao read authority. The `grafana-admin-provisioner` Job keeps
 its separate ServiceAccount, audience-bound create permission and Job-specific
-NetworkPolicy; Grafana's native policy selects Grafana pods, not that Job.
+NetworkPolicy. The [phase-one Grafana policy](network-policy-rollout.md) selects Grafana Pods, not that Job. Once activated, it does not permit direct OpenBao egress from Grafana: the **VSO controller** uses the Grafana reader identity on its behalf.
 VSO owns **only** Secret `grafana-admin` (keys `admin-user`, `admin-password`,
 no raw payload). The chart's native
 `grafana.admin.existingSecret` connects both Grafana and its reload sidecars to

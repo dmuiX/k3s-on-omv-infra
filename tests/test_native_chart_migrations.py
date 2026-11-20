@@ -70,6 +70,43 @@ def kind(documents, name):
     return [d for d in documents if d['kind'] == name]
 
 
+class LonghornUIOverride(unittest.TestCase):
+    def test_only_ui_deployment_overrides_helm(self):
+        app = load(INFRA / '02-controllers/longhorn/app.yml')
+        chart, directory, live = app['spec']['sources']
+        self.assertEqual((chart['chart'], chart['targetRevision']), ('longhorn', '1.13.0'))
+        self.assertEqual(directory, {'repoURL': 'https://github.com/dmuiX/k3s-on-omv-infra.git',
+                                     'path': '02-controllers/longhorn/resources', 'targetRevision': 'main'})
+        self.assertEqual(live['ref'], 'live')
+        self.assertNotIn('path', live)  # values only: no later manifest producer
+
+        def identity(d):
+            group = d['apiVersion'].split('/')[0] if '/' in d['apiVersion'] else ''
+            return group, d['kind'], d['metadata'].get('namespace'), d['metadata']['name']
+
+        upstream = {identity(d): d for d in render(app)}
+        local = [d for p in (INFRA / directory['path']).iterdir() if p.suffix in ('.yaml', '.yml', '.json')
+                 for d in yaml.safe_load_all(p.read_text()) if d]
+        ui = ('apps', 'Deployment', 'longhorn', 'longhorn-ui')
+        self.assertEqual([identity(d) for d in local if identity(d) in upstream], [ui])
+        override, = [d for d in local if identity(d) == ui]
+        # Compare the ENTIRE Deployment; never print site-specific render content on failure.
+        container, = [c for c in override['spec']['template']['spec']['containers'] if c['name'] == 'longhorn-ui']
+        # Normalize only the verified Docker Hub multiarch index over Helm's exact image tag.
+        tag = 'docker.io/longhornio/longhorn-ui:v1.13.0'
+        index = 'sha256:f22fb0254ae50195c1635ce428dfae26375956b3d7bd39640fae8fe33a236023'
+        self.assertEqual(container['image'], f'{tag}@{index}')
+        container['image'] = tag
+        security = container.pop('securityContext')
+        self.assertEqual(set(security), {'allowPrivilegeEscalation'})
+        self.assertIs(security['allowPrivilegeEscalation'], False)
+        self.assertEqual(container.pop('resources'), {'requests': {'cpu': '10m', 'memory': '16Mi'}})
+        self.assertEqual(container.pop('readinessProbe'), {'httpGet': {'path': '/', 'port': 'http'}})
+        self.assertIn({'name': 'http', 'containerPort': 8000}, container['ports'])
+        self.assertEqual(override['spec']['replicas'], 2)
+        self.assertEqual(digest(override), digest(upstream[ui]), 'UI override diverges from effective Helm values')
+
+
 class NativeChartMigrations(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

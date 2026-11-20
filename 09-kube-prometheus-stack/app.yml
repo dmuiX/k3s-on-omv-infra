@@ -98,6 +98,11 @@ spec:
                       storage: 1Gi
         grafana:
           sidecar:
+            dashboards:
+              # 92.10.1 uses tpl here for both ConfigMap labels and the sidecar
+              # selector. Keep the selector at 1; unselect just these dashboards
+              # in place (prune=false). Scheduler's process panels are K3s-wide.
+              labelValue: '{{ ternary "0" "1" (has (base .Template.Name) (list "scheduler.yaml" "controller-manager.yaml" "proxy.yaml")) }}'
             resources:
               requests:
                 cpu: 10m
@@ -140,6 +145,18 @@ spec:
         prometheus-node-exporter:
           # Only host collectors require a Pod Security exception, not Grafana/Prometheus.
           namespaceOverride: node-exporter
+          # Helm replaces lists. Keep the pinned stack's filesystem exclusions.
+          extraArgs:
+          - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|run/containerd/.+|var/lib/docker/.+|var/lib/kubelet/.+)($|/)
+          - --collector.filesystem.fs-types-exclude=^(autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|hugetlbfs|iso9660|mqueue|nsfs|overlay|proc|procfs|pstore|rpc_pipefs|securityfs|selinuxfs|squashfs|sysfs|tracefs|erofs)$
+          - --collector.textfile.directory=/run/etcd-member-metrics
+          extraHostVolumeMounts:
+          - name: etcd-member-metrics
+            hostPath: /var/lib/etcd-member-metrics
+            mountPath: /run/etcd-member-metrics
+            readOnly: true
+            # Empty on non-members; never block an ordinary node-exporter pod.
+            type: DirectoryOrCreate
           resources:
             requests:
               cpu: 10m
@@ -160,6 +177,35 @@ spec:
             capabilities:
               drop:
               - ALL
+        # K3s exposes embedded components through existing scrapes, not pods
+        # behind the chart's dedicated Services.
+        defaultRules:
+          disabled:
+            KubeControllerManagerDown: true
+            KubeSchedulerDown: true
+            KubeProxyDown: true
+          rules:
+            kubeControllerManager: false
+            kubeProxy: false
+            kubeSchedulerAlerting: false
+            kubeSchedulerRecording: true
+        kubeScheduler:
+          enabled: true
+          jobNameOverride: apiserver
+          service:
+            enabled: false
+          serviceMonitor:
+            enabled: false
+        kubeControllerManager:
+          service:
+            enabled: false
+          serviceMonitor:
+            enabled: false
+        kubeProxy:
+          service:
+            enabled: false
+          serviceMonitor:
+            enabled: false
         kubeApiServer:
           serviceMonitor:
             metricRelabelings:
@@ -218,6 +264,12 @@ spec:
     helm:
       valueFiles:
       - $live/infra/kube-prometheus-stack/postgres-values.yml
+  # Stage 2: Live skips this file until VSO acceptance. Do not glob both policies.
+  - repoURL: https://github.com/dmuiX/k3s-on-omv-live.git
+    targetRevision: main
+    path: infra/network-policies
+    directory:
+      include: grafana.yaml
   syncPolicy:
     managedNamespaceMetadata:
       labels:

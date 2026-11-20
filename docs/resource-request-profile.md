@@ -76,7 +76,7 @@ Native ownership/configuration paths:
 | Component | Memory P95 | Observed memory peak | Defined target | Status |
 |---|---:|---:|---|---|
 | Longhorn driver deployer | 20.0 | 20.2 | 5m / 32Mi | Chart template has no native resources override |
-| Longhorn UI | 4.8 | 8.2 | 5m / 16Mi | Chart template has no native resources override |
+| Longhorn UI | 4.8 | 8.2 | 10m / 16Mi | [UI-only Deployment override](longhorn-ui-hardening.md); no native chart value |
 | Driver deployer wait init container | 9.5 | 9.5 | 5m / 16Mi | No dedicated native resources override found |
 | V1 instance manager on raspi4 | 355.8 | 376.4 | 448Mi; retain its existing CPU request | No native memory-request override found |
 | V1 instance manager on omv | 531.3 | 551.0 | 640Mi; retain its existing CPU request | Same limitation |
@@ -84,7 +84,7 @@ Native ownership/configuration paths:
 | Engine-image daemon | 29.7 | 37.1 | 50m / 48Mi | No native resource override found |
 | Manager image pre-pull helper | 2.9 | 2.9 | 1m / 8Mi | No dedicated native resource override found |
 
-These are planning targets, not implemented reservations. Longhorn 1.13's V1
+Except for the UI, these are planning targets, not implemented reservations. Longhorn 1.13's V1
 instance-manager spec exposes image, node, type and data-engine settings, not a
 resource template. Its CPU guarantee is configurable, but that is not a RAM
 request. V2 memory/hugepage settings must not be repurposed for the V1 engine.
