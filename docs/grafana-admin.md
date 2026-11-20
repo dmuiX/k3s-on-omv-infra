@@ -13,6 +13,12 @@ reuse the owned value. Foreign, malformed or tombstoned entries fail closed;
 never delete history to force regeneration. The hook has no Kubernetes API RBAC,
 PostgreSQL access or Grafana reset capability.
 
+Before login, the hook probes the active OpenBao endpoint without credentials.
+It makes up to 30 health requests with one second between attempts and a
+two-second request timeout. This gives Istio ambient networking time to
+establish the connection without spending the Job's restart budget. If OpenBao
+never reports healthy, the attempt fails before login or any credential write.
+
 VSO reads that path through VaultAuth/OpenBao role `grafana-vso`, reusing the
 chart-created ServiceAccount `kube-prometheus-stack-grafana`. There is no separate
 `grafana-vso` ServiceAccount. The reader ACL remains limited to the existing

@@ -176,32 +176,37 @@ class RepositoryWorkloads(unittest.TestCase):
             patch.object(helper, "login") as login,
             patch.object(helper, "ensure") as ensure,
             patch("urllib.request.urlopen") as health,
-            patch("time.sleep"),
+            patch("time.sleep") as sleep,
         ):
             entrypoint = types.ModuleType("grafana_producer")
             exec(script, vars(entrypoint))
             main = vars(entrypoint)["main"]
             unavailable = URLError(ConnectionRefusedError())
+            response = health.return_value
+            response.__enter__.return_value.status = 200
+            # Fast refusals through second 14 must not exhaust startup retries.
+            health.side_effect = [unavailable] * 15 + [response]
+            login.side_effect = lambda _: self.assertEqual(
+                health.call_args_list, [probe] * 16
+            )
+            main()
+            self.assertEqual(sleep.call_args_list, [call(1)] * 15)
+            login.assert_called_once_with("grafana-admin-provisioner")
+            ensure.assert_called_once()
+
+            health.reset_mock()
+            sleep.reset_mock()
+            login.reset_mock()
+            ensure.reset_mock()
             health.side_effect = unavailable
             with self.assertRaisesRegex(
                 vars(helper)["Failure"], "OpenBao did not become ready"
             ):
                 main()
-            self.assertEqual(health.call_args_list, [probe] * 15)
+            self.assertEqual(health.call_args_list, [probe] * 30)
+            self.assertEqual(sleep.call_args_list, [call(1)] * 29)
             login.assert_not_called()
             ensure.assert_not_called()
-
-            health.reset_mock()
-            response = health.return_value
-            response.__enter__.return_value.status = 200
-            health.side_effect = [unavailable, unavailable, response]
-            # Login must run after the two refused connections and the healthy response.
-            login.side_effect = lambda _: self.assertEqual(
-                health.call_args_list, [probe] * 3
-            )
-            main()
-            login.assert_called_once_with("grafana-admin-provisioner")
-            ensure.assert_called_once()
 
     def test_barman_controller_is_ha_bounded_and_uses_its_native_account(self) -> None:
         from workload_contracts import Repository
