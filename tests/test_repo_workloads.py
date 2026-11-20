@@ -235,6 +235,11 @@ class RepositoryWorkloads(unittest.TestCase):
                     )
                     for d in docs
                 ]
+                if name == "longhorn":
+                    # Helm and the later raw override must each supply this exact UI.
+                    ui = ("apps/v1", "Deployment", "longhorn", "longhorn-ui")
+                    self.assertEqual(identities.count(ui), 2)
+                    identities.remove(ui)
                 self.assertEqual(
                     len(identities),
                     len(set(identities)),
