@@ -6,13 +6,16 @@ metadata:
 rules:
   - apiGroups: [tekton.dev]
     resources: [pipelineruns]
-    verbs: [create]
+    verbs: [create, update, patch, delete]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: tekton-dashboard-envoy-run
   namespace: ci-builds
+  annotations:
+    # Apply run permissions after the admission Deny binding.
+    argocd.argoproj.io/sync-wave: '1'
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: Role

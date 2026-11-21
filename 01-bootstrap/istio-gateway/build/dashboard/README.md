@@ -1,33 +1,29 @@
 # Start the Envoy build from Tekton Dashboard
 
 The Dashboard uses `tekton-pipelines/tekton-dashboard` as its Kubernetes
-identity and reads resources in `ci-builds`. The staged GitOps grant adds only
-`create` on `pipelineruns.tekton.dev` in `ci-builds`. All authenticated Dashboard
+identity and reads resources in `ci-builds`. The GitOps RoleBinding allows
+creating, updating, cancelling and deleting `pipelineruns.tekton.dev` in
+`ci-builds`; admission restricts creation to the reviewed Envoy run. All authenticated Dashboard
 operators share that identity. Tekton executes the run with the separate
 `envoy-builder` ServiceAccount, which has no Kubernetes API grants; the run
 also disables token mounting.
 
-## Install the build and gate
+## Argo CD verification
 
-1. Before merging the build-and-guard change, confirm no Envoy run is active
-   and the Dashboard identity cannot create PipelineRuns. If a legacy manual
-   grant is present, revoke it before continuing. After Argo syncs the
-   `tekton-dashboard` Application, require the Pipeline, Task, locked inputs,
-   admission policy and Deny binding to be present and Synced. Require the live
-   policy's `status.typeChecking` to be present with no expression warnings.
-2. Before merging the separate GitOps write-grant change, repeat the admission
-   checks with the pinned Tekton webhook in isolation. The native admission CI
-   test covers RBAC and policy evaluation but not Tekton webhook defaulting.
-3. Block Dashboard user traffic before merging the write grant in
-   `06-platform/tekton-dashboard/resources/build-access.yaml`. Keep it blocked
-   during verification. Once Argo syncs the grant, use server-side dry-runs with
-   `--as=system:serviceaccount:tekton-pipelines:tekton-dashboard`. Require the
-   exact run below to be accepted and a different name or Pipeline to be denied
-   by this admission policy on every serving API endpoint. Check that the
-   account cannot update or delete runs, write other resources, or read Secrets.
-   Revoke the grant before
-   restoring traffic if any check fails. Do not rely on the UI flag for access
-   control or install the upstream cluster-wide read-write grant.
+Before merging, confirm no Envoy run is active and no legacy manual writer grant
+exists. After Argo syncs the Pipeline, Task, locked inputs, Deny admission
+binding and RoleBinding, require the live admission policy's
+`status.typeChecking` to be present with no expression warnings. The native
+admission CI test covers RBAC and policy evaluation, not Tekton webhook
+defaulting.
+
+Use server-side dry-runs with
+`--as=system:serviceaccount:tekton-pipelines:tekton-dashboard` to verify the
+exact run below is accepted and a different name or Pipeline is denied by the
+admission policy on every serving API endpoint. Check that cancellation and
+deletion work, and that the account cannot write other resources or read
+Secrets. Revoke the grant before using the Dashboard if any check fails. Do not rely on the UI flag for
+access control or install the upstream cluster-wide read-write grant.
 
 ## Run once
 
@@ -53,7 +49,7 @@ same review if the run template or Tekton defaults change. The fixed name allows
 only one Dashboard run object at a time. Do not start a concurrent CLI run or change the
 build inputs during a run. After the run is terminal and its logs and results
 are saved, a trusted operator can remove that exact run before allowing another.
-The Dashboard cannot modify or delete it. The build still does not publish an
+The Dashboard can cancel or delete it afterwards. The build still does not publish an
 image or deploy a gateway.
 
 To revoke access, block user traffic and commit `subjects: []` on the

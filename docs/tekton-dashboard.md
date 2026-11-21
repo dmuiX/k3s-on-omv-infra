@@ -10,9 +10,10 @@ pod ingress to its oauth2-proxy and egress to the Kubernetes API peers in Live.
 The dashboard is pinned to [v0.74.0](https://github.com/tektoncd/dashboard/tree/dac0320946ed1905e97587d5bff683c1de170352),
 which supports the installed Tekton Pipelines v1.18.x LTS. It shows pipelines,
 runs and logs from `ci-builds`. The UI offers PipelineRun creation. The
-Application syncs the build and its admission policy before a separate GitOps
-change grants `create` on `pipelineruns.tekton.dev` only in `ci-builds`. The grant does not allow updates, cancellations, deletion,
-other resource writes, secret reads or cross-namespace logs. The Dashboard uses
+Application syncs the build and its admission policy before the run-management
+RoleBinding. The grant allows create, update, patch and delete of PipelineRuns
+only in `ci-builds`; creation is restricted by admission to the reviewed Envoy
+run. It grants no other resource writes, secret reads or cross-namespace logs. The Dashboard uses
 one Kubernetes identity for all authenticated users; it does not grant
 impersonation or forward browser-supplied Kubernetes authorization. The Pipelines
 Application owns `ci-builds`.
@@ -56,8 +57,8 @@ KV entry to recover a failed rollout.
 ## Enable Envoy runs
 
 Follow the [Envoy Dashboard runbook](../01-bootstrap/istio-gateway/build/dashboard/README.md).
-Argo CD owns the build and guard; verify them before merging the separate
-GitOps write grant. No further Bootstrap or OpenBao changes are needed. Use
+Argo CD owns the build, guard and run-management RoleBinding. Verify the policy and
+access after sync. No further Bootstrap or OpenBao changes are needed. Use
 Tekton API v1 and the reviewed payload in the Dashboard YAML editor, not the
 simple form. The UI flag is not a security boundary.
 
