@@ -60,6 +60,59 @@ Grafana consumes the separate VSO-owned `grafana-admin` Secret through the nativ
 
 Each Job has a separate ServiceAccount, audience-bound login role, create-only policy and NetworkPolicy. Longhorn/database producers have no Argo permissions or Argo CLI. The central multi-service Job has been removed. A small `adapters/credential-custody` ConfigMap provides identical HTTP/CAS/ownership handling in each consumer namespace; it contains no consumer paths, identity decisions, Argo implementation or combined issuer permissions.
 
+## PostgreSQL password rotation grants (proposed)
+
+The `postgres-consumer` chart is the opt-in for OpenBao-managed database passwords. An application adds the chart to its Argo CD sources and sets its login role in `postgresConsumer.username` in its Live values (for example, `apps/radar/values.yml` in Live). Use the same enabled declaration that renders the OpenBao `SecretBackendStaticRole` to select both the target PostgreSQL cluster and the login role. Currently this selects `grafana` and `radar`. Do not grant membership based on database inventory, add a second global list, or require changes to Ansible bootstrap. A database without OpenBao password rotation needs no grant. The existing OpenBao connection `allowedRoles` and provider API policies still enumerate Grafana and Radar. Before promising onboarding from app values alone, resolve those controls from the same trusted declarations; do not replace them with wildcard access.
+
+On PostgreSQL 18, `CREATEROLE` alone does not allow `openbao_manager` to change a different, existing role's password. The rotation statement for an existing login changes only the password and connection limit; setting `NOCREATEDB` would require `CREATEDB` on the manager even if the login already lacks that attribute. PostgreSQL grants admin membership automatically when the manager creates a role, but a restore can contain an existing login without that membership. The required membership is `ADMIN TRUE, INHERIT FALSE, SET FALSE`: allow the manager to administer the selected role, without automatically inheriting its privileges or receiving direct `SET ROLE` access. `ADMIN` itself is a delegation privilege, not a password-only privilege, so the target roles must be explicitly scoped.
+
+[CloudNativePG 1.30.1 membership reconciliation](https://github.com/cloudnative-pg/cloudnative-pg/blob/v1.30.1/internal/management/controller/roles/runnable.go) removes memberships of a managed login when they are absent from `inRoles`. `inRoles` is a list of names and [the operator issues a plain `GRANT`](https://github.com/cloudnative-pg/cloudnative-pg/blob/v1.30.1/internal/management/controller/roles/postgres.go) for missing entries. Do not ship an `inRoles`-only change: the auto-synced production Application could grant default membership privileges without enabling password rotation. Likewise, `postInitSQL` only covers empty clusters, not recovery from a backup or an existing database.
+
+The implementation must reconcile the exact grants from the consumer declarations after the target PostgreSQL primary is available and before OpenBao configures the static role. It must adopt an existing login without changing its password or ownership, or create the missing unprivileged role without waiting for OpenBao to create it. Keep application workloads and OpenBao unprivileged; the database-side grant writer needs an explicitly scoped trust boundary. The writer and CloudNativePG must not disagree about membership ownership. Do not open remote `postgres` access or recreate databases or login roles to work around missing rights.
+
+The draft implementation at `07-k3s-postgres/tools/render_rotation_grants.py` consumes trusted `helm template` output for one cluster. A platform/database maintainer must approve each cluster, database and login binding in the app's tracked Git declaration, including existing logins whose databases have not yet been created. Render only reviewed inputs at pinned revisions. Keep each consumer in its own render file; the static role and its Database are matched only within that file. Include additional files for non-rotated databases so overlaps are checked across all declarations. The input must use standalone manifests, not Kubernetes `List` wrappers. Missing selectors, duplicate YAML keys and duplicate resource identities fail before any SQL is emitted. A matching pair alone is not proof of authorization, and a partial input cannot establish exclusive ownership. The tool emits one transaction; it does not contact Kubernetes or PostgreSQL or read passwords. To review a render for an isolated cluster:
+
+```bash
+python3 07-k3s-postgres/tools/render_rotation_grants.py \
+  --namespace cloudnative-pg --cluster k3s-postgres \
+  rendered-grafana.yaml rendered-radar.yaml other-databases.yaml
+```
+
+The migration requires the restricted manager login to exist. It must run as `postgres` in the `postgres` maintenance database on the verified writable primary, not inside a consumer database. It creates missing app logins without passwords and preserves existing app login passwords and ownership. It refuses mismatched ownership, privileged targets, and conflicting grants from other grantors. This is an add/update preview: disabling a consumer does not revoke existing membership. Before activation, define how the writer identifies and revokes stale grants that it owns, without touching unrelated memberships. The optional sandbox Sync hook below checks the primary destination. The manager ownership handoff, OpenBao allowlist derivation, rotation readiness gate across production Applications, and real GitOps restore test are still required before any live use. Do not pipe this draft output into production while CloudNativePG still owns the manager's memberships.
+
+### Isolated Argo Sync hook
+
+Use a dedicated Kubernetes and OpenBao sandbox, not merely a separate namespace on the live platform: static roles are cluster-scoped. For a single-instance disposable CNPG Cluster with an existing restricted `openbao_manager` login not managed by CNPG, render the migration as an Argo CD Sync hook. Supply the approved Pod name and UID, Kubernetes Cluster UID and PostgreSQL system identifier:
+
+```bash
+python3 07-k3s-postgres/tools/render_rotation_grants.py \
+  --namespace "$sandbox_namespace" --cluster "$sandbox_cluster" \
+  --argo-hook "$primary_pod" "$cluster_uid" "$primary_pod_uid" "$system_id" \
+  rendered-grafana.yaml rendered-radar.yaml other-databases.yaml
+```
+
+The hook has no direct Kubernetes Secret API permissions. It limits pod exec to the named primary, checks that current and target primary agree, rejects inline and standalone CNPG management of the manager login, verifies the approved Cluster and Pod identities, and checks the SQL digest before opening a local Unix-socket `psql` session. The transaction checks the PostgreSQL system identifier and writability again and bounds lock and statement waits. The API checks are snapshots, not a failover fence; the sandbox must exclude concurrent Pod replacement or operator changes during execution. The hook never automatically picks a new target. Pod exec is database-admin authority: review the generated Job (including its digest) and inputs together at pinned revisions, use a platform-owned Application in a trusted namespace without app workload creation rights, and remove the binding at retirement. Input matching and a digest do not establish app entitlement.
+
+Include the generated resources and the matching static roles (wave `-10` or later) in a **single isolated Argo Application**, and run a full Sync. The hook's configuration and RBAC are in wave `-12`; the hook is in `-11`. This orders initial creation in that Application only: selective sync skips hooks, and OpenBao can still rotate already-created roles independently. Production Applications do not consume this generated output and no automated credential handoff is performed here.
+
+**Acceptance in an isolated GitOps environment:**
+
+1. Sync into a clean PostgreSQL cluster with two opted-in consumers and one ordinary database. Verify that the manager's membership in each opted-in login has the exact options and that it receives no membership in the ordinary database's login.
+2. Restore a backup containing the roles and their data, with one missing membership and one with permissive options from `postgres`. Sync with no manual SQL; require the exact options and verify the restored data. Separately test a conflicting membership from a different grantor: the preview must refuse it and roll back the entire transaction. Test the successful paths using an isolated OpenBao connection, and verify rotation succeeds without inspecting passwords.
+3. Reject a consumer declaration targeting a privileged role or another application's login, including when both resources in the unauthorized pair agree; it must not change any memberships. Sync the valid declarations again and wait for a CloudNativePG role reconciliation. Verify the options and app connectivity are unchanged and no extra memberships appeared. Run these rehearsals only against isolated clusters.
+
+Inspect direct membership options without reading any passwords:
+
+```sql
+SELECT target.rolname, membership.admin_option,
+       membership.inherit_option, membership.set_option
+FROM pg_catalog.pg_auth_members AS membership
+JOIN pg_catalog.pg_roles AS target ON target.oid = membership.roleid
+JOIN pg_catalog.pg_roles AS member ON member.oid = membership.member
+WHERE member.rolname = 'openbao_manager'
+ORDER BY target.rolname;
+```
+
 ## Producer retries and diagnostic lifetime
 
 OpenBao snapshots and the PostgreSQL manager, Longhorn proxy and Grafana admin
