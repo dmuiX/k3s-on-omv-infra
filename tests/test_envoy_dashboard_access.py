@@ -149,6 +149,19 @@ class NativeEnvoyDashboardAccessTest(unittest.TestCase):
         )
         k("create", "namespace", "ci-builds")
         k("apply", "-f", "-", text=(BUILD / "dashboard/admission.yaml").read_text())
+        # The real Application also grants reads; kubectl patch gets the object first.
+        reader = [
+            d
+            for d in yaml.safe_load_all(
+                (
+                    ROOT / "06-platform/tekton-dashboard/resources/access.yaml"
+                ).read_text()
+            )
+            if d["metadata"]["name"] == "tekton-dashboard-reader"
+        ]
+        self.assertEqual({d["kind"] for d in reader}, {"Role", "RoleBinding"})
+        for document in reader:
+            k("apply", "--server-side", "-f", "-", resource=document)
         role, binding = yaml.safe_load_all(ACCESS.read_text())
         binding["subjects"] = [DASHBOARD_SUBJECT]
         k("apply", "--server-side", "-f", "-", resource=role)
