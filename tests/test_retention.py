@@ -1,16 +1,24 @@
 import copy
 import io
 import json
+import subprocess
 import sys
+import traceback
 import unittest
 from datetime import datetime, timedelta, timezone
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, call, patch
+from urllib.error import HTTPError
+from urllib.request import Request
+from uuid import UUID
 
 import yaml
 
 PATH = Path(__file__).parents[1] / "adapters/postgresql-size-retention/retention.py"
+VALIDATOR = PATH.parents[2] / "08-backup-validation/resources/postgresql_restore_test.py"
+LEASE_PATH = "/apis/coordination.k8s.io/v1/namespaces/backup-validation/leases"
+LEASE_NAME = "postgresql-restore-status"
 SPEC = spec_from_file_location("retention", PATH)
 MODULE = module_from_spec(SPEC)
 sys.modules[SPEC.name] = MODULE
@@ -58,40 +66,63 @@ class RetentionManifestTest(unittest.TestCase):
         self.assertEqual(classes[restore["spec"]["storage"]["storageClass"]]["reclaimPolicy"], "Delete")
 
     def test_restore_test_and_retention_agree_on_evidence(self):
-        script = PATH.parents[2] / "08-backup-validation/resources/postgresql_restore_test.py"
-        spec = spec_from_file_location("postgresql_restore_test", script)
+        spec = spec_from_file_location("postgresql_restore_test", VALIDATOR)
         adapter = module_from_spec(spec)
         spec.loader.exec_module(adapter)
-        for result, flags, expected in (
-            ("success", {"restore_target_verified": True, "mirror_verified": True}, "true"),
-            ("failed", {}, "false"),
+        legacy = {
+            "metadata": {
+                "name": LEASE_NAME, "namespace": "backup-validation", "resourceVersion": "1234",
+                "annotations": {
+                    "k3s-on-omv.io/result": "success", "k3s-on-omv.io/pitr-verified": "true",
+                    "k3s-on-omv.io/omv-mirror-verified": "true",
+                },
+            },
+            "spec": {"holderIdentity": "postgresql-pitr-validation", "renewTime": "2000-01-01T00:00:00Z"},
+        }
+        for current, result, flags, expected in (
+            (None, "failed", {}, "false"),
+            (legacy, "success", {"restore_target_verified": True, "mirror_verified": True}, "true"),
         ):
-            with self.subTest(result=result), patch.object(adapter, "api", return_value=None) as api:
+            with self.subTest(result=result), patch.object(adapter, "api", side_effect=[current, {}]) as api:
+                started = datetime.now(timezone.utc)
                 adapter.put_lease(result, **flags)
                 body = api.call_args.args[2]
+                named_path = f"{LEASE_PATH}/{LEASE_NAME}"
+                self.assertEqual(api.call_args_list, [
+                    call(named_path, allowed=(404,)),
+                    (call(named_path, "PUT", body) if current else call(LEASE_PATH, "POST", body)),
+                ])
+                self.assertEqual(body["metadata"]["name"], LEASE_NAME)
+                self.assertEqual(body["metadata"]["namespace"], "backup-validation")
+                self.assertEqual(body["metadata"].get("resourceVersion"), "1234" if current else None)
                 self.assertEqual(body["metadata"]["annotations"], {
                     "k3s-on-omv.io/result": result,
                     "k3s-on-omv.io/restore-target-verified": expected,
                     "k3s-on-omv.io/omv-mirror-verified": expected,
                 })
+                self.assertEqual(body["spec"]["holderIdentity"], "postgresql-restore-test")
+                renewed = MODULE._parse_time(body["spec"]["renewTime"])
+                self.assertGreaterEqual(renewed, started)
                 with (patch.dict(MODULE.os.environ, RESTORE_LEASE_NAMESPACE="backup-validation",
-                                 RESTORE_LEASE_NAME="postgresql-restore-status",
+                                 RESTORE_LEASE_NAME=LEASE_NAME,
                                  BASE_BACKUP_BUDGET_BYTES=str(MODULE.BUDGET)),
                       patch.object(MODULE.Path, "read_text", return_value="mock-token"),
                       patch.object(MODULE.ssl, "create_default_context"),
                       patch.object(MODULE.urllib.request, "urlopen") as read_lease):
-                    read_lease.return_value = io.StringIO(json.dumps(body))
                     if result == "success":
-                        self.assertEqual(MODULE._lease()[0], result)
-                        for key in ("restore-target-verified", "omv-mirror-verified"):
-                            missing = copy.deepcopy(body)
-                            del missing["metadata"]["annotations"][f"k3s-on-omv.io/{key}"]
-                            read_lease.return_value = io.StringIO(json.dumps(missing))
+                        read_lease.return_value = io.StringIO(json.dumps(body))
+                        self.assertEqual(MODULE._lease(), (result, renewed))
+                        self.assertEqual(read_lease.call_args.args[0].selector, named_path)
+                        missing_mirror = copy.deepcopy(body)
+                        del missing_mirror["metadata"]["annotations"]["k3s-on-omv.io/omv-mirror-verified"]
+                        for invalid in (legacy, missing_mirror):
+                            read_lease.return_value = io.StringIO(json.dumps(invalid))
                             with patch.object(MODULE, "_catalog") as catalog:
                                 with self.assertRaisesRegex(RuntimeError, "does not verify the recovery target time"):
                                     MODULE.run(preview=True)
                                 catalog.assert_not_called()
                     else:
+                        read_lease.return_value = io.StringIO(json.dumps(body))
                         with self.assertRaisesRegex(RuntimeError, "does not verify the recovery target time"):
                             MODULE._lease()
 
@@ -101,6 +132,23 @@ class RetentionManifestTest(unittest.TestCase):
                 if doc["kind"] == "CronJob" and doc["metadata"]["name"] == "postgresql-restore-validation")
         pod = job["spec"]["jobTemplate"]["spec"]["template"]["spec"]
         self.assertEqual(pod.get("securityContext", {}).get("seccompProfile"), {"type": "RuntimeDefault"})
+
+    def test_restore_validator_role_limits_existing_resources_to_its_own_name(self) -> None:
+        documents = yaml.safe_load_all((VALIDATOR.parent / "validation.yaml").read_text())
+        role, = (doc for doc in documents if doc["kind"] == "Role"
+                 and doc["metadata"]["namespace"] == "backup-validation"
+                 and doc["metadata"]["name"] == "restore-validation")
+        for resource, api_group, named_verbs in (
+            ("clusters", "postgresql.cnpg.io", {"get", "delete"}),
+            ("objectstores", "barmancloud.cnpg.io", {"delete"}),
+        ):
+            with self.subTest(resource=resource):
+                rules = [rule for rule in role["rules"] if resource in rule["resources"] or "*" in rule["resources"]]
+                self.assertCountEqual([{**rule, "verbs": set(rule["verbs"])} for rule in rules], [
+                    {"apiGroups": [api_group], "resources": [resource], "verbs": {"create"}},
+                    {"apiGroups": [api_group], "resources": [resource], "verbs": named_verbs,
+                     "resourceNames": ["postgresql-restore-test"]},
+                ])
 
     def test_validation_uses_explicit_r2_secret_references(self):
         root = PATH.parents[2] / "08-backup-validation/resources"
@@ -193,6 +241,182 @@ class RetentionManifestTest(unittest.TestCase):
                 "S3_ENDPOINT": "S3_ENDPOINT",
             }.items()
         })
+
+
+class RestoreValidatorTest(unittest.TestCase):
+    store_collection = "/apis/barmancloud.cnpg.io/v1/namespaces/backup-validation/objectstores"
+    cluster_collection = "/apis/postgresql.cnpg.io/v1/namespaces/backup-validation/clusters"
+    store_path = f"{store_collection}/postgresql-restore-test"
+    cluster_path = f"{cluster_collection}/postgresql-restore-test"
+
+    def setUp(self) -> None:
+        spec = spec_from_file_location("postgresql_restore_test", VALIDATOR)
+        self.adapter = module_from_spec(spec)
+        spec.loader.exec_module(self.adapter)
+        self.enterContext(patch.dict(self.adapter.os.environ, S3_ENDPOINT="https://validation.example.invalid"))
+        run = UUID(int=1)
+        self.enterContext(patch.object(self.adapter.uuid, "uuid4", return_value=run))
+        self.enterContext(patch.object(self.adapter, "secret", return_value={}))
+        self.enterContext(patch.object(self.adapter, "api_settings", return_value=({}, None)))
+        self.enterContext(patch.object(self.adapter.time, "sleep"))
+        connect = self.enterContext(patch.object(self.adapter, "connect"))
+        cursor = connect.return_value.__enter__.return_value.cursor.return_value.__enter__.return_value
+        cursor.fetchone.return_value = (datetime(2026, 11, 20, tzinfo=timezone.utc),)
+        cursor.fetchall.return_value = [(f"{run.hex}-before", "before")]
+        self.lease = self.enterContext(patch.object(self.adapter, "put_lease"))
+        self.http = self.enterContext(patch.object(self.adapter, "urlopen"))
+        self.source = yaml.safe_load((PATH.parents[2] / "07-k3s-postgres/resources/objectstore.yaml").read_text())
+
+    @staticmethod
+    def response(payload: dict, *, status: int = 200) -> MagicMock:
+        reply = MagicMock(status=status)
+        reply.__enter__.return_value = reply
+        reply.read.return_value = json.dumps(payload).encode()
+        return reply
+
+    def created_response(self, uid: str) -> MagicMock:
+        return self.response(self.created(uid), status=201)
+
+    def created(self, uid: str) -> dict:
+        return {"metadata": {"name": "postgresql-restore-test", "namespace": "backup-validation", "uid": uid}}
+
+    def error(self, path: str, status: int) -> HTTPError:
+        error = HTTPError(f"https://kubernetes.default.svc{path}", status, "mock failure", {}, io.BytesIO())
+        self.addCleanup(error.close)
+        return error
+
+    def assert_deletes(self, *expected: tuple[str, str]) -> None:
+        requests = [args[0] for args, _ in self.http.call_args_list if args[0].get_method() == "DELETE"]
+        self.assertEqual([(req.selector, json.loads(req.data)) for req in requests], [
+            (path, {"apiVersion": "v1", "kind": "DeleteOptions", "preconditions": {"uid": uid}})
+            for path, uid in expected
+        ])
+
+    def test_missing_source_credentials_replace_previous_evidence_without_marker_cleanup(self) -> None:
+        def missing_credentials(namespace: str, name: str) -> dict:
+            self.lease.assert_called_once_with("running")
+            raise RuntimeError("source credentials unavailable")
+
+        self.adapter.secret.side_effect = missing_credentials
+        with self.assertRaisesRegex(RuntimeError, "source credentials unavailable"):
+            self.adapter.main()
+        self.assertEqual(self.lease.call_args_list, [call("running"), call("failed")])
+        self.adapter.connect.assert_not_called()
+        self.http.assert_not_called()
+
+    def test_object_store_collision_deletes_neither_resource(self) -> None:
+        self.http.side_effect = [self.response(self.source), self.error(self.store_collection, 409)]
+        with self.assertRaisesRegex(RuntimeError, "failed with HTTP 409"):
+            self.adapter.main()
+        self.assert_deletes()
+        self.assertEqual(self.http.call_count, 2)  # No Cluster create or ownership lookup.
+        self.assertEqual(self.lease.call_args_list, [call("running"), call("failed")])
+
+    def test_cluster_collision_deletes_only_the_confirmed_store_uid(self) -> None:
+        self.http.side_effect = [
+            self.response(self.source), self.created_response("store-uid"),
+            self.error(self.cluster_collection, 409), self.response({}),
+        ]
+        with self.assertRaisesRegex(RuntimeError, "failed with HTTP 409"):
+            self.adapter.main()
+        self.assert_deletes((self.store_path, "store-uid"))
+        self.assertEqual(self.lease.call_args_list, [call("running"), call("failed")])
+
+    def test_ambiguous_create_never_looks_up_or_deletes_the_name(self) -> None:
+        for response, error, message in (
+            (TimeoutError("create response lost"), TimeoutError, "response lost"),
+            (self.response(self.created("existing-uid")), RuntimeError, "did not return HTTP 201"),
+            (self.created_response(""), RuntimeError, "did not confirm"),
+        ):
+            with self.subTest(message=message):
+                self.http.reset_mock()
+                self.http.side_effect = [self.response(self.source), response]
+                with self.assertRaisesRegex(error, message):
+                    self.adapter.main()
+                self.assert_deletes()
+                self.assertEqual(self.http.call_count, 2)
+
+    def test_uid_conflict_never_retries_delete_against_replacement(self) -> None:
+        ready = {**self.created("cluster-uid"), "status": {"conditions": [{"type": "Ready", "status": "True"}]}}
+        replies = iter([
+            self.response(self.source), self.created_response("store-uid"),
+            self.created_response("cluster-uid"), self.response(ready),
+        ])
+        live_cluster = self.created("replacement-uid")
+
+        def request(req: Request, **kwargs: object) -> MagicMock:
+            if req.get_method() == "DELETE" and req.selector == self.cluster_path:
+                # The Cluster was replaced after readiness, before the server handled DELETE.
+                uid = json.loads(req.data or b"{}").get("preconditions", {}).get("uid")
+                if uid is not None and uid != live_cluster["metadata"]["uid"]:
+                    raise self.error(req.selector, 409)
+                return self.response({})
+            if req.get_method() == "DELETE" and req.selector == self.store_path:
+                return self.response({})
+            return next(replies)
+
+        self.http.side_effect = request
+        with (patch.object(self.adapter, "mirror_matches_catalog", return_value=True),
+              self.assertRaisesRegex(RuntimeError, "validation cleanup failed") as failure):
+            self.adapter.main()
+        self.assertIn("HTTP 409", str(failure.exception.__cause__))
+        self.assert_deletes((self.cluster_path, "cluster-uid"), (self.store_path, "store-uid"))
+        self.assertEqual(self.lease.call_args_list, [call("running"), call("failed-cleanup")])
+
+    def test_success_is_published_only_after_uid_guarded_cleanup(self) -> None:
+        ready = {**self.created("cluster-uid"), "status": {"conditions": [{"type": "Ready", "status": "True"}]}}
+        self.http.side_effect = [
+            self.response(self.source), self.created_response("store-uid"),
+            self.created_response("cluster-uid"), self.response(ready),
+            self.response({}), self.error(self.store_path, 404),
+        ]
+
+        def record(result: str, **flags: bool) -> None:
+            if result == "success":
+                self.assert_deletes((self.cluster_path, "cluster-uid"), (self.store_path, "store-uid"))
+
+        self.lease.side_effect = record
+        with patch.object(self.adapter, "mirror_matches_catalog", return_value=True):
+            self.adapter.main()
+        self.assertEqual(self.lease.call_args_list, [
+            call("running"), call("success", restore_target_verified=True, mirror_verified=True),
+        ])
+
+    def test_catalog_errors_do_not_log_private_command_or_output(self) -> None:
+        endpoint, bucket, server = "https://private-catalog.example.invalid", "fixture-bucket", "fixture-server"
+        stdout, stderr = "fixture-catalog-stdout", "fixture-catalog-stderr"
+        args = ["barman-cloud-backup-list", "--format", "json", "--endpoint-url", endpoint, f"s3://{bucket}", server]
+        ready = {**self.created("cluster-uid"), "status": {"conditions": [{"type": "Ready", "status": "True"}]}}
+        for error in (subprocess.CalledProcessError(1, args, output=stdout, stderr=stderr),
+                      subprocess.TimeoutExpired(args, 300, output=stdout, stderr=stderr)):
+            with (self.subTest(error=type(error).__name__),
+                  patch.dict(self.adapter.os.environ, S3_ENDPOINT=endpoint, S3_BUCKET=bucket, BARMAN_SERVER_NAME=server),
+                  patch.object(subprocess, "run", side_effect=error) as barman):
+                self.http.reset_mock()
+                self.lease.reset_mock()
+                self.http.side_effect = [
+                    self.response(self.source), self.created_response("store-uid"),
+                    self.created_response("cluster-uid"), self.response(ready),
+                    self.response({}), self.response({}),
+                ]
+                try:
+                    self.adapter.main()
+                except Exception:
+                    log = traceback.format_exc()
+                else:
+                    self.fail("a catalog error did not fail the restore test")
+                for private in (endpoint, bucket, server, stdout, stderr):
+                    self.assertNotIn(private, log)
+                self.assertIn("RuntimeError: barman-cloud-backup-list failed or timed out", log)
+                self.assertEqual(barman.call_args.args[0], args)
+                self.assertEqual(self.lease.call_args_list, [call("running"), call("failed")])
+                self.assert_deletes((self.cluster_path, "cluster-uid"), (self.store_path, "store-uid"))
+
+    def test_replacement_is_not_accepted_as_ready(self) -> None:
+        replacement = {**self.created("replacement-uid"), "status": {"conditions": [{"type": "Ready", "status": "True"}]}}
+        self.http.side_effect = [self.response(replacement)]
+        with self.assertRaisesRegex(RuntimeError, "UID changed"):
+            self.adapter.wait_ready("cluster-uid")
 
 
 class RetentionTest(unittest.TestCase):
