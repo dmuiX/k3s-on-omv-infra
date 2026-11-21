@@ -102,15 +102,18 @@ jobs:
           python-version: '3.12'
       - name: Install pinned test dependencies
         run: python -m pip install -r tests/requirements-ci.txt
-      - name: Verify locked K8up chart and Kustomize before native admission
-        if: matrix.suite == 'k8up-pipeline-admission'
+      - name: Verify dependencies for native admission
         run: |
-          for dependency in k8up kustomize; do
+          dependencies=(kustomize)
+          if [ "$ADMISSION_PURPOSE" = k8up-pipeline-test ]; then
+            dependencies+=(k8up)
+            echo "K8UP_PIPELINE_CRDS=$RUNNER_TEMP/infra-ci-charts/k8up-4.10.0/k8up/crds" >> "$GITHUB_ENV"
+          fi
+          for dependency in "${dependencies[@]}"; do
             python tests/ci_dependencies.py --only "$dependency" \
               --cache "$RUNNER_TEMP/infra-ci-downloads" \
               --charts "$RUNNER_TEMP/infra-ci-charts" --bin "$RUNNER_TEMP/infra-ci-bin"
           done
-          echo "K8UP_PIPELINE_CRDS=$RUNNER_TEMP/infra-ci-charts/k8up-4.10.0/k8up/crds" >> "$GITHUB_ENV"
           echo "$RUNNER_TEMP/infra-ci-bin" >> "$GITHUB_PATH"
       - name: Check timezone admission test types and style
         if: matrix.suite == 'timezone-admission'

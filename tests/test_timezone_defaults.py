@@ -15,6 +15,8 @@ from zoneinfo import ZoneInfo
 
 import yaml
 
+from workload_contracts import render_kustomization
+
 ROOT = Path(__file__).resolve().parents[1]
 COMPONENT = ROOT / "01-bootstrap/timezone-defaults"
 POLICY_FILE = COMPONENT / "resources/defaults.yaml"
@@ -448,32 +450,38 @@ class NativeTimezoneAdmissionTest(unittest.TestCase):
 
     def test_actual_git_owned_cronjobs_use_the_central_policy(self) -> None:
         found: set[tuple[str, str]] = set()
+        # The fixture templates and verifier patch are not standalone CronJobs.
+        validation = ROOT / "08-backup-validation"
+        resources = render_kustomization(ROOT, validation / "resources")
         for path in ROOT.glob("[0-9][0-9]-*/**/*.yaml"):
-            for resource in yaml.safe_load_all(path.read_text()):
-                if not isinstance(resource, dict) or resource.get("kind") != "CronJob":
-                    continue
-                namespace = resource["metadata"]["namespace"]
-                identity = (namespace, resource["metadata"]["name"])
-                self.assertNotIn(identity, found)
-                self.kubectl(
-                    "apply",
-                    "-f",
-                    "-",
-                    resource={
-                        "apiVersion": "v1",
-                        "kind": "Namespace",
-                        "metadata": {"name": namespace},
-                    },
-                )
-                actual = self.admit(resource)
-                self.assertEqual(actual["spec"]["timeZone"], "Europe/Berlin")
-                self.assertEqual(
-                    actual["spec"]["schedule"], resource["spec"]["schedule"]
-                )
-                found.add(identity)
+            if not path.is_relative_to(validation):
+                resources.extend(yaml.safe_load_all(path.read_text()))
+        for resource in resources:
+            if not isinstance(resource, dict) or resource.get("kind") != "CronJob":
+                continue
+            namespace = resource["metadata"]["namespace"]
+            identity = (namespace, resource["metadata"]["name"])
+            self.assertNotIn(identity, found)
+            self.kubectl(
+                "apply",
+                "-f",
+                "-",
+                resource={
+                    "apiVersion": "v1",
+                    "kind": "Namespace",
+                    "metadata": {"name": namespace},
+                },
+            )
+            actual = self.admit(resource)
+            self.assertEqual(actual["spec"]["timeZone"], "Europe/Berlin")
+            self.assertEqual(actual["spec"]["schedule"], resource["spec"]["schedule"])
+            found.add(identity)
         self.assertEqual(
             found,
             {
+                ("backup-validation", "k8up-backup-validation"),
+                ("backup-validation", "k8up-backup-validation-verify"),
+                ("backup-validation", "k8up-canary-seed-template"),
                 ("backup-validation", "postgresql-restore-validation"),
                 ("cloudnative-pg", "postgresql-r2-backup-budget-preview"),
                 ("openbao", "openbao-snapshot"),
