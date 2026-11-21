@@ -8,20 +8,23 @@ require "tempfile"
 
 # Explicit local chart cache only: never resolve a repository or contact a cluster.
 class MeshRenderTest < Minitest::Test
-  WORKSPACE = Pathname(__dir__).parent.parent
-  INFRA = WORKSPACE / "k3s-on-omv-infra"
-  LIVE = WORKSPACE / "k3s-on-omv-live"
+  INFRA = Pathname(__dir__).parent
 
   def render(chart, release, namespace)
-    cache = ENV["CHART_CACHE_DIR"]
-    skip "Set CHART_CACHE_DIR to extracted official charts for offline render checks" unless cache
-    path = Pathname(cache) / chart
-    assert path.join("Chart.yaml").file?, "missing extracted chart #{path}"
-    metadata = YAML.load_file(path / "Chart.yaml")
-    assert_equal "1.31.2", metadata["version"]
-    command = ["helm", "template", release, path.to_s, "--namespace", namespace, "--skip-tests"]
     application = YAML.load_file(INFRA / "01-bootstrap/istio/app.yml")
     source = application.fetch("spec").fetch("sources").find { |item| item["chart"] == chart }
+    version = source.fetch("targetRevision")
+    path = if ENV["CHART_CACHE_DIR"]
+             Pathname(ENV.fetch("CHART_CACHE_DIR")) / chart
+           elsif ENV["PLATFORM_CHART_AUDIT"]
+             Pathname(ENV.fetch("PLATFORM_CHART_AUDIT")) / "#{chart}-#{version}" / chart
+           else
+             skip "Set CHART_CACHE_DIR or PLATFORM_CHART_AUDIT to verified charts"
+           end
+    assert path.join("Chart.yaml").file?, "missing extracted chart #{path}"
+    metadata = YAML.load_file(path / "Chart.yaml")
+    assert_equal version, metadata.fetch("version")
+    command = ["helm", "template", release, path.to_s, "--namespace", namespace, "--skip-tests"]
     Tempfile.create(["istio-inline-values", ".yaml"]) do |values|
       values.write(YAML.dump(source.fetch("helm").fetch("valuesObject")))
       values.flush
@@ -37,7 +40,9 @@ class MeshRenderTest < Minitest::Test
     assert base.any? { |document| document["kind"] == "CustomResourceDefinition" }
     istiod = render("istiod", "istio-istiod", "istio-system")
     deployment = istiod.find { |document| document["kind"] == "Deployment" }
-    assert_equal "registry.istio.io/release/pilot:1.31.2-distroless", deployment.dig("spec", "template", "spec", "containers", 0, "image")
+    assert_match(/\Adocker\.io\/istio\/pilot@sha256:[0-9a-f]{64}\z/, deployment.dig("spec", "template", "spec", "containers", 0, "image"))
+    injector = istiod.find { |d| d["kind"] == "ConfigMap" && d.dig("metadata", "name") == "istio-sidecar-injector" }
+    assert_match(/\Adocker\.io\/istio\/proxyv2@sha256:[0-9a-f]{64}\z/, YAML.safe_load(injector.fetch("data").fetch("values")).dig("global", "proxy", "image"))
     [base, istiod].each do |documents|
       webhook = documents.find { |document| document["kind"] == "ValidatingWebhookConfiguration" }
       assert webhook.fetch("webhooks").all? { |item| item["failurePolicy"] == "Fail" }

@@ -13,7 +13,7 @@ spec:
   sources:
   - repoURL: https://blob.istio.io/istio-release/charts
     chart: base
-    targetRevision: 1.31.2
+    targetRevision: 1.32.0
     helm:
       releaseName: istio-base
       valuesObject:
@@ -21,10 +21,11 @@ spec:
           validationFailurePolicy: Fail
   - repoURL: https://blob.istio.io/istio-release/charts
     chart: istiod
-    targetRevision: 1.31.2
+    targetRevision: 1.32.0
     helm:
       releaseName: istio-istiod
       valuesObject:
+        image: docker.io/istio/pilot@sha256:219ab7efcf1fd1f883086ad4a4a649c0e70bee3200423d6eef9f435103a79423 # 1.32.0-distroless
         profile: ambient
         base:
           validationFailurePolicy: Fail
@@ -38,6 +39,7 @@ spec:
         global:
           platform: k3s
           proxy:
+            image: docker.io/istio/proxyv2@sha256:9cd1f1cc261f3fe250ab483543e7256c39d5871eae5f1817c0809eff09e365d4 # 1.32.0-distroless
             resources:
               requests:
                 cpu: 50m
