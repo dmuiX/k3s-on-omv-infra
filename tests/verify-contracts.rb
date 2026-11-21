@@ -143,7 +143,13 @@ class RepositoryContractTest < Minitest::Test
     assert_equal application_files(INFRA).map { |path| path.relative_path_from(INFRA).to_s }.sort,
       YAML.load_file(INFRA / "kustomization.yaml").fetch("resources").sort
     assert_equal "*/app.yml", apps_root.dig("spec", "source", "directory", "include")
-    assert_equal ["audiobookshelf", "radar"], application_files(APPS).map { |path| application(path).dig("metadata", "name") }
+    names = application_files(APPS).map { |path| application(path).dig("metadata", "name") }
+    assert_empty ["audiobookshelf", "radar"] - names
+    assert_empty names - ["audiobookshelf", "gitea", "radar"]
+    assert_equal names.uniq, names
+    if names.include?("gitea")
+      assert_equal false, application(APPS / "gitea/app.yml").dig("spec", "syncPolicy", "automated", "enabled")
+    end
     assert_equal false, application(APPS / "audiobookshelf/app.yml").dig("spec", "syncPolicy", "automated", "enabled")
     assert_empty LIVE.glob("**/app.yml")
     refute application_files(INFRA).any? { |path| application(path).dig("metadata", "name") == "radar" }

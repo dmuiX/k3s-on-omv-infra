@@ -1,0 +1,21 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-gitea-postgresql
+  namespace: cloudnative-pg
+spec:
+  podSelector:
+    matchLabels:
+      cnpg.io/cluster: k3s-postgres
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: gitea
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: gitea
+      ports:
+        - {protocol: TCP, port: 5432}
+        - {protocol: TCP, port: 15008}
