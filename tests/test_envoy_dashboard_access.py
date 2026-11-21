@@ -9,6 +9,7 @@ import unittest
 import yaml
 
 import test_timezone_defaults as native
+from workload_contracts import Repository, render_kustomization
 
 ROOT = Path(__file__).resolve().parents[1]
 BUILD = ROOT / "01-bootstrap/istio-gateway/build"
@@ -30,10 +31,45 @@ class EnvoyDashboardAccessTest(unittest.TestCase):
         self,
     ) -> None:
         setup = yaml.safe_load((BUILD / "kustomization.yaml").read_text())
-        self.assertEqual(setup["namespace"], "ci-builds")
-        self.assertEqual(setup["resources"], ["pipeline.yaml"])
+        self.assertNotIn("namespace", setup)
+        self.assertEqual(
+            setup["resources"], ["pipeline.yaml", "dashboard/admission.yaml"]
+        )
+        repo = Repository()
+        sources = repo.apps["tekton-dashboard"]["spec"]["sources"]
+        (source,) = [
+            s for s in sources if s.get("path") == BUILD.relative_to(ROOT).as_posix()
+        ]
+        self.assertNotIn("directory", source)
+        docs = repo.render("tekton-dashboard")
+        self.assertFalse(any(d["kind"] in {"PipelineRun", "TaskRun"} for d in docs))
+        build = render_kustomization(ROOT, BUILD)
+        self.assertCountEqual(
+            [
+                (d["kind"], d["metadata"]["name"], d["metadata"].get("namespace"))
+                for d in build
+            ],
+            [
+                ("Pipeline", "envoy-backport-pilot", "ci-builds"),
+                ("Task", "envoy-regression-build", "ci-builds"),
+                ("ServiceAccount", "envoy-builder", "ci-builds"),
+                ("ConfigMap", "envoy-build-inputs", "ci-builds"),
+                ("NetworkPolicy", "public-build-downloads", "ci-builds"),
+                ("ValidatingAdmissionPolicy", ADMISSION, None),
+                ("ValidatingAdmissionPolicyBinding", ADMISSION, None),
+            ],
+        )
+        (binding,) = [
+            d
+            for d in docs
+            if d["kind"] == "ValidatingAdmissionPolicyBinding"
+            and d["metadata"]["name"] == ADMISSION
+        ]
+        self.assertEqual(binding["spec"]["policyName"], ADMISSION)
+        self.assertEqual(binding["spec"]["validationActions"], ["Deny"])
         (inputs,) = setup["configMapGenerator"]
         self.assertEqual(inputs["name"], "envoy-build-inputs")
+        self.assertEqual(inputs["namespace"], "ci-builds")
         self.assertIs(inputs["options"]["disableNameSuffixHash"], True)
         self.assertEqual(
             set(inputs["files"]),

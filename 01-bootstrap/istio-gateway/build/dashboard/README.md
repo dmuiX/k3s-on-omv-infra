@@ -1,44 +1,33 @@
 # Start the Envoy build from Tekton Dashboard
 
-The OIDC Dashboard is a separate deployment. It starts read-only, uses
-`tekton-pipelines/tekton-dashboard` as its Kubernetes identity, and provides
-read access to `ci-builds`. This optional grant adds only `create` on
-`pipelineruns.tekton.dev` in `ci-builds`. All authenticated Dashboard operators
-share that Kubernetes identity. The `envoy-builder` ServiceAccount still has no
-Kubernetes API grants; the run also disables token mounting.
+The Dashboard uses `tekton-pipelines/tekton-dashboard` as its Kubernetes
+identity and reads resources in `ci-builds`. The staged GitOps grant adds only
+`create` on `pipelineruns.tekton.dev` in `ci-builds`. All authenticated Dashboard
+operators share that identity. Tekton executes the run with the separate
+`envoy-builder` ServiceAccount, which has no Kubernetes API grants; the run
+also disables token mounting.
 
 ## Install the build and gate
 
-After the OIDC Dashboard is deployed and access verified, use the same reviewed
-checkout for the Pipeline, Task and all inputs. This setup does not submit a run:
-
-```sh
-build=01-bootstrap/istio-gateway/build
-kubectl --context k3s-on-omv apply --server-side -k "$build"
-kubectl --context k3s-on-omv apply --server-side -f "$build/dashboard/admission.yaml"
-```
-
-Before enabling writes in the live Dashboard, repeat the admission checks in
-an isolated environment with the pinned Tekton webhook running. The CI test
-covers the native policy and RBAC, not Tekton's defaulting webhook. Verify the
-live admission policy reports no expression warnings and its binding is
-present. Keep user requests to the Dashboard blocked during the write-access
-checks: `--read-only=true` is not a substitute for Kubernetes RBAC. Only then
-install the grant:
-
-```sh
-kubectl --context k3s-on-omv apply --server-side -f "$build/dashboard/access.yaml"
-```
-
-Use server-side dry-runs with
-`--as=system:serviceaccount:tekton-pipelines:tekton-dashboard`. Verify that the
-exact run below is accepted, a different name or Pipeline is explicitly denied
-by admission, and the account cannot write other resources or read Secrets.
-If a check fails, remove the RoleBinding before restoring user access. Verify
-OIDC still restricts access to the intended operator group. In a separate
-reviewed activation change, update the Dashboard Deployment's `--read-only`
-flag and its read-only CI assertion, then restore access. Do not use the
-upstream cluster-wide read-write RBAC.
+1. Before merging the build-and-guard change, confirm no Envoy run is active
+   and the Dashboard identity cannot create PipelineRuns. If a legacy manual
+   grant is present, revoke it before continuing. After Argo syncs the
+   `tekton-dashboard` Application, require the Pipeline, Task, locked inputs,
+   admission policy and Deny binding to be present and Synced. Require the live
+   policy's `status.typeChecking` to be present with no expression warnings.
+2. Before merging the separate GitOps write-grant change, repeat the admission
+   checks with the pinned Tekton webhook in isolation. The native admission CI
+   test covers RBAC and policy evaluation but not Tekton webhook defaulting.
+3. Block Dashboard user traffic before merging the write grant in
+   `06-platform/tekton-dashboard/resources/build-access.yaml`. Keep it blocked
+   during verification. Once Argo syncs the grant, use server-side dry-runs with
+   `--as=system:serviceaccount:tekton-pipelines:tekton-dashboard`. Require the
+   exact run below to be accepted and a different name or Pipeline to be denied
+   by this admission policy on every serving API endpoint. Check that the
+   account cannot update or delete runs, write other resources, or read Secrets.
+   Revoke the grant before
+   restoring traffic if any check fails. Do not rely on the UI flag for access
+   control or install the upstream cluster-wide read-write grant.
 
 ## Run once
 
@@ -47,6 +36,7 @@ the [manual build runbook](../README.md)). Do not enable a trigger or schedule.
 Generate the approved Dashboard payload from the existing run template:
 
 ```sh
+build=01-bootstrap/istio-gateway/build
 kubectl --context k3s-on-omv create --dry-run=client -f "$build/run.yaml" -o json |
   jq 'del(.metadata.generateName, .metadata.creationTimestamp, .status)
       | .metadata.name = "envoy-backport-dashboard"
@@ -66,9 +56,9 @@ are saved, a trusted operator can remove that exact run before allowing another.
 The Dashboard cannot modify or delete it. The build still does not publish an
 image or deploy a gateway.
 
-To revoke access or retire the Dashboard, block user access first, then remove
-only the `ci-builds/tekton-dashboard-envoy-run` RoleBinding. Keep the admission
-policy and binding in place until the Dashboard identity is confirmed unable to
-create PipelineRuns on every serving API endpoint. Restore read-only UI mode
-before reopening access. Removing the Dashboard Application or these files from
-Git does not revoke a manually applied RoleBinding.
+To revoke access, block user traffic and commit `subjects: []` on the
+Git-managed `ci-builds/tekton-dashboard-envoy-run` RoleBinding. Keep the
+admission policy and binding in place until the identity is confirmed unable
+to create PipelineRuns on every serving API endpoint. With automatic pruning
+disabled, merely reverting the addition of the RoleBinding does not revoke it.
+Do not remove the guard first or rely on changing UI mode.

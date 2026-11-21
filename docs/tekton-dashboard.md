@@ -9,10 +9,9 @@ pod ingress to its oauth2-proxy and egress to the Kubernetes API peers in Live.
 
 The dashboard is pinned to [v0.74.0](https://github.com/tektoncd/dashboard/tree/dac0320946ed1905e97587d5bff683c1de170352),
 which supports the installed Tekton Pipelines v1.18.x LTS. It shows pipelines,
-runs and logs from `ci-builds`. The UI offers PipelineRun creation, but this
-Application grants only read access. A separate Envoy run RoleBinding grants
-`create` on `pipelineruns.tekton.dev` only in `ci-builds` after the admission
-policy is installed. The grant does not allow updates, cancellations, deletion,
+runs and logs from `ci-builds`. The UI offers PipelineRun creation. The
+Application syncs the build and its admission policy before a separate GitOps
+change grants `create` on `pipelineruns.tekton.dev` only in `ci-builds`. The grant does not allow updates, cancellations, deletion,
 other resource writes, secret reads or cross-namespace logs. The Dashboard uses
 one Kubernetes identity for all authenticated users; it does not grant
 impersonation or forward browser-supplied Kubernetes authorization. The Pipelines
@@ -56,26 +55,16 @@ KV entry to recover a failed rollout.
 
 ## Enable Envoy runs
 
-Use the companion [Envoy Dashboard runbook](https://github.com/dmuiX/k3s-on-omv-infra/blob/1211338dbf0dd83cc756c33d026b0ea4d5297367/01-bootstrap/istio-gateway/build/dashboard/README.md)
-(from [Infra #148](https://github.com/dmuiX/k3s-on-omv-infra/pull/148)) with a
-reviewed checkout containing both changes. This page supersedes both of that
-runbook's instructions to change the UI flag (activation and rollback): the
-Application already configures the UI, and RBAC, not the flag, controls access.
-Do not patch the Argo-managed Deployment. No further Bootstrap or OpenBao
-changes are needed for the write grant.
-
-Keep Dashboard traffic blocked during the separately approved activation:
-install the build and verify the admission guard **before** creating the
-RoleBinding, then verify it accepts only the reviewed Envoy run and that the
-account cannot update or delete runs. Reopen access only after the guarded
-checks pass. Use the Dashboard YAML editor with Tekton API v1 and the approved
-payload from the runbook. The simple form does not carry the full build
-configuration, and unsupported write actions shown by the UI remain denied.
+Follow the [Envoy Dashboard runbook](../01-bootstrap/istio-gateway/build/dashboard/README.md).
+Argo CD owns the build and guard; verify them before merging the separate
+GitOps write grant. No further Bootstrap or OpenBao changes are needed. Use
+Tekton API v1 and the reviewed payload in the Dashboard YAML editor, not the
+simple form. The UI flag is not a security boundary.
 
 ## Rollback
 
-Block Dashboard traffic and revoke the optional Envoy run RoleBinding first;
-verify that run creation is denied before removing the admission guard. To
+Block Dashboard traffic and revoke the Envoy run RoleBinding through GitOps
+first; verify that run creation is denied before removing the admission guard. To
 retire the Dashboard, remove its route, verify the host no longer serves it,
 then retire the Application and its owned resources. A Git revert alone does
 not remove the route because automated pruning is disabled. Keep `ci-builds`,

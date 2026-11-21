@@ -16,6 +16,9 @@ spec:
       path: 06-platform/tekton-dashboard/resources
     - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
       targetRevision: main
+      path: 01-bootstrap/istio-gateway/build
+    - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
+      targetRevision: main
       path: adapters/credential-custody
     - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
       targetRevision: main

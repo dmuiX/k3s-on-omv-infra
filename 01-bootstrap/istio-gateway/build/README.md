@@ -1,22 +1,15 @@
 # Envoy backport build
 
-[Envoy #48409](https://github.com/envoyproxy/envoy/pull/48409) wakes a blocked internal socket writer when its peer closes. Tekton tests the locked Istio/Envoy sources first and compiles the backport only when the expected stock regression fails. The pipeline is manual; Argo CD manages Tekton and the gateway separately and does not sync this directory.
+[Envoy #48409](https://github.com/envoyproxy/envoy/pull/48409) wakes a blocked internal socket writer when its peer closes. Tekton tests the locked Istio/Envoy sources first and compiles the backport only when the expected stock regression fails. Argo CD's `tekton-dashboard` Application manages the Pipeline, Task and locked inputs. PipelineRuns are manually submitted and are not synced from this directory.
 
 ## Run from a reviewed checkout
 
 Check that the `tekton-pipelines` Application is healthy and its webhook is ready. Approve a Linux `amd64` worker labelled `ci.dmuix.com/envoy-builder=true` with sufficient CPU, memory and disk headroom. The build requests 4 CPUs, 10 GiB RAM and 110 GiB ephemeral storage; it checks for at least 100 GiB free. The Pi is ineligible.
 
-The `tekton-pipelines` Argo CD Application must be synced first; it now owns the restricted `ci-builds` namespace. From the repository root, apply the pipeline and load its four input files from the same checkout, then create one run:
+The `tekton-pipelines` Application owns the restricted `ci-builds` namespace. Wait for `tekton-dashboard` to sync the build, then follow the [Dashboard runbook](dashboard/README.md) or submit a single run as an authorized CLI operator:
 
 ```bash
-set -euo pipefail
-build=01-bootstrap/istio-gateway/build
-kubectl --context k3s-on-omv apply --server-side -f "$build/pipeline.yaml"
-kubectl --context k3s-on-omv -n ci-builds create configmap envoy-build-inputs \
-  --from-file="$build/lock.json" --from-file="$build/48409.patch" \
-  --from-file="$build/regression.patch" --from-file="$build/inside.sh" \
-  --dry-run=client -o yaml | kubectl --context k3s-on-omv apply --server-side -f -
-kubectl --context k3s-on-omv create -f "$build/run.yaml"
+kubectl --context k3s-on-omv create -f 01-bootstrap/istio-gateway/build/run.yaml
 ```
 
 Do not replace the inputs during an active run. Only trusted CI operators should be able to edit the pipeline or its inputs. If an earlier manual setup left the `one-build-pod` quota in `ci-builds`, removing it is a separate change; applying the new manifest will not delete it.
