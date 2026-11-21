@@ -662,9 +662,7 @@ class RepositoryWorkloads(unittest.TestCase):
                     job["spec"]["jobTemplate"]["spec"].get("activeDeadlineSeconds")
                 )
 
-    def test_manual_k3s_restore_smoke_has_no_host_or_cluster_access(self) -> None:
-        import subprocess
-
+    def test_manual_k3s_restore_smoke_is_manual_and_restricted(self) -> None:
         from workload_contracts import Repository, parse_documents
 
         repo = Repository()
@@ -680,7 +678,7 @@ class RepositoryWorkloads(unittest.TestCase):
             namespace["metadata"]["labels"]["pod-security.kubernetes.io/enforce"],
             "restricted",
         )
-        self.assertEqual(policy["metadata"]["namespace"], name)
+        self.assertEqual(policy["metadata"], {"name": "deny-all", "namespace": name})
         self.assertEqual(job["metadata"]["namespace"], name)
         self.assertEqual(
             policy["spec"],
@@ -696,10 +694,29 @@ class RepositoryWorkloads(unittest.TestCase):
         self.assertEqual(job_spec["backoffLimit"], 0)
         self.assertEqual(job_spec["activeDeadlineSeconds"], 300)
         self.assertEqual(job_spec["ttlSecondsAfterFinished"], 1800)
-        pod = job_spec["template"]["spec"]
+        template = job_spec["template"]
+        self.assertEqual(
+            template["metadata"]["labels"]["istio.io/dataplane-mode"], "none"
+        )
+        self.assertEqual(
+            template["metadata"]["annotations"]["sidecar.istio.io/inject"], "false"
+        )
+        pod = template["spec"]
         self.assertIs(pod["automountServiceAccountToken"], False)
-        self.assertFalse(pod.get("hostNetwork", False))
-        self.assertTrue(pod["securityContext"]["runAsNonRoot"])
+        self.assertIs(pod["enableServiceLinks"], False)
+        self.assertEqual(pod["nodeSelector"], {"kubernetes.io/arch": "amd64"})
+        for key in ("hostNetwork", "hostPID", "hostIPC", "initContainers"):
+            self.assertFalse(pod.get(key))
+        self.assertEqual(
+            pod["securityContext"],
+            {
+                "runAsNonRoot": True,
+                "runAsUser": 10001,
+                "runAsGroup": 10001,
+                "fsGroup": 10001,
+                "seccompProfile": {"type": "RuntimeDefault"},
+            },
+        )
         self.assertEqual(
             pod["volumes"],
             [
@@ -710,10 +727,29 @@ class RepositoryWorkloads(unittest.TestCase):
             ],
         )
         (container,) = pod["containers"]
-        self.assertEqual(
-            container["securityContext"]["capabilities"], {"drop": ["ALL"]}
+        self.assertRegex(
+            container["image"], r"^docker\.io/rancher/k3s:.+@sha256:[0-9a-f]{64}$"
         )
-        self.assertTrue(container["securityContext"]["readOnlyRootFilesystem"])
+        self.assertEqual(
+            container["securityContext"],
+            {
+                "allowPrivilegeEscalation": False,
+                "readOnlyRootFilesystem": True,
+                "capabilities": {"drop": ["ALL"]},
+            },
+        )
+        self.assertEqual(
+            container["volumeMounts"], [{"name": "scratch", "mountPath": "/scratch"}]
+        )
+        self.assertEqual(
+            container["env"],
+            [
+                {"name": "HOME", "value": "/scratch"},
+                {"name": "TMPDIR", "value": "/scratch"},
+                {"name": "KUBECONFIG", "value": "/scratch/kubeconfig"},
+            ],
+        )
+        self.assertNotIn("envFrom", container)
         self.assertNotIn(
             name, {d["metadata"]["name"] for d in repo.render("backup-validation")}
         )
@@ -726,7 +762,97 @@ class RepositoryWorkloads(unittest.TestCase):
             "--cluster-reset-restore-path",
         ):
             self.assertIn(option, script)
-        subprocess.run(["sh", "-n"], input=script, text=True, check=True)
+
+    def test_manual_k3s_restore_smoke_outputs_only_stage_status_or_pass(self) -> None:
+        import os
+        import subprocess
+        import tempfile
+        from pathlib import Path
+
+        from workload_contracts import Repository, parse_documents
+
+        path = (
+            Repository().root
+            / "08-backup-validation/manual/k3s-etcd-restore-smoke.yaml"
+        )
+        _, _, job = parse_documents(path.read_text())
+        (container,) = job["spec"]["template"]["spec"]["containers"]
+        self.assertEqual(container["command"], ["/bin/sh", "-eu", "-c"])
+        (script,) = container["args"]
+        subprocess.run(["/bin/sh", "-n"], input=script, text=True, check=True)
+
+        # Stub the clients; neither opens a connection nor reads real data.
+        k3s = """#!/bin/sh -eu
+printf 'private fixture output\\n'
+printf 'private fixture error\\n' >&2
+case "$*" in
+  'etcd-snapshot save '*)
+    [ "$FAIL_STAGE" != snapshot-save ] || exit 23
+    mkdir -p "$SCRATCH/source/server"
+    printf 'private fixture token' > "$SCRATCH/source/server/token"
+    printf 'private fixture snapshot' > "$SCRATCH/snapshots/restore-probe-fixture.zip"
+    ;;
+  *--cluster-reset-restore-path*)
+    [ "$FAIL_STAGE" != restore-reset ] || exit 24
+    printf 'Managed etcd cluster membership has been reset\\n'
+    ;;
+  'server '*) exec sleep 15 ;;
+  *) exit 99 ;;
+esac
+"""
+        kubectl = """#!/bin/sh -eu
+printf 'private fixture error\\n' >&2
+shift 2
+case "$*" in
+  'get --raw /readyz'|'create configmap '*) printf 'private fixture output\\n' ;;
+  *'jsonpath={.metadata.uid}') printf 'fixture-uid' ;;
+  *'jsonpath={.data.marker}')
+    if [ "$FAIL_STAGE" = restore-check ]; then
+      printf 'private fixture mismatch'
+    else
+      printf 'expected-recovered-state'
+    fi
+    ;;
+  'get configmap restore-probe-after '*|'get nodes -o name') : ;;
+  *) exit 99 ;;
+esac
+"""
+        for stage, exit_code in (
+            ("snapshot-save", 23),
+            ("restore-reset", 24),
+            ("restore-check", 1),
+            ("", 0),
+        ):
+            with self.subTest(stage=stage), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                scratch = root / "scratch"
+                for name, stub in (("k3s", k3s), ("kubectl", kubectl)):
+                    command = root / name
+                    command.write_text(stub)
+                    command.chmod(0o700)
+                result = subprocess.run(
+                    [*container["command"], script.replace("/scratch", str(scratch))],
+                    env={
+                        "PATH": f"{root}{os.pathsep}{os.defpath}",
+                        "KUBECONFIG": str(scratch / "kubeconfig"),
+                        "SCRATCH": str(scratch),
+                        "FAIL_STAGE": stage,
+                    },
+                    text=True,
+                    capture_output=True,
+                    timeout=10,
+                )
+                self.assertEqual(result.returncode, exit_code)
+                self.assertEqual(result.stderr, "")
+                expected = (
+                    f"FAIL: stage={stage} exit={exit_code}\n"
+                    if stage
+                    else (
+                        "PASS: compressed etcd snapshot restored; API ready; original "
+                        "UID and value present; later write and nodes absent\n"
+                    )
+                )
+                self.assertEqual(result.stdout, expected)
 
 
 if __name__ == "__main__":

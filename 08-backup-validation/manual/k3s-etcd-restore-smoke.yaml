@@ -55,6 +55,26 @@ spec:
           command: [/bin/sh, -eu, -c]
           args:
             - |
+              # Only fixed stage names, exit status and PASS may reach container logs.
+              exec 3>&1 >/dev/null 2>&1
+              stage=setup
+              pid=
+              stop() {
+                if [ -n "$pid" ]; then
+                  kill "$pid" 2>/dev/null || :
+                  wait "$pid" 2>/dev/null || :
+                  pid=
+                fi
+              }
+              finish() {
+                rc=$?
+                if [ "$rc" -ne 0 ]; then
+                  printf 'FAIL: stage=%s exit=%s\n' "$stage" "$rc" >&3
+                fi
+                stop
+                exit "$rc"
+              }
+              trap finish EXIT
               umask 077
               unset KUBERNETES_SERVICE_HOST KUBERNETES_SERVICE_PORT KUBERNETES_SERVICE_PORT_HTTPS
               mkdir -p /scratch/snapshots /scratch/restored/server
@@ -65,49 +85,45 @@ spec:
                   --etcd-disable-snapshots --etcd-s3=false --secrets-encryption \
                   --bind-address 127.0.0.1 --node-ip 127.0.0.1 --advertise-address 192.0.2.10 \
                   --kube-apiserver-arg=endpoint-reconciler-type=none --node-name restore-probe \
-                  --write-kubeconfig "$KUBECONFIG" "$@"
+                  --write-kubeconfig "$KUBECONFIG" "$@" 3>&-
               }
-              k() { kubectl --server=https://127.0.0.1:6443 --request-timeout=3s "$@"; }
-              pid=
-              stop() {
-                if [ -n "$pid" ]; then
-                  kill "$pid" 2>/dev/null || :
-                  wait "$pid" 2>/dev/null || :
-                  pid=
-                fi
-              }
-              trap stop EXIT
+              k() { kubectl --server=https://127.0.0.1:6443 --request-timeout=3s "$@" 3>&-; }
               ready() {
-                for i in $(seq 1 60); do
-                  if k get --raw /readyz >/dev/null 2>&1; then return; fi
-                  kill -0 "$pid" 2>/dev/null || break
+                for _ in $(seq 1 60); do
+                  if k get --raw /readyz; then return; fi
+                  kill -0 "$pid" || break
                   sleep 1
                 done
-                echo "Synthetic API did not become ready during $1" >&2
                 return 1
               }
-              echo 'Starting synthetic K3s source'
-              server --cluster-init --data-dir /scratch/source >/scratch/source.log 2>&1 & pid=$!
-              ready source
-              k create configmap restore-probe-before --from-literal=marker=expected-recovered-state >/dev/null
+              stage=source-ready
+              server --cluster-init --data-dir /scratch/source & pid=$!
+              ready
+              stage=source-marker
+              k create configmap restore-probe-before --from-literal=marker=expected-recovered-state
               expected=$(k get configmap restore-probe-before -o 'jsonpath={.metadata.uid}')
               test -n "$expected"
+              stage='snapshot-save'
               k3s etcd-snapshot save --data-dir /scratch/source --name restore-probe \
-                --dir /scratch/snapshots --snapshot-compress --s3=false >/scratch/save.log 2>&1
+                --dir /scratch/snapshots --snapshot-compress --s3=false 3>&-
+              stage='snapshot-file'
               set -- /scratch/snapshots/restore-probe-*.zip
               test "$#" = 1
               test -s "$1"
               snapshot=$1
-              k create configmap restore-probe-after --from-literal=marker=must-not-be-restored >/dev/null
+              stage=post-snapshot-write
+              k create configmap restore-probe-after --from-literal=marker=must-not-be-restored
+              stage=token-copy
               cp /scratch/source/server/token /scratch/restored/server/token
               stop
-              echo 'Restoring compressed snapshot in fresh storage'
+              stage=restore-reset
               (server --data-dir /scratch/restored --token-file /scratch/restored/server/token \
                 --cluster-reset --cluster-reset-restore-path "$snapshot") >/scratch/reset.log 2>&1
-              grep -F 'Managed etcd cluster membership has been reset' /scratch/reset.log >/dev/null
-              server --data-dir /scratch/restored --token-file /scratch/restored/server/token \
-                >/scratch/restored.log 2>&1 & pid=$!
-              ready restored
+              grep -Fq 'Managed etcd cluster membership has been reset' /scratch/reset.log
+              stage=restored-ready
+              server --data-dir /scratch/restored --token-file /scratch/restored/server/token & pid=$!
+              ready
+              stage=restore-check
               uid=$(k get configmap restore-probe-before -o 'jsonpath={.metadata.uid}')
               value=$(k get configmap restore-probe-before -o 'jsonpath={.data.marker}')
               after=$(k get configmap restore-probe-after --ignore-not-found -o name)
@@ -116,7 +132,7 @@ spec:
               test "$value" = expected-recovered-state
               test -z "$after"
               test -z "$nodes"
-              echo 'PASS: compressed etcd snapshot restored; API ready; original UID and value present; later write and nodes absent'
+              echo 'PASS: compressed etcd snapshot restored; API ready; original UID and value present; later write and nodes absent' >&3
           resources:
             requests: {cpu: 500m, memory: 1Gi}
             limits: {cpu: "2", memory: 2Gi}
