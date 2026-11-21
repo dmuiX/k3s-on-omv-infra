@@ -253,6 +253,7 @@ apiVersion: batch/v1
 kind: CronJob
 metadata:
   name: prometheus-backup-pipeline
+  namespace: kube-prometheus-stack
   annotations:
     argocd.argoproj.io/sync-wave: '1'
 spec:
