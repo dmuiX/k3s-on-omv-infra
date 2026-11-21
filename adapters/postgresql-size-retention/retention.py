@@ -107,7 +107,7 @@ def _run(args: list[str]) -> str:
         raise RuntimeError(f"{args[0]} failed or timed out") from exc
 
 
-def _lease() -> tuple[str, datetime]:
+def _lease() -> tuple[str, datetime, str]:
     namespace = os.environ["RESTORE_LEASE_NAMESPACE"]
     name = os.environ["RESTORE_LEASE_NAME"]
     token = Path("/var/run/secrets/kubernetes.io/serviceaccount/token").read_text().strip()
@@ -119,12 +119,17 @@ def _lease() -> tuple[str, datetime]:
     with urllib.request.urlopen(request, context=context, timeout=15) as response:
         payload = json.load(response)
     annotations = payload.get("metadata", {}).get("annotations", {})
+    if annotations.get("k3s-on-omv.io/restore-evidence") != "post-backup-pitr-v1":
+        raise RuntimeError("restore evidence does not attest to post-backup PITR")
     if annotations.get("k3s-on-omv.io/pitr-verified") != "true" or annotations.get("k3s-on-omv.io/omv-mirror-verified") != "true":
         raise RuntimeError("restore evidence does not cover PITR and the OMV mirror")
     renewed = payload.get("spec", {}).get("renewTime")
     if not renewed:
         raise RuntimeError("restore evidence has no renewal timestamp")
-    return annotations.get("k3s-on-omv.io/result", ""), _parse_time(renewed)
+    backup_id = annotations.get("k3s-on-omv.io/restored-backup-id", "")
+    if not re.fullmatch(r"[0-9]{8}T[0-9]{6}", backup_id):
+        raise RuntimeError("restore evidence has no valid Barman backup ID")
+    return annotations.get("k3s-on-omv.io/result", ""), _parse_time(renewed), backup_id
 
 
 def _barman_base_args() -> list[str]:
@@ -185,8 +190,11 @@ def run(*, preview: bool) -> None:
     if int(os.environ["BASE_BACKUP_BUDGET_BYTES"]) != BUDGET:
         raise RuntimeError("base-backup budget differs from the reviewed contract")
 
-    lease_result, lease_renewed = _lease()
+    lease_result, lease_renewed, restored_id = _lease()
     before = _catalog()
+    latest = max((backup.completed_at for backup in before), default=None)
+    if [backup.backup_id for backup in before if backup.completed_at == latest] != [restored_id]:
+        raise RuntimeError("restore evidence does not identify the latest completed backup")
     catalog_matches, archiver_stale = _storage_state(before)
     reason, dry_run = plan_dry_run(
         before,

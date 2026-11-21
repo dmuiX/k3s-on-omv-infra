@@ -15,6 +15,8 @@
     "test_native_request_profile",
     "test_native_reader_accounts",
     "test_openbao_network",
+    "test_postgresql_restore_test",
+    "test_postgresql_restored_app_schemas",
     "test_retention",
     "test_shutdown_pod_preview",
     "test_snapshot",

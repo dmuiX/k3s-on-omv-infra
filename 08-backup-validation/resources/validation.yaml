@@ -1,4 +1,10 @@
 apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgresql-restore-ledger
+  namespace: backup-validation
+---
+apiVersion: v1
 kind: ServiceAccount
 metadata:
   name: backup-validation
@@ -10,6 +16,15 @@ metadata:
   name: restore-validation
   namespace: backup-validation
 rules:
+  - apiGroups:
+      - ''
+    resources:
+      - configmaps
+    resourceNames:
+      - postgresql-restore-ledger
+    verbs:
+      - get
+      - update
   - apiGroups:
       - coordination.k8s.io
     resources:
@@ -86,6 +101,12 @@ rules:
       - k3s-postgres-backups
     verbs:
       - get
+  - apiGroups:
+      - postgresql.cnpg.io
+    resources:
+      - backups
+    verbs:
+      - list
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
@@ -146,7 +167,8 @@ metadata:
   namespace: backup-validation
 spec:
   suspend: false
-  schedule: '0 4 * * *'
+  schedule: '*/5 * * * *'
+  startingDeadlineSeconds: 900
   concurrencyPolicy: Forbid
   jobTemplate:
     spec:
