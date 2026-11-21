@@ -97,7 +97,7 @@ metadata:
 spec:
   podSelector:
     matchLabels:
-      cnpg.io/cluster: postgresql-pitr-validation
+      cnpg.io/cluster: postgresql-restore-test
       cnpg.io/podRole: instance
   policyTypes:
     - Ingress
@@ -142,7 +142,7 @@ spec:
     - to:
         - podSelector:
             matchLabels:
-              cnpg.io/cluster: postgresql-pitr-validation
+              cnpg.io/cluster: postgresql-restore-test
               cnpg.io/podRole: instance
       ports:
         - protocol: TCP

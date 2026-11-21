@@ -9,7 +9,11 @@ from urllib.request import Request, urlopen
 
 API = "https://kubernetes.default.svc"
 SOURCE_NS, VALIDATION_NS = "cloudnative-pg", "backup-validation"
-SOURCE, RESTORE, STORE = "k3s-postgres", "postgresql-pitr-validation", "postgresql-pitr-validation"
+SOURCE = "k3s-postgres"
+RESTORE = STORE = "postgresql-restore-test"
+STORE_COLLECTION = f"/apis/barmancloud.cnpg.io/v1/namespaces/{VALIDATION_NS}/objectstores"
+CLUSTER_COLLECTION = f"/apis/postgresql.cnpg.io/v1/namespaces/{VALIDATION_NS}/clusters"
+CLUSTER_PATH = f"{CLUSTER_COLLECTION}/{RESTORE}"
 IMAGE = "ghcr.io/cloudnative-pg/postgresql:18.6-system-bookworm@sha256:b4bec141fa5ca2bab490b197c814fb1342147c8405be1fb0673951fa6db7f699"
 
 
@@ -27,12 +31,27 @@ def api(path, method="GET", body=None, allowed=()):
     data = None if body is None else json.dumps(body).encode()
     try:
         with urlopen(Request(API + path, data=data, method=method, headers=headers), context=tls, timeout=30) as response:
+            if method == "POST" and response.status != 201:
+                raise RuntimeError(f"Kubernetes API POST {path} did not return HTTP 201 Created")
             payload = response.read()
             return json.loads(payload) if payload else {}
     except HTTPError as exc:
         if exc.code in allowed:
             return None
         raise RuntimeError(f"Kubernetes API {method} {path} failed with HTTP {exc.code}") from exc
+
+
+def create_uid(collection: str, body: dict) -> str:
+    """Prove ownership from the create response, never by looking up the name."""
+    response = api(collection, "POST", body)
+    metadata = response.get("metadata") if isinstance(response, dict) else None
+    if isinstance(metadata, dict):
+        uid = metadata.get("uid")
+        if (isinstance(uid, str) and uid.strip()
+                and metadata.get("name") == body["metadata"]["name"]
+                and metadata.get("namespace") == body["metadata"]["namespace"]):
+            return uid
+    raise RuntimeError(f"Kubernetes API POST {collection} did not confirm the created resource identity")
 
 
 def secret(namespace, name):
@@ -46,9 +65,22 @@ def connect(values, host):
     return psycopg2.connect(host=host, port=values.get("port", "5432"), dbname=values.get("dbname", "app"), user=values["username"], password=values["password"], connect_timeout=15, sslmode="require")
 
 
-def put_lease(result, pitr=False, mirror=False):
+def put_lease(result: str, *, restore_target_verified: bool = False, mirror_verified: bool = False) -> None:
     now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
-    body = {"apiVersion":"coordination.k8s.io/v1","kind":"Lease","metadata":{"name":"postgresql-restore-status","namespace":VALIDATION_NS,"annotations":{"k3s-on-omv.io/result":result,"k3s-on-omv.io/pitr-verified":str(pitr).lower(),"k3s-on-omv.io/omv-mirror-verified":str(mirror).lower()}},"spec":{"holderIdentity":"postgresql-pitr-validation","renewTime":now,"leaseDurationSeconds":691200}}
+    body = {
+        "apiVersion": "coordination.k8s.io/v1",
+        "kind": "Lease",
+        "metadata": {
+            "name": "postgresql-restore-status",
+            "namespace": VALIDATION_NS,
+            "annotations": {
+                "k3s-on-omv.io/result": result,
+                "k3s-on-omv.io/restore-target-verified": str(restore_target_verified).lower(),
+                "k3s-on-omv.io/omv-mirror-verified": str(mirror_verified).lower(),
+            },
+        },
+        "spec": {"holderIdentity": RESTORE, "renewTime": now, "leaseDurationSeconds": 691200},
+    }
     path = f"/apis/coordination.k8s.io/v1/namespaces/{VALIDATION_NS}/leases/postgresql-restore-status"
     current = api(path, allowed=(404,))
     if current:
@@ -58,11 +90,12 @@ def put_lease(result, pitr=False, mirror=False):
         api(f"/apis/coordination.k8s.io/v1/namespaces/{VALIDATION_NS}/leases", "POST", body)
 
 
-def wait_ready(timeout=3000):
+def wait_ready(uid: str, timeout: int = 3000) -> None:
     end = time.monotonic() + timeout
-    path = f"/apis/postgresql.cnpg.io/v1/namespaces/{VALIDATION_NS}/clusters/{RESTORE}"
     while time.monotonic() < end:
-        item = api(path)
+        item = api(CLUSTER_PATH)
+        if item.get("metadata", {}).get("uid") != uid:
+            raise RuntimeError("isolated recovery cluster UID changed while waiting for readiness")
         if any(c.get("type") == "Ready" and c.get("status") == "True" for c in item.get("status", {}).get("conditions", [])):
             return
         time.sleep(15)
@@ -71,7 +104,12 @@ def wait_ready(timeout=3000):
 
 def mirror_matches_catalog():
     endpoint, bucket, server = os.environ["S3_ENDPOINT"], os.environ["S3_BUCKET"], os.environ["BARMAN_SERVER_NAME"]
-    output = subprocess.run(["barman-cloud-backup-list","--format","json","--endpoint-url",endpoint,f"s3://{bucket}",server], check=True, capture_output=True, text=True, timeout=300).stdout
+    command = ["barman-cloud-backup-list", "--format", "json", "--endpoint-url", endpoint, f"s3://{bucket}", server]
+    try:
+        output = subprocess.run(command, check=True, capture_output=True, text=True, timeout=300).stdout
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        # The subprocess exception includes the private endpoint in its command line.
+        raise RuntimeError("barman-cloud-backup-list failed or timed out") from None
     ids = {str(item["backup_id"]) for item in json.loads(output)["backups_list"] if item.get("status") == "DONE"}
     mirrored = {path.parent.name for path in Path("/omv").glob(f"{server}/base/*/backup.info")}
     return bool(ids) and ids <= mirrored
@@ -118,11 +156,13 @@ def validation_cluster(target: str) -> dict:
 
 def main():
     run = uuid.uuid4().hex
-    source_credentials = secret(SOURCE_NS, f"{SOURCE}-app")
+    source_credentials = None
     source_host = f"{SOURCE}-rw.{SOURCE_NS}.svc"
     before, after = f"{run}-before", f"{run}-after"
+    created: list[tuple[str, str]] = []
     try:
         put_lease("running")
+        source_credentials = secret(SOURCE_NS, f"{SOURCE}-app")
         with connect(source_credentials, source_host) as db, db.cursor() as cursor:
             cursor.execute("CREATE TABLE IF NOT EXISTS public.platform_backup_validation (run_id text PRIMARY KEY, phase text NOT NULL, created_at timestamptz NOT NULL DEFAULT clock_timestamp())")
             cursor.execute("INSERT INTO public.platform_backup_validation(run_id, phase) VALUES (%s, 'before')", (before,))
@@ -136,39 +176,42 @@ def main():
 
         source_store = api(f"/apis/barmancloud.cnpg.io/v1/namespaces/{SOURCE_NS}/objectstores/k3s-postgres-backups")
         store = validation_store(source_store, os.environ["S3_ENDPOINT"])
-        api(f"/apis/barmancloud.cnpg.io/v1/namespaces/{VALIDATION_NS}/objectstores", "POST", store)
-        api(f"/apis/postgresql.cnpg.io/v1/namespaces/{VALIDATION_NS}/clusters", "POST", validation_cluster(target))
-        wait_ready()
+        store_uid = create_uid(STORE_COLLECTION, store)
+        created.append((f"{STORE_COLLECTION}/{STORE}", store_uid))
+        cluster_uid = create_uid(CLUSTER_COLLECTION, validation_cluster(target))
+        created.append((CLUSTER_PATH, cluster_uid))
+        wait_ready(cluster_uid)
         restored = secret(VALIDATION_NS, f"{RESTORE}-app")
         with connect(restored, f"{RESTORE}-rw.{VALIDATION_NS}.svc") as db, db.cursor() as cursor:
             cursor.execute("SELECT run_id, phase FROM public.platform_backup_validation WHERE run_id IN (%s,%s)", (before, after))
             rows = set(cursor.fetchall())
         if rows != {(before, "before")}:
-            raise RuntimeError("PITR boundary validation failed")
+            raise RuntimeError("restored rows do not match the requested recovery time")
         if not mirror_matches_catalog():
             raise RuntimeError("OMV mirror does not contain every completed base-backup catalog entry")
-        put_lease("success", True, True)
     except Exception:
         put_lease("failed")
         raise
     finally:
         cleanup_errors = []
-        for path in (
-            f"/apis/postgresql.cnpg.io/v1/namespaces/{VALIDATION_NS}/clusters/{RESTORE}",
-            f"/apis/barmancloud.cnpg.io/v1/namespaces/{VALIDATION_NS}/objectstores/{STORE}",
-        ):
+        for path, uid in reversed(created):
             try:
-                api(path, "DELETE", {}, (404,))
+                api(path, "DELETE", {
+                    "apiVersion": "v1", "kind": "DeleteOptions", "preconditions": {"uid": uid},
+                }, (404,))
             except Exception as exc:
                 cleanup_errors.append(exc)
-        try:
-            with connect(source_credentials, source_host) as db, db.cursor() as cursor:
-                cursor.execute("DELETE FROM public.platform_backup_validation WHERE run_id IN (%s,%s)", (before, after))
-        except Exception as exc:
-            cleanup_errors.append(exc)
+        if source_credentials is not None:
+            try:
+                with connect(source_credentials, source_host) as db, db.cursor() as cursor:
+                    cursor.execute("DELETE FROM public.platform_backup_validation WHERE run_id IN (%s,%s)", (before, after))
+            except Exception as exc:
+                cleanup_errors.append(exc)
         if cleanup_errors:
             put_lease("failed-cleanup")
             raise RuntimeError("validation cleanup failed") from cleanup_errors[0]
+
+    put_lease("success", restore_target_verified=True, mirror_verified=True)
 
 
 if __name__ == "__main__":

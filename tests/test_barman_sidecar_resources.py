@@ -129,7 +129,7 @@ class BarmanSidecarResourcesTest(unittest.TestCase):
         pod = job["spec"]["jobTemplate"]["spec"]["template"]["spec"]
         (volume,) = [v for v in pod["volumes"] if v["name"] == "validator"]
         name = volume["configMap"]["name"]
-        self.assertEqual(name, "postgresql-pitr-validator")
+        self.assertEqual(name, "postgresql-restore-test-script")
         (config,) = [
             d for d in documents if d["kind"] == "ConfigMap"
             and d["metadata"]["namespace"] == "backup-validation"
