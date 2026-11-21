@@ -202,7 +202,7 @@ class NativeTimezoneAdmissionTest(unittest.TestCase):
         return result
 
     @classmethod
-    def setUpClass(cls) -> None:
+    def require_isolated_api(cls) -> None:
         # Guard every API write: never use the host context or a mounted kubeconfig.
         result = subprocess.run(
             [
@@ -223,6 +223,10 @@ class NativeTimezoneAdmissionTest(unittest.TestCase):
             raise AssertionError(
                 "Native tests require the owned, network-isolated test container"
             )
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.require_isolated_api()
         cls.kubectl("apply", "-f", "-", text=POLICY_FILE.read_text())
         cls.kubectl(
             "apply",

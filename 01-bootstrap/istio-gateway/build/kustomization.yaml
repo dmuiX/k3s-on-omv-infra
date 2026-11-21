@@ -1,0 +1,15 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: ci-builds
+resources:
+  - pipeline.yaml
+configMapGenerator:
+  - name: envoy-build-inputs
+    files:
+      - lock.json
+      - 48409.patch
+      - regression.patch
+      - inside.sh
+    options:
+      # The Tekton Task references this name; Kustomize has no name reference for it.
+      disableNameSuffixHash: true

@@ -28,6 +28,12 @@
     "test_workload_contracts"
   ],
   "mixed": {
+    "test_envoy_dashboard_access": [
+      "EnvoyDashboardAccessTest.test_tekton_crds_omit_the_api_default_for_unknown_fields",
+      "EnvoyDashboardAccessTest.test_setup_installs_reviewed_inputs_without_a_run_or_dashboard_grant",
+      "EnvoyDashboardAccessTest.test_grant_is_dashboard_create_only_in_the_build_namespace",
+      "EnvoyDashboardAccessTest.test_optional_guard_fails_closed_for_that_dashboard_identity"
+    ],
     "test_memory_limits": [
       "MemoryLimitsContractTest.test_every_cap_reaches_its_named_container_including_shared_init",
       "MemoryLimitsContractTest.test_reloader_default_is_paired_with_the_larger_named_init_cap",
