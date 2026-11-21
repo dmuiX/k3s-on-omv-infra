@@ -471,7 +471,7 @@ class NativeTimezoneAdmissionTest(unittest.TestCase):
             found,
             {
                 ("backup-validation", "postgresql-restore-validation"),
-                ("cloudnative-pg", "postgresql-size-retention"),
+                ("cloudnative-pg", "postgresql-r2-backup-budget-preview"),
                 ("openbao", "openbao-snapshot"),
                 ("shutdown-pod-preview", "shutdown-pod-preview"),
             },

@@ -670,7 +670,7 @@ class RepositoryWorkloads(unittest.TestCase):
             {d["metadata"]["name"] for d in jobs},
             {
                 "openbao-snapshot",
-                "postgresql-size-retention",
+                "postgresql-r2-backup-budget-preview",
                 "postgresql-restore-validation",
                 "k8up-restore-test",
             },
