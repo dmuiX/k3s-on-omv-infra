@@ -30,16 +30,29 @@ rules:
     resources:
       - clusters
     verbs:
-      - get
       - create
+  - apiGroups:
+      - postgresql.cnpg.io
+    resources:
+      - clusters
+    resourceNames:
+      - postgresql-restore-test
+    verbs:
+      - get
       - delete
   - apiGroups:
       - barmancloud.cnpg.io
     resources:
       - objectstores
     verbs:
-      - get
       - create
+  - apiGroups:
+      - barmancloud.cnpg.io
+    resources:
+      - objectstores
+    resourceNames:
+      - postgresql-restore-test
+    verbs:
       - delete
   - apiGroups:
       - ''

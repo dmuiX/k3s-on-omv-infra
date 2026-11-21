@@ -24,8 +24,8 @@ CLOSED = "server closed the connection unexpectedly"
 SOURCE = "k3s-postgres-rw.cloudnative-pg.svc"
 CLUSTER = "/apis/postgresql.cnpg.io/v1/namespaces/backup-validation/clusters"
 STORE = "/apis/barmancloud.cnpg.io/v1/namespaces/backup-validation/objectstores"
-STORE_PATH = f"{STORE}/postgresql-pitr-validation"
-CLUSTER_PATH = f"{CLUSTER}/postgresql-pitr-validation"
+STORE_PATH = f"{STORE}/postgresql-restore-test"
+CLUSTER_PATH = f"{CLUSTER}/postgresql-restore-test"
 SOURCE_STORE = "/apis/barmancloud.cnpg.io/v1/namespaces/cloudnative-pg/objectstores/k3s-postgres-backups"
 RUN = UUID(int=1)
 RUN_ANNOTATION = "k3s-on-omv.io/restore-run-id"
@@ -169,7 +169,7 @@ class PostgreSQLRestoreStartupTest(unittest.TestCase):
             ["CREATE", "INSERT", "SELECT", "INSERT", "SELECT", "DELETE"],
         )
         self.assertEqual(
-            self.lease.call_args_list, [call("running"), call("success", True, True)]
+            self.lease.call_args_list, [call("running"), call("success", restore_target_verified=True, mirror_verified=True)]
         )
 
     def test_later_source_connect_error_is_not_retried_but_markers_are_cleaned(
@@ -377,7 +377,7 @@ class PostgreSQLRestoreStartupTest(unittest.TestCase):
                     (f"{RUN.hex}-before", f"{RUN.hex}-after"),
                 ),
                 call.db_exit(None, None, None),
-                call.lease("success", True, True),
+                call.lease("success", restore_target_verified=True, mirror_verified=True),
             ],
         )
 
