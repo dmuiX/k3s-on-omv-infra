@@ -6,7 +6,7 @@
 
 Check that the `tekton-pipelines` Application is healthy and its webhook is ready. Approve a Linux `amd64` worker labelled `ci.dmuix.com/envoy-builder=true` with sufficient CPU, memory and disk headroom. The build requests 4 CPUs, 10 GiB RAM and 110 GiB ephemeral storage; it checks for at least 100 GiB free. The Pi is ineligible.
 
-From the repository root, apply the pipeline and load its four input files from the same checkout, then create one run:
+The `tekton-pipelines` Argo CD Application must be synced first; it now owns the restricted `ci-builds` namespace. From the repository root, apply the pipeline and load its four input files from the same checkout, then create one run:
 
 ```bash
 set -euo pipefail

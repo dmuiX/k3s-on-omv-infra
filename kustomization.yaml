@@ -23,6 +23,7 @@ resources:
 - 05-provider-vault-connection/app.yml
 - 06-platform/letsencrypt-dns01-credentials/app.yml
 - 06-platform/longhorn-config/app.yml
+- 06-platform/tekton-dashboard/app.yml
 - 06-platform/openbao-backups/app.yml
 - 06-platform/openbao-config/app.yml
 - 06-platform/backup-credentials/app.yml

@@ -1,0 +1,41 @@
+# From the Tekton Dashboard v0.74.0 read-only release.
+# Copyright 2019-2026 The Tekton Authors. Licensed under Apache-2.0.
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  labels:
+    app.kubernetes.io/component: dashboard
+    app.kubernetes.io/instance: default
+    app.kubernetes.io/part-of: tekton-dashboard
+  name: extensions.dashboard.tekton.dev
+spec:
+  group: dashboard.tekton.dev
+  names:
+    categories: [tekton, tekton-dashboard]
+    kind: Extension
+    plural: extensions
+    shortNames: [ext, exts]
+  scope: Namespaced
+  versions:
+    - additionalPrinterColumns:
+        - jsonPath: .spec.apiVersion
+          name: API version
+          type: string
+        - jsonPath: .spec.name
+          name: Kind
+          type: string
+        - jsonPath: .spec.displayName
+          name: Display name
+          type: string
+        - jsonPath: .metadata.creationTimestamp
+          name: Age
+          type: date
+      name: v1alpha1
+      schema:
+        openAPIV3Schema:
+          type: object
+          x-kubernetes-preserve-unknown-fields: true
+      served: true
+      storage: true
+      subresources:
+        status: {}
