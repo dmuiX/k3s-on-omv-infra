@@ -17,6 +17,13 @@ spec:
     - repoURL: 'https://github.com/dmuiX/k3s-on-omv-live.git'
       targetRevision: main
       path: infra/backup-validation
+  ignoreDifferences:
+    - group: ''
+      kind: ConfigMap
+      name: postgresql-restore-ledger
+      namespace: backup-validation
+      jsonPointers:
+        - /data
   syncPolicy:
     managedNamespaceMetadata:
       labels:
@@ -30,4 +37,5 @@ spec:
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
+      - RespectIgnoreDifferences=true
       - SkipDryRunOnMissingResource=true

@@ -1,5 +1,6 @@
 import copy
 import json
+import secrets
 import sys
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -40,12 +41,14 @@ class RetentionManifestTest(unittest.TestCase):
         spec = spec_from_file_location("postgresql_restore_test", script)
         adapter = module_from_spec(spec)
         spec.loader.exec_module(adapter)
-        target = "2026-11-20T03:06:00Z"
-        restore = adapter.validation_cluster(target)
+        backup_id = "20261120T020705"
+        target = "2026-11-20T03:00:00+00:00"
+        restore = adapter.validation_cluster(target, backup_id)
         self.assertEqual(restore["metadata"], {"namespace": "backup-validation", "name": "postgresql-pitr-validation"})
         self.assertEqual(restore["spec"]["storage"], {"size": "5Gi", "storageClass": "longhorn-single-node-delete"})
         self.assertEqual(restore["spec"]["inheritedMetadata"]["annotations"]["k8up.io/backup"], "false")
-        self.assertEqual(restore["spec"]["bootstrap"]["recovery"]["recoveryTarget"], {"targetTime": target})
+        self.assertEqual(restore["spec"]["bootstrap"]["recovery"]["recoveryTarget"],
+                         {"targetTime": target, "backupID": backup_id})
         resources = root / "02-controllers/longhorn/resources"
         classes = {c["metadata"]["name"]: c
                    for path in resources.glob("storageclasses*.yaml")
@@ -56,10 +59,43 @@ class RetentionManifestTest(unittest.TestCase):
         self.assertEqual(classes[production["spec"]["storage"]["storageClass"]]["reclaimPolicy"], "Retain")
         self.assertEqual(classes[restore["spec"]["storage"]["storageClass"]]["reclaimPolicy"], "Delete")
 
-    def test_restore_validator_pod_uses_runtime_default_seccomp(self):
+    def test_validator_can_discover_backups_and_update_only_its_precreated_ledger(self):
+        root = PATH.parents[2] / "08-backup-validation"
+        docs = list(yaml.safe_load_all((root / "resources/validation.yaml").read_text()))
+        ledger = "postgresql-restore-ledger"
+        namespace = "backup-validation"
+        cm, = (d for d in docs if d["kind"] == "ConfigMap" and d["metadata"]["name"] == ledger)
+        self.assertEqual(cm["metadata"]["namespace"], namespace)
+        self.assertNotIn("data", cm)
+
+        roles = {d["metadata"]["namespace"]: d["rules"] for d in docs if d["kind"] == "Role"}
+        self.assertCountEqual(roles["cloudnative-pg"], [
+            {"apiGroups": [""], "resources": ["secrets"],
+             "resourceNames": ["k3s-postgres-app"], "verbs": ["get"]},
+            {"apiGroups": ["postgresql.cnpg.io"], "resources": ["backups"], "verbs": ["list"]},
+            {"apiGroups": ["barmancloud.cnpg.io"], "resources": ["objectstores"],
+             "resourceNames": ["k3s-postgres-backups"], "verbs": ["get"]},
+        ])
+        self.assertEqual([r for r in roles[namespace] if {"*", "secrets"}.intersection(r["resources"])], [
+            {"apiGroups": [""], "resources": ["secrets"],
+             "resourceNames": ["postgresql-pitr-validation-app"], "verbs": ["get"]},
+        ])
+        self.assertEqual([r for r in roles[namespace] if "configmaps" in r["resources"]], [
+            {"apiGroups": [""], "resources": ["configmaps"], "resourceNames": [ledger], "verbs": ["get", "update"]},
+        ])
+        app = yaml.safe_load((root / "app.yml").read_text())["spec"]
+        self.assertEqual(app["ignoreDifferences"], [{
+            "group": "", "kind": "ConfigMap", "name": ledger, "namespace": namespace, "jsonPointers": ["/data"],
+        }])
+        self.assertIn("RespectIgnoreDifferences=true", app["syncPolicy"]["syncOptions"])
+
+    def test_restore_validator_polls_exclusively_and_uses_runtime_default_seccomp(self):
         path = PATH.parents[2] / "08-backup-validation/resources/validation.yaml"
         job, = (doc for doc in yaml.safe_load_all(path.read_text())
                 if doc["kind"] == "CronJob" and doc["metadata"]["name"] == "postgresql-restore-validation")
+        self.assertEqual(job["spec"]["schedule"], "*/5 * * * *")
+        self.assertFalse(job["spec"]["suspend"])
+        self.assertEqual(job["spec"]["concurrencyPolicy"], "Forbid")
         pod = job["spec"]["jobTemplate"]["spec"]["template"]["spec"]
         self.assertEqual(pod.get("securityContext", {}).get("seccompProfile"), {"type": "RuntimeDefault"})
 
@@ -203,9 +239,17 @@ class RetentionTest(unittest.TestCase):
                 MODULE.run(preview=True)
             cli.assert_not_called()
 
+    def test_recent_lease_for_an_older_backup_blocks_retention(self):
+        with (patch.dict(MODULE.os.environ, BASE_BACKUP_BUDGET_BYTES=str(MODULE.BUDGET)),
+              patch.object(MODULE, "_lease", return_value=("success", self.now, "1")),
+              patch.object(MODULE, "_catalog", return_value=self.backups), patch.object(MODULE, "_run") as cli):
+            with self.assertRaisesRegex(RuntimeError, "latest completed backup"):
+                MODULE.run(preview=False)
+            cli.assert_not_called()
+
     def test_preview_never_invokes_real_delete(self):
         with (patch.dict(MODULE.os.environ, BASE_BACKUP_BUDGET_BYTES=str(MODULE.BUDGET)),
-              patch.object(MODULE, "_lease", return_value=("success", datetime.now(timezone.utc))),
+              patch.object(MODULE, "_lease", return_value=("success", datetime.now(timezone.utc), "0")),
               patch.object(MODULE, "_catalog", return_value=self.backups),
               patch.object(MODULE, "_storage_state", return_value=(True, False)),
               patch.object(MODULE, "_barman_base_args", return_value=["target", "db"]),
@@ -218,6 +262,25 @@ class RetentionTest(unittest.TestCase):
         _, dry_run = self.plan()
         self.assertEqual(MODULE.authorize_after_dry_run(self.backups, self.backups[:-1], dry_run, dry_run_succeeded=True), [])
         self.assertEqual(MODULE.authorize_after_dry_run(self.backups, self.backups, dry_run, dry_run_succeeded=False), [])
+
+    def test_lease_requires_versioned_pitr_evidence_and_verified_mirror(self):
+        backup_id = "20261014T010000"
+        annotations = {"k3s-on-omv.io/result": "success", "k3s-on-omv.io/pitr-verified": "true",
+                       "k3s-on-omv.io/restored-backup-id": backup_id, "k3s-on-omv.io/omv-mirror-verified": "true"}
+        payload = {"metadata": {"annotations": annotations}, "spec": {"renewTime": self.now.isoformat()}}
+        with (patch.dict(MODULE.os.environ, RESTORE_LEASE_NAMESPACE="fixture", RESTORE_LEASE_NAME="status"),
+              patch.object(Path, "read_text", return_value=secrets.token_urlsafe(24)),
+              patch.object(MODULE.ssl, "create_default_context"),
+              patch.object(MODULE.urllib.request, "urlopen") as urlopen):
+            response = urlopen.return_value.__enter__.return_value
+            response.read.side_effect = lambda: json.dumps(payload)
+            with self.assertRaisesRegex(RuntimeError, "post-backup PITR"):
+                MODULE._lease()
+            annotations["k3s-on-omv.io/restore-evidence"] = "post-backup-pitr-v1"
+            self.assertEqual(MODULE._lease(), ("success", self.now, backup_id))
+            annotations["k3s-on-omv.io/omv-mirror-verified"] = "false"
+            with self.assertRaisesRegex(RuntimeError, "OMV mirror"):
+                MODULE._lease()
 
     def test_stale_lease_running_backup_and_minimum_are_closed(self):
         self.assertEqual(MODULE.plan_dry_run(self.backups, "success", self.now - timedelta(days=9), now=self.now, acceptance=True, catalog_matches_storage=True)[1], [])
