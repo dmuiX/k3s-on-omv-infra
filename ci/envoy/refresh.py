@@ -31,7 +31,7 @@ def main():
     version=max([old,*versions],key=lambda x:int(x.rsplit('.',1)[1])); changed=version!=old
     if changed:
         deps=json.loads(raw('istio/istio',version,'istio.deps')); proxy=next(d['lastStableSHA'] for d in deps if d['name']=='PROXY_REPO_SHA');assert re.fullmatch(r'[0-9a-f]{40}',proxy)
-        workspace=raw('istio/proxy',proxy,'WORKSPACE'); lock['envoy']=re.search(r'^ENVOY_SHA = "([0-9a-f]{40})"$',workspace,re.M)[1]; lock['envoy_tar_sha256']=re.search(r'^ENVOY_SHA256 = "([0-9a-f]{64})"$',workspace,re.M)[1]
+        workspace=raw('istio/proxy',proxy,'MODULE.bazel'); lock['envoy']=re.search(r'^ENVOY_SHA = "([0-9a-f]{40})"$',workspace,re.M)[1]; lock['envoy_tar_sha256']=re.search(r'^ENVOY_SHA256 = "([0-9a-f]{64})"$',workspace,re.M)[1]
         env=raw('istio/proxy',proxy,'common/scripts/setup_env.sh');tool=re.search(r'^  IMAGE_VERSION=(release-[0-9.]+-[0-9a-f]{40})$',env,re.M)[1]
         lock.update(istio=version,proxy=proxy,proxy_tar_sha256=hashlib.sha256(read(f'https://codeload.github.com/istio/proxy/tar.gz/{proxy}')).hexdigest(),toolchain=digest('registry.istio.io/testing/build-tools-proxy:'+tool),stock=digest('docker.io/istio/proxyv2:'+version+'-distroless'));path.write_text(json.dumps(lock,indent=2)+'\n')
     if 'GITHUB_OUTPUT' in os.environ:

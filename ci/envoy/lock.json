@@ -1,9 +1,9 @@
 {
-  "istio": "1.31.2",
-  "proxy": "8c7d15f0482424f4eea86580c745976377633b34",
-  "proxy_tar_sha256": "1d42b910127f5f1d9575474ca054dbac209cfadeda230e56ed6959a1d617f00f",
-  "envoy": "68eef0a0e0600aa47d4d9c03ae4a7866f78222c3",
-  "envoy_tar_sha256": "c241e8c1be164d49439456fef51a35a67d62f8fb09b3fc83b3327ccce3bece49",
-  "toolchain": "registry.istio.io/testing/build-tools-proxy@sha256:70761a0aa7053a2f4476e5c4ff47ed61fb87d0ea7d4c46dcba76773df432567e",
-  "stock": "docker.io/istio/proxyv2@sha256:0e9ac87d650581280d4e904356ca75e82e0168d2d76daa3b8b214e29dc6a7652"
+  "istio": "1.32.0",
+  "proxy": "74027068e941c7a295be2bb7938f53fe4722a593",
+  "proxy_tar_sha256": "6c3036386865153a891077871448ed644fae49edf12fcd8a46a013cb6db79374",
+  "envoy": "56e0748e3deaeb8af7efcbf2f97329bb15539767",
+  "envoy_tar_sha256": "2bdd7974dee1c87bcf69fdebb0d1b9e93b688dbec03ec8614d5e2a8b8856c8cf",
+  "toolchain": "registry.istio.io/testing/build-tools-proxy@sha256:9e67e35ccc9fd81a8c59bc399a602024d972da254dda755904e1cb82c73ebf39",
+  "stock": "docker.io/istio/proxyv2@sha256:9cd1f1cc261f3fe250ab483543e7256c39d5871eae5f1817c0809eff09e365d4"
 }

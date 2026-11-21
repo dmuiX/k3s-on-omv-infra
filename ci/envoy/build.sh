@@ -13,7 +13,7 @@ for component in proxy envoy; do
   tar -xzf "$work/$component.tgz" --strip-components=1 -C "$work/$component"
 done
 # Verify the patched dependency is the same one the pinned proxy is meant to build.
-grep -Fx "ENVOY_SHA = \"$(get envoy)\"" "$work/proxy/WORKSPACE"
+grep -Fx "ENVOY_SHA = \"$(get envoy)\"" "$work/proxy/MODULE.bazel"
 export BUILD_SCM_REVISION; BUILD_SCM_REVISION=$(get proxy)
 docker run --rm --user "$(id -u):$(id -g)" --cap-drop ALL --security-opt no-new-privileges -v "$work:/work" -w /work/proxy -e HOME=/work/cache -e BUILD_SCM_REVISION -e BUILD_SCM_STATUS=Modified --entrypoint /bin/bash "$(get toolchain)" /work/inside.sh
 mode=$(<"$work/mode"); case "$mode" in
