@@ -53,6 +53,10 @@ jobs:
           python -m mypy --strict --follow-imports=skip "${files[@]}"
       - name: Run isolated repository workload tests (no private inputs)
         run: python tests/repo_suite.py
+      - name: Render and verify all four locked ambient mesh charts offline
+        run: |
+          test -d "${PLATFORM_CHART_AUDIT:?missing verified chart directory}"
+          ruby -EUTF-8 tests/verify-mesh-renders.rb
       - name: Execute native Argo application-health contracts offline
         if: ${{ !cancelled() && steps.dependencies.conclusion == 'success' }}
         run: ruby -EUTF-8 tests/test_application_health.rb
@@ -61,7 +65,6 @@ jobs:
         run: |
           sh -n tests/run-offline-tests.sh
           ruby -EUTF-8 -c tests/verify-contracts.rb
-          ruby -EUTF-8 -c tests/verify-mesh-renders.rb
       - name: Record validation boundary
         if: ${{ !cancelled() }}
         run: |

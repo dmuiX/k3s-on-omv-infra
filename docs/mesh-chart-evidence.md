@@ -10,6 +10,12 @@ Chart pins and local render checks updated 2026-11-21. No hosts, Kubernetes API,
 - [Gateway API automated deployment](https://istio.io/v1.32/docs/tasks/traffic-management/ingress/gateway-api/#automated-deployment) makes a separate `gateway` Helm release unnecessary. Live's Gateway references Infra's same-namespace ConfigMap through `spec.infrastructure.parametersRef`. Its overlays request three replicas, preferred hostname anti-affinity, hard hostname spread (`maxSkew: 2`, `minDomains: 2`), Pi toleration, a `RuntimeDefault` seccomp profile, resource bounds, and a PDB with `minAvailable: 2`. Three replicas may run 2+1 across two hosts; if only one host can fit them, the third stays Pending. Do not overlap the rollout with a node drain. The PDB limits voluntary evictions; losing the host carrying two pods can leave just one serving. Admission, probes, Gateway status, TLS, and endpoints still require runtime evidence.
 - `base.validationFailurePolicy: Fail` is set for both base and istiod to avoid the upstream-documented server-side-apply ownership conflict. Gateway API CRDs remain externally owned.
 
+## 1.32 upgrade and rollback gates
+
+Follow the [ambient upgrade order](https://istio.io/v1.32/docs/ambient/upgrade/helm/). This application has auto-sync; the order of entries in `spec.sources` is **not** a readiness barrier. Merge changes to `base`/`istiod` first, leaving CNI and ztunnel on the previous minor. Gateway pods managed by istiod may also roll during this phase. Check CRD establishment, the running istiod version, its Available condition, Gateway/HTTPRoute conditions, and real TLS requests through **each** gateway replica before approving the separate node-agent change. A previously healthy Argo application or a single successful request is not sufficient.
+
+Only then promote CNI/ztunnel. Check DaemonSet desired/ready/updated counts, image versions on every node, a newly started pod's ambient enrollment, cross-node traffic, real playback and seek, and whether streams drain after playback. Do not combine with a node drain. On failure stop promotion; preserve counters and logs. If the second phase needs reversing, recover the data plane against the new control plane before considering a control-plane downgrade. Do not delete or blindly downgrade CRDs. No custom Envoy override is part of either phase.
+
 ## Artifact checks
 
 Official chart index SHA-256 values:
