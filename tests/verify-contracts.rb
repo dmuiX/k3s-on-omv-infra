@@ -553,7 +553,7 @@ class PlatformContractTest < Minitest::Test
     assert_equal %w[base istiod cni ztunnel], charts.map { |source| source["chart"] }
     charts.each do |source|
       assert_equal "https://blob.istio.io/istio-release/charts", source["repoURL"]
-      assert_equal "1.31.2", source["targetRevision"]
+      assert_equal "1.32.0", source["targetRevision"]
     end
     assert_equal "ambient", charts[1].dig("helm", "valuesObject", "profile")
     refute charts.any? { |source| source.dig("helm", "valueFiles") }

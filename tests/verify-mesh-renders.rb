@@ -18,7 +18,7 @@ class MeshRenderTest < Minitest::Test
     path = Pathname(cache) / chart
     assert path.join("Chart.yaml").file?, "missing extracted chart #{path}"
     metadata = YAML.load_file(path / "Chart.yaml")
-    assert_equal "1.31.2", metadata["version"]
+    assert_equal "1.32.0", metadata["version"]
     command = ["helm", "template", release, path.to_s, "--namespace", namespace, "--skip-tests"]
     application = YAML.load_file(INFRA / "01-bootstrap/istio/app.yml")
     source = application.fetch("spec").fetch("sources").find { |item| item["chart"] == chart }
@@ -37,7 +37,7 @@ class MeshRenderTest < Minitest::Test
     assert base.any? { |document| document["kind"] == "CustomResourceDefinition" }
     istiod = render("istiod", "istio-istiod", "istio-system")
     deployment = istiod.find { |document| document["kind"] == "Deployment" }
-    assert_equal "registry.istio.io/release/pilot:1.31.2-distroless", deployment.dig("spec", "template", "spec", "containers", 0, "image")
+    assert_equal "docker.io/istio/pilot:1.32.0-distroless", deployment.dig("spec", "template", "spec", "containers", 0, "image")
     [base, istiod].each do |documents|
       webhook = documents.find { |document| document["kind"] == "ValidatingWebhookConfiguration" }
       assert webhook.fetch("webhooks").all? { |item| item["failurePolicy"] == "Fail" }
