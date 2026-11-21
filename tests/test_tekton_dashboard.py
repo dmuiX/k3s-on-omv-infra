@@ -86,7 +86,7 @@ class TektonDashboardTest(unittest.TestCase):
         self.assertEqual(api_source["path"], "infra/tekton-dashboard")
         self.assertEqual(api_source["directory"], {"include": "network-peers.yaml"})
 
-    def test_ui_enables_run_creation_but_app_does_not_grant_writes(self) -> None:
+    def test_ui_enables_run_creation_with_a_scoped_gitops_grant(self) -> None:
         pod = self.spec("Deployment", APP)["template"]["spec"]
         self.assertEqual(pod["serviceAccountName"], APP)
         (container,) = pod["containers"]
@@ -105,20 +105,38 @@ class TektonDashboardTest(unittest.TestCase):
             "tekton-dashboard-info": NAMESPACE,
             "tekton-dashboard-reader": "ci-builds",
         }
+        grant = "tekton-dashboard-envoy-run"
         for kind in ("Role", "RoleBinding"):
             self.assertEqual(
-                {name for doc_kind, name in self.docs if doc_kind == kind}, set(readers)
+                {name for doc_kind, name in self.docs if doc_kind == kind},
+                set(readers) | {grant},
             )
-        for name, namespace in readers.items():
+        for name, namespace in {**readers, grant: "ci-builds"}.items():
             role = self.docs["Role", name]
             binding = self.docs["RoleBinding", name]
             self.assertEqual(role["metadata"]["namespace"], namespace)
             self.assertEqual(binding["metadata"]["namespace"], namespace)
             self.assertEqual(binding["roleRef"]["name"], name)
-            self.assertEqual(
-                binding["subjects"],
-                [{"kind": "ServiceAccount", "name": APP, "namespace": NAMESPACE}],
-            )
+            subject = {"kind": "ServiceAccount", "name": APP, "namespace": NAMESPACE}
+            if name == grant:
+                self.assertIn(binding["subjects"], ([subject], []))
+                self.assertEqual(
+                    role["rules"],
+                    [
+                        {
+                            "apiGroups": ["tekton.dev"],
+                            "resources": ["pipelineruns"],
+                            "verbs": ["create", "update", "patch", "delete"],
+                        }
+                    ],
+                )
+                self.assertEqual(binding["roleRef"]["kind"], "Role")
+                self.assertEqual(
+                    binding["metadata"]["annotations"]["argocd.argoproj.io/sync-wave"],
+                    "1",
+                )
+                continue
+            self.assertEqual(binding["subjects"], [subject])
             for rule in role["rules"]:
                 self.assertLessEqual(set(rule["verbs"]), {"get", "list", "watch"})
                 self.assertFalse(

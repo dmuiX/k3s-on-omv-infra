@@ -1,10 +1,12 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-namespace: ci-builds
+# Workloads and inputs declare ci-builds explicitly; admission objects are cluster-scoped.
 resources:
   - pipeline.yaml
+  - dashboard/admission.yaml
 configMapGenerator:
   - name: envoy-build-inputs
+    namespace: ci-builds
     files:
       - lock.json
       - 48409.patch

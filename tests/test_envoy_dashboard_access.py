@@ -9,12 +9,19 @@ import unittest
 import yaml
 
 import test_timezone_defaults as native
+from workload_contracts import Repository, render_kustomization
 
 ROOT = Path(__file__).resolve().parents[1]
 BUILD = ROOT / "01-bootstrap/istio-gateway/build"
 RELEASE = ROOT / "02-controllers/tekton-pipelines/resources/release.yaml"
 DASHBOARD = "system:serviceaccount:tekton-pipelines:tekton-dashboard"
 ADMISSION = "tekton-dashboard-envoy-run"
+ACCESS = ROOT / "06-platform/tekton-dashboard/resources/build-access.yaml"
+DASHBOARD_SUBJECT = {
+    "kind": "ServiceAccount",
+    "name": "tekton-dashboard",
+    "namespace": "tekton-pipelines",
+}
 
 
 class EnvoyDashboardAccessTest(unittest.TestCase):
@@ -30,10 +37,45 @@ class EnvoyDashboardAccessTest(unittest.TestCase):
         self,
     ) -> None:
         setup = yaml.safe_load((BUILD / "kustomization.yaml").read_text())
-        self.assertEqual(setup["namespace"], "ci-builds")
-        self.assertEqual(setup["resources"], ["pipeline.yaml"])
+        self.assertNotIn("namespace", setup)
+        self.assertEqual(
+            setup["resources"], ["pipeline.yaml", "dashboard/admission.yaml"]
+        )
+        repo = Repository()
+        sources = repo.apps["tekton-dashboard"]["spec"]["sources"]
+        (source,) = [
+            s for s in sources if s.get("path") == BUILD.relative_to(ROOT).as_posix()
+        ]
+        self.assertNotIn("directory", source)
+        docs = repo.render("tekton-dashboard")
+        self.assertFalse(any(d["kind"] in {"PipelineRun", "TaskRun"} for d in docs))
+        build = render_kustomization(ROOT, BUILD)
+        self.assertCountEqual(
+            [
+                (d["kind"], d["metadata"]["name"], d["metadata"].get("namespace"))
+                for d in build
+            ],
+            [
+                ("Pipeline", "envoy-backport-pilot", "ci-builds"),
+                ("Task", "envoy-regression-build", "ci-builds"),
+                ("ServiceAccount", "envoy-builder", "ci-builds"),
+                ("ConfigMap", "envoy-build-inputs", "ci-builds"),
+                ("NetworkPolicy", "public-build-downloads", "ci-builds"),
+                ("ValidatingAdmissionPolicy", ADMISSION, None),
+                ("ValidatingAdmissionPolicyBinding", ADMISSION, None),
+            ],
+        )
+        (binding,) = [
+            d
+            for d in docs
+            if d["kind"] == "ValidatingAdmissionPolicyBinding"
+            and d["metadata"]["name"] == ADMISSION
+        ]
+        self.assertEqual(binding["spec"]["policyName"], ADMISSION)
+        self.assertEqual(binding["spec"]["validationActions"], ["Deny"])
         (inputs,) = setup["configMapGenerator"]
         self.assertEqual(inputs["name"], "envoy-build-inputs")
+        self.assertEqual(inputs["namespace"], "ci-builds")
         self.assertIs(inputs["options"]["disableNameSuffixHash"], True)
         self.assertEqual(
             set(inputs["files"]),
@@ -42,10 +84,8 @@ class EnvoyDashboardAccessTest(unittest.TestCase):
         for path in inputs["files"]:
             self.assertTrue((BUILD / path).is_file())
 
-    def test_grant_is_dashboard_create_only_in_the_build_namespace(self) -> None:
-        role, binding = yaml.safe_load_all(
-            (BUILD / "dashboard/access.yaml").read_text()
-        )
+    def test_grant_is_dashboard_scoped_to_pipelineruns_in_build_namespace(self) -> None:
+        role, binding = yaml.safe_load_all(ACCESS.read_text())
         self.assertEqual(role["kind"], "Role")
         self.assertEqual(binding["kind"], "RoleBinding")
         self.assertEqual(role["metadata"]["namespace"], "ci-builds")
@@ -56,22 +96,13 @@ class EnvoyDashboardAccessTest(unittest.TestCase):
                 {
                     "apiGroups": ["tekton.dev"],
                     "resources": ["pipelineruns"],
-                    "verbs": ["create"],
+                    "verbs": ["create", "update", "patch", "delete"],
                 }
             ],
         )
         self.assertEqual(binding["roleRef"]["kind"], "Role")
         self.assertEqual(binding["roleRef"]["name"], role["metadata"]["name"])
-        self.assertEqual(
-            binding["subjects"],
-            [
-                {
-                    "kind": "ServiceAccount",
-                    "name": "tekton-dashboard",
-                    "namespace": "tekton-pipelines",
-                }
-            ],
-        )
+        self.assertIn(binding["subjects"], ([DASHBOARD_SUBJECT], []))
 
     def test_optional_guard_fails_closed_for_that_dashboard_identity(self) -> None:
         policy, binding = yaml.safe_load_all(
@@ -117,8 +148,24 @@ class NativeEnvoyDashboardAccessTest(unittest.TestCase):
             "crd/pipelineruns.tekton.dev",
         )
         k("create", "namespace", "ci-builds")
-        for manifest in ("admission.yaml", "access.yaml"):
-            k("apply", "-f", "-", text=(BUILD / "dashboard" / manifest).read_text())
+        k("apply", "-f", "-", text=(BUILD / "dashboard/admission.yaml").read_text())
+        # The real Application also grants reads; kubectl patch gets the object first.
+        reader = [
+            d
+            for d in yaml.safe_load_all(
+                (
+                    ROOT / "06-platform/tekton-dashboard/resources/access.yaml"
+                ).read_text()
+            )
+            if d["metadata"]["name"] == "tekton-dashboard-reader"
+        ]
+        self.assertEqual({d["kind"] for d in reader}, {"Role", "RoleBinding"})
+        for document in reader:
+            k("apply", "--server-side", "-f", "-", resource=document)
+        role, binding = yaml.safe_load_all(ACCESS.read_text())
+        binding["subjects"] = [DASHBOARD_SUBJECT]
+        k("apply", "--server-side", "-f", "-", resource=role)
+        k("apply", "--server-side", "-f", "-", resource=binding)
 
         run = yaml.safe_load((BUILD / "run.yaml").read_text())
         del run["metadata"]["generateName"]
@@ -186,8 +233,6 @@ class NativeEnvoyDashboardAccessTest(unittest.TestCase):
         for verb, resource, namespace in (
             ("create", "tasks.tekton.dev", "ci-builds"),
             ("create", "pipelineruns.tekton.dev", "default"),
-            ("patch", "pipelineruns.tekton.dev", "ci-builds"),
-            ("delete", "pipelineruns.tekton.dev", "ci-builds"),
             ("get", "secrets", "ci-builds"),
         ):
             with self.subTest(verb=verb, resource=resource), self.assertRaises(
@@ -206,5 +251,38 @@ class NativeEnvoyDashboardAccessTest(unittest.TestCase):
         submit(run, dry_run=False)
         with self.assertRaisesRegex(AssertionError, "already exists"):
             submit(run, dry_run=False)
-        k("delete", "-n", "ci-builds", "rolebinding", ADMISSION)
+        k(
+            "patch",
+            "-n",
+            "ci-builds",
+            "pipelinerun",
+            "envoy-backport-dashboard",
+            f"--as={DASHBOARD}",
+            "--type=merge",
+            "-p",
+            '{"spec":{"status":"Cancelled"}}',
+        )
+        k(
+            "delete",
+            "-n",
+            "ci-builds",
+            "pipelinerun",
+            "envoy-backport-dashboard",
+            f"--as={DASHBOARD}",
+            "--wait=true",
+        )
+        binding["subjects"] = []
+        k("apply", "--server-side", "-f", "-", resource=binding)
         wait_for_denial(run, "forbidden", "already exists")
+        for verb in ("update", "patch", "delete"):
+            with self.subTest(revoked=verb), self.assertRaises(AssertionError):
+                k(
+                    "auth",
+                    "can-i",
+                    verb,
+                    "pipelineruns.tekton.dev",
+                    f"--as={DASHBOARD}",
+                    "-n",
+                    "ci-builds",
+                    "--quiet",
+                )
