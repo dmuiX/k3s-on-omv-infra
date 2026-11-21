@@ -1,4 +1,5 @@
-# Tekton Pipelines v1.18.0, adapted for this cluster. See ci/tekton/README.md.
+# Tekton Pipelines v1.18.0, adapted for this cluster.
+# Upstream release.yaml SHA-256: 029c8400e42d0fcd4fc669140d382af1f1d8ae86202b710d6197ae22bd48be5f
 # Copyright 2019 The Tekton Authors
 #
 # Licensed under the Apache License, Version 2.0 (the "License");

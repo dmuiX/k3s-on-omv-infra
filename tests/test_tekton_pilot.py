@@ -1,12 +1,13 @@
 """Offline contracts for the opt-in Tekton control plane and Envoy pilot."""
 
+import json
 import unittest
 from pathlib import Path
 
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-PILOT = ROOT / "ci/tekton"
+BUILD = ROOT / "01-bootstrap/istio-gateway/build"
 CONTROLLER = ROOT / "02-controllers/tekton-pipelines/resources"
 
 
@@ -67,11 +68,14 @@ class TektonPilotTest(unittest.TestCase):
         )
 
     def test_pilot_requires_manual_run_and_an_explicit_builder(self) -> None:
-        self.assertFalse(list(PILOT.rglob("app.yml")))
-        self.assertNotIn("ci/tekton", (ROOT / "kustomization.yaml").read_text())
-        manifests = list(
-            yaml.safe_load_all((PILOT / "pilot/pipeline.yaml").read_text())
+        self.assertFalse(list(BUILD.rglob("app.yml")))
+        self.assertFalse((ROOT / ".github/workflows/envoy-backport.yml").exists())
+        gateway = yaml.safe_load((BUILD.parent / "app.yml").read_text())
+        self.assertEqual(
+            gateway["spec"]["sources"][0]["path"],
+            "01-bootstrap/istio-gateway/resources",
         )
+        manifests = list(yaml.safe_load_all((BUILD / "pipeline.yaml").read_text()))
         docs = {d["kind"]: d for d in manifests}
         self.assertEqual(len(docs), len(manifests))
         self.assertEqual(
@@ -79,17 +83,15 @@ class TektonPilotTest(unittest.TestCase):
             {
                 "Namespace",
                 "ServiceAccount",
-                "ResourceQuota",
                 "NetworkPolicy",
                 "Task",
                 "Pipeline",
             },
         )
-        self.assertEqual(docs["ResourceQuota"]["spec"]["hard"]["pods"], "1")
         account = docs["ServiceAccount"]
         self.assertIs(account["automountServiceAccountToken"], False)
         self.assertNotIn("secrets", account)
-        run = yaml.safe_load((PILOT / "pilot/run.yaml").read_text())
+        run = yaml.safe_load((BUILD / "run.yaml").read_text())
         template = run["spec"]["taskRunTemplate"]
         self.assertEqual(template["serviceAccountName"], account["metadata"]["name"])
         self.assertEqual(
@@ -115,9 +117,18 @@ class TektonPilotTest(unittest.TestCase):
             {(p["protocol"], p["port"]) for r in policy["egress"] for p in r["ports"]},
             {("TCP", 53), ("UDP", 53), ("TCP", 443)},
         )
-        (volume,) = task["volumes"]
-        self.assertEqual(set(volume), {"name", "emptyDir"})
+        volumes = {volume["name"]: volume for volume in task["volumes"]}
+        self.assertEqual(set(volumes["build"]), {"name", "emptyDir"})
+        self.assertEqual(volumes["inputs"]["configMap"], {"name": "envoy-build-inputs"})
         (step,) = task["steps"]
-        self.assertRegex(step["image"], r"@sha256:[0-9a-f]{64}$")
-        self.assertRegex(step["script"], r"k3s-on-omv-infra/[a-f0-9]{40}/ci/envoy")
+        self.assertIn(
+            {"name": "inputs", "mountPath": "/inputs", "readOnly": True},
+            step["volumeMounts"],
+        )
+        lock = json.loads((BUILD / "lock.json").read_text())
+        self.assertEqual(step["image"], lock["toolchain"])
+        self.assertNotIn("raw.githubusercontent.com", step["script"])
+        for filename in ("lock.json", "48409.patch", "regression.patch", "inside.sh"):
+            self.assertTrue((BUILD / filename).is_file())
+            self.assertIn(filename, step["script"])
         self.assertIs(step["securityContext"]["allowPrivilegeEscalation"], False)

@@ -12,15 +12,6 @@ metadata:
   namespace: ci-builds
 automountServiceAccountToken: false
 ---
-apiVersion: v1
-kind: ResourceQuota
-metadata:
-  name: one-build-pod
-  namespace: ci-builds
-spec:
-  hard:
-    pods: "1"
----
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
@@ -71,6 +62,9 @@ spec:
     - name: build
       emptyDir:
         sizeLimit: 110Gi
+    - name: inputs
+      configMap:
+        name: envoy-build-inputs
   steps:
     - name: test-and-build
       # release-1.32-f03dc190ffca2d139d72fd1c04d2fd9ec78cb23e
@@ -78,6 +72,7 @@ spec:
       workingDir: /work
       volumeMounts:
         - {name: build, mountPath: /work}
+        - {name: inputs, mountPath: /inputs, readOnly: true}
       computeResources:
         requests: {cpu: "4", memory: 10Gi, ephemeral-storage: 110Gi}
         limits: {cpu: "4", memory: 12Gi, ephemeral-storage: 120Gi}
@@ -96,10 +91,7 @@ spec:
         mkdir envoy proxy cache context
         export HOME=/work/cache
         fetch() { curl -fsSL --proto '=https' --proto-redir '=https' --retry 2 -o "$2" "$1"; }
-        source=https://raw.githubusercontent.com/dmuiX/k3s-on-omv-infra/dd9c935080c73d3f731c60694552504444a5293e/ci/envoy
-        for file in lock.json 48409.patch regression.patch inside.sh; do
-          fetch "$source/$file" "$file"
-        done
+        cp /inputs/{lock.json,48409.patch,regression.patch,inside.sh} .
         lock() { jq -er --arg key "$1" '.[$key]' lock.json; }
         for component in proxy envoy; do
           owner=istio

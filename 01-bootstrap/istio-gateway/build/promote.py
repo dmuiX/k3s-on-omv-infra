@@ -38,7 +38,7 @@ def render(text, mode, digest, tag):
 
 if __name__ == '__main__':
     mode, digest, tag = sys.argv[1:]
-    lock = json.loads(Path('ci/envoy/lock.json').read_text())
+    lock = json.loads(Path(__file__).with_name('lock.json').read_text())
     version = lock['istio']
     if mode == 'stock' and (lock['stock'] != STOCK + '@' + digest or lock['stock_tag'] != tag):
         sys.exit('stock digest does not match official image lock')
