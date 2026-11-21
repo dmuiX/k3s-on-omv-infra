@@ -16,6 +16,8 @@
     "test_native_reader_accounts",
     "test_openbao_network",
     "test_postgresql_restore_startup",
+    "test_prometheus_backup_pipeline",
+    "test_prometheus_snapshot_binding",
     "test_retention",
     "test_shutdown_pod_preview",
     "test_snapshot",
@@ -34,6 +36,12 @@
       "EnvoyDashboardAccessTest.test_setup_installs_reviewed_inputs_without_a_run_or_dashboard_grant",
       "EnvoyDashboardAccessTest.test_grant_is_dashboard_create_only_in_the_build_namespace",
       "EnvoyDashboardAccessTest.test_optional_guard_fails_closed_for_that_dashboard_identity"
+    ],
+    "test_prometheus_backup_pipeline_manifests": [
+      "PipelineManifestTest.test_runner_mounts_only_scripts_snapshot_subdirectory_and_api_token",
+      "PipelineManifestTest.test_runner_init_prepares_only_the_operator_snapshot_directory",
+      "PipelineManifestTest.test_rbac_and_egress_are_scoped",
+      "PipelineManifestTest.test_admission_fails_closed_and_requires_exact_cronjob_parameter"
     ],
     "test_memory_limits": [
       "MemoryLimitsContractTest.test_every_cap_reaches_its_named_container_including_shared_init",

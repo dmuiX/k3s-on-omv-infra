@@ -20,7 +20,7 @@ MAX_BYTES = 20 * GIB
 MAX_MEMBERS = 32_768
 MARKER = b"k8up-validation-canary:v1\n"
 ARCHIVE = "kube-prometheus-stack-snapshottar"
-SNAPSHOT = re.compile(r"[0-9]{8}T[0-9]{6}Z-[A-Za-z0-9]{1,64}")
+NATIVE_SNAPSHOT = re.compile(r"[0-9]{8}T[0-9]{6}Z-[0-9a-f]{16}")  # Prometheus v3.15
 BLOCK = r"[0-7][0-9A-HJKMNP-TV-Z]{25}"
 DIRECTORY = re.compile(rf"{BLOCK}(/chunks)?")
 FILE = re.compile(rf"{BLOCK}/(meta\.json|index|tombstones|chunks/[0-9]{{6}})")
@@ -69,11 +69,11 @@ def copy_payload(data: BinaryIO, path: Path, size: int) -> None:
     padding(data, size)
 
 
-def extract(data: BinaryIO, dest: Path) -> None:
-    root = None
+def extract(data: BinaryIO, dest: Path, expected: str) -> None:
     for index in range(MAX_MEMBERS + 1):
         raw = data.read(512)
         if raw == bytes(512):  # first zero block; reject a hidden second archive
+            require(index > 0)
             tail = data.read(tarfile.RECORDSIZE + 513)
             require(512 <= len(tail) <= tarfile.RECORDSIZE + 512 and len(tail) % 512 == 0 and not any(tail))
             return
@@ -87,12 +87,12 @@ def extract(data: BinaryIO, dest: Path) -> None:
         require(not member.linkname and 0 <= member.size <= MAX_BYTES)
         directory = member.type == tarfile.DIRTYPE
         require((directory and member.size == 0) or member.type == tarfile.REGTYPE)
-        if root is None:
-            require(directory and SNAPSHOT.fullmatch(member.name) is not None)
-            root = member.name
+        if index == 0:
+            require(directory and member.name == expected)
+            dest.mkdir()  # only after matching the root; never merge with old output
             continue
         snapshot, _, relative = member.name.partition("/")
-        require(snapshot == root and (DIRECTORY if directory else FILE).fullmatch(relative) is not None)
+        require(snapshot == expected and (DIRECTORY if directory else FILE).fullmatch(relative) is not None)
         if directory:
             (dest / relative).mkdir()
         else:
@@ -113,6 +113,8 @@ def verify(mode: str, scratch: Path) -> None:
         print("stage=backup-validation result=PASS")
         return
     require(mode == "prometheus")
+    expected = os.environ.get("PROMETHEUS_EXPECTED_SNAPSHOT", "")
+    require(NATIVE_SNAPSHOT.fullmatch(expected) is not None)
     with os.scandir(restored) as entries:
         entry = next(entries, None)
         require(entry is not None and entry.name == ARCHIVE and next(entries, None) is None)
@@ -120,8 +122,7 @@ def verify(mode: str, scratch: Path) -> None:
     with open_regular(restored / ARCHIVE) as data:
         size = os.fstat(data.fileno()).st_size
         require(0 < size <= MAX_BYTES and shutil.disk_usage(scratch).free >= size + GIB)
-        dest.mkdir()  # never merge with old output
-        extract(data, dest)
+        extract(data, dest, expected)
     require(any(dest.iterdir()))
     for block in dest.iterdir():
         require((block / "meta.json").stat().st_size > 0 and (block / "index").stat().st_size > 0)

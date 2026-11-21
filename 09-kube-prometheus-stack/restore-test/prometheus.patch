@@ -16,10 +16,21 @@ spec:
                 - name: RESTIC_PASSWORD
                   valueFrom:
                     secretKeyRef: {name: prometheus-k8up-repository, key: password}
+                # A trusted pipeline clone must supply both Pod annotations.
+                - name: K8UP_PROMETHEUS_RUN_TAG
+                  valueFrom:
+                    fieldRef: {fieldPath: "metadata.annotations['platform.k3s-on-omv.io/backup-run-tag']"}
+                - name: PROMETHEUS_EXPECTED_SNAPSHOT
+                  valueFrom:
+                    fieldRef: {fieldPath: "metadata.annotations['platform.k3s-on-omv.io/native-snapshot']"}
             - name: validate-archive
               terminationMessagePolicy: FallbackToLogsOnError
               image: python:3.13-slim-bookworm@sha256:a1165e272e578941b84abc79e4ab38a0305cd12803a5c4247979ac7655f4d641
               command: [/usr/local/bin/python, -IB, /tools/verify.py, prometheus]
+              env:
+                - name: PROMETHEUS_EXPECTED_SNAPSHOT
+                  valueFrom:
+                    fieldRef: {fieldPath: "metadata.annotations['platform.k3s-on-omv.io/native-snapshot']"}
               securityContext:
                 allowPrivilegeEscalation: false
                 readOnlyRootFilesystem: true

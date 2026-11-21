@@ -61,7 +61,9 @@ class RestoreTestManifests(unittest.TestCase):
     def test_scratch_and_credential_boundaries(self):
         for ns, (_, repo, secret, size) in TARGETS.items():
             with self.subTest(namespace=ns):
-                docs = self.docs[ns]; pod = docs['CronJob', CRON_NAME[ns]]['spec']['jobTemplate']['spec']['template']['spec']
+                docs = self.docs[ns]
+                template = docs['CronJob', CRON_NAME[ns]]['spec']['jobTemplate']['spec']['template']
+                pod = template['spec']
                 vols = {v['name']: v for v in pod['volumes']}
                 self.assertEqual(set(vols), {'repository', 'scratch', 'tools'})
                 self.assertEqual(vols['repository']['persistentVolumeClaim'], {'claimName': repo, 'readOnly': True})
@@ -71,16 +73,20 @@ class RestoreTestManifests(unittest.TestCase):
                                  'accessModes': ['ReadWriteOnce'], 'resources': {'requests': {'storage': size}}})
                 tools = docs['ConfigMap', vols['tools']['configMap']['name']]['data']
                 self.assertEqual(set(tools), {'restore.sh', 'verify.py', 'read-samples.sh'})
-                self.assertEqual(tools['read-samples.sh'], (ROOT / 'adapters/k8up-restore/read-samples.sh').read_text())
+                for name, script in tools.items():
+                    self.assertEqual(script, (ROOT / 'adapters/k8up-restore' / name).read_text())
                 stages = pod['initContainers'] + pod['containers']; restore = stages[0]
                 self.assertFalse(pod['automountServiceAccountToken']); self.assertFalse(pod['enableServiceLinks'])
                 self.assertEqual(restore['name'], 'restore')
-                self.assertEqual({e['name']: e for e in restore['env']}['RESTIC_PASSWORD']['valueFrom'],
-                                 {'secretKeyRef': {'name': secret, 'key': 'password'}})
+                self.assertEqual(restore['command'], ['/bin/sh', '/tools/restore.sh'])
+                refs = [{e['name']: e['valueFrom'] for e in c.get('env', []) if 'valueFrom' in e} for c in stages]
+                password = {'RESTIC_PASSWORD': {'secretKeyRef': {'name': secret, 'key': 'password'}}}
                 self.assertIn({'name': 'repository', 'mountPath': '/repository', 'readOnly': True}, restore['volumeMounts'])
                 for c in stages:
                     self.assertRegex(c['image'], r'@sha256:[0-9a-f]{64}$')
                     self.assertNotIn('envFrom', c); self.assertNotIn('volumeDevices', c)
+                    names = [e['name'] for e in c.get('env', [])]
+                    self.assertEqual(len(names), len(set(names)))
                     self.assertIn('/scratch', [m['mountPath'] for m in c['volumeMounts']])
                     self.assertIn({'name': 'tools', 'mountPath': '/tools', 'readOnly': True}, c['volumeMounts'])
                     self.assertEqual(c['terminationMessagePolicy'], 'FallbackToLogsOnError')
@@ -90,17 +96,28 @@ class RestoreTestManifests(unittest.TestCase):
                     for k in ('requests', 'limits'):
                         self.assertTrue({'cpu', 'memory'} <= c['resources'][k].keys())
                 for c in stages[1:]:
-                    self.assertFalse(any('valueFrom' in e for e in c.get('env', [])))
                     self.assertNotIn('repository', [m['name'] for m in c['volumeMounts']])
                 if ns == 'backup-validation':
+                    self.assertEqual(refs, [password, {}])
                     self.assertEqual(restore['args'], ['backup-validation', '172800'])
                     self.assertEqual([c['name'] for c in stages], ['restore', 'verify'])
                     self.assertEqual(stages[-1]['args'], ['backup-validation'])
                 else:
+                    run_tag_annotation = 'platform.k3s-on-omv.io/backup-run-tag'
+                    snapshot_annotation = 'platform.k3s-on-omv.io/native-snapshot'
+                    run_tag = {'K8UP_PROMETHEUS_RUN_TAG': {'fieldRef': {
+                        'fieldPath': f"metadata.annotations['{run_tag_annotation}']"}}}
+                    snapshot = {'PROMETHEUS_EXPECTED_SNAPSHOT': {'fieldRef': {
+                        'fieldPath': f"metadata.annotations['{snapshot_annotation}']"}}}
+                    self.assertEqual(refs, [password | run_tag | snapshot, snapshot, {}])
+                    # Only a trusted Job clone supplies the pins, never the CronJob itself.
+                    annotations = template['metadata'].get('annotations', {})
+                    self.assertNotIn(run_tag_annotation, annotations)
+                    self.assertNotIn(snapshot_annotation, annotations)
                     self.assertEqual(pod['nodeSelector'], {'monitoring': 'true'})
                     self.assertEqual(restore['args'], ['prometheus-stream', '691200'])
                     self.assertEqual([c['name'] for c in stages], ['restore', 'validate-archive', 'verify'])
-                    self.assertEqual(stages[1]['command'][-2:], ['/tools/verify.py', 'prometheus'])
+                    self.assertEqual(stages[1]['command'], ['/usr/local/bin/python', '-IB', '/tools/verify.py', 'prometheus'])
                     self.assertEqual(stages[-1]['command'], ['/bin/sh', '/tools/read-samples.sh'])
 
     def test_network_isolation_in_infra_render(self):
@@ -115,6 +132,7 @@ class RestoreTestManifests(unittest.TestCase):
             for pod in pods:
                 self.assertEqual(pod['metadata']['labels'][LABEL], POD_NAME)
                 self.assertEqual(pod['metadata']['labels']['istio.io/dataplane-mode'], 'none')
+                self.assertEqual(pod['metadata']['labels']['sidecar.istio.io/inject'], 'false')
             policy = docs['NetworkPolicy', 'isolate-k8up-restore-test']
             self.assertEqual(policy['metadata']['namespace'], ns)
             self.assertEqual(policy['spec'], {'podSelector': {'matchLabels': {LABEL: POD_NAME}},

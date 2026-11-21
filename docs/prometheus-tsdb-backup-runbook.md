@@ -1,147 +1,30 @@
-# Prometheus snapshot to K8up runbook
+# Automatic Prometheus backup and restore verification
 
-This workflow backs up only a native Prometheus TSDB snapshot. It must never point K8up at the live Prometheus PVC or copy live block files. K8up 2.16 has no conditional post-backup hook, so source cleanup is deliberately a separate, fail-closed step.
+The `kube-prometheus-stack/prometheus-backup-pipeline` CronJob supervises one run daily. It uses the existing K8up `PreBackupPod`, replica-0 native TSDB snapshot, and `prometheus-k8up-repository` on the OMV SMB share. The live TSDB is never copied. The run does not require an operator to submit Backup, Check, or restore Jobs.
 
-## Preconditions
+## Success conditions
 
-1. Verify that the pinned multi-architecture `python:3.13-slim-bookworm@sha256:a1165e272e578941b84abc79e4ab38a0305cd12803a5c4247979ac7655f4d641` index still resolves to Linux amd64 and arm64 manifests. The snapshot implementation uses only Python's standard library.
-2. Verify the rendered replica-0 PVC name used by `prometheus-tsdb-snapshot`, same-node RWO attachment, admin API reachability, SMB mount permissions, repository locking, and independent custody of the Restic password.
-3. Verify `prometheus-k8up-repository` is bound through StorageClass `smb` and maps to retained subdirectory `kube-prometheus-stack/prometheus-k8up-repository` beneath `//192.168.1.5/k3s-cluster` on the mounted backup disk.
-4. Use a new UTC run ID for every object below. Never apply these examples with the literal `RUN_ID`.
+1. The runner's tokenless init container prepares `prometheus-db/snapshots` on replica 0's PVC. The producer and runner then each mount only that subdirectory at `/snapshots`. The runner acquires the exclusive `.k8up-pipeline-lock` there. The runner's Pod UID is the run identity. K8up commits a snapshot with the corresponding unique Restic run tag. The snapshot producer records the **Backup UID** and **native snapshot name** in `.k8up-pending` and streams from the opened, inode-checked directory. An existing marker, including a legacy marker, blocks a new snapshot.
+2. Wait for `Completed=True` and `reason=Succeeded` on that exact K8up Backup, for K8up's transient producer to be removed, and for the exact K8up Check to succeed. A Check is a repository check, not a restore pass.
+3. Clone the approved, suspended `prometheus-restore-test` template into one net-isolated Job. The Job must find exactly one fresh Restic snapshot with the prescribed host, path and exact run tags. It restores that full snapshot ID with Restic `--verify`, checks the native tar root matches the source binding, and reads a real historical `kube_node_info{node!=""}` sample with value `1` in the preceding 24 hours with `promtool`. No application production PVC, service-account token, or production network access is available in this Job.
+4. Require `Complete=True` on the exact verification Job UID. Recheck the Backup UID, native snapshot name and directory identity against `.k8up-pending`. Persist `.k8up-verified-<run-uid>.json`, then move the directory to a private same-volume cleanup path. Open it without following symlinks, check the opened directory against the recorded device and inode, remove its contents relative to that descriptor, and check the name still identifies the same directory before the final empty-directory removal. Remove the pending marker and the run lock last. The runner logs `stage=cleanup result=PASS` only after this sequence completes. The restore init log contains the full Restic snapshot ID; keep its bounded evidence before the Job's TTL if required.
 
-## 1. Submit one one-shot Backup
+## Rollout gate
 
-Create exactly one uniquely named resource from this template:
+Before merging, hold Argo CD reconciliation of the root `infra` Application, then the `kube-prometheus-stack` child. Verify neither has a queued or active sync. The admission bindings take effect on sync even when both CronJobs are suspended.
 
-```yaml
-apiVersion: k8up.io/v1
-kind: Backup
-metadata:
-  name: prometheus-tsdb-RUN_ID
-  namespace: kube-prometheus-stack
-spec:
-  backend:
-    repoPasswordSecretRef: {name: prometheus-k8up-repository, key: password}
-    local: {mountPath: /repository}
-    volumeMounts: [{name: repository, mountPath: /repository}]
-  podConfigRef: {name: prometheus-k8up-omv}
-  labelSelectors:
-    - matchLabels: {platform.k3s-on-omv.io/backup-set: prometheus-tsdb}
-  tags: [prometheus-tsdb, prometheus-replica-0]
-  activeDeadlineSeconds: 7200
-  failedJobsHistoryLimit: 3
-  successfulJobsHistoryLimit: 3
-```
+The pipeline and restore template ship **suspended** pending rollout acceptance. Syncing the two denying admission policy bindings changes admission even while both CronJobs are suspended: Backup and Check creation is restricted, their specs become immutable, Prune creation is blocked in this namespace, and runner-created Jobs are restricted. Review that impact before approving the Infra sync. Keep `prometheus-restore-test` suspended permanently: it is the admission policy's trusted Job template, not a separate scheduled verification. When rollout gates are met, enable only `prometheus-backup-pipeline` through a reviewed change.
 
-The selector intentionally matches the `PreBackupPod` and no PVC. The pre-backup command invokes the native snapshot API and streams only the returned snapshot directory to Restic.
+- Sync the Live API egress companion first. Verify its pre-/post-DNAT tuples match the live API Service and EndpointSlices, and that it selects only `prometheus-backup-pipeline`. The runner has only that API path; the offline verifier must remain excluded even if other policies are added. Inspect all additive policies and mesh injection on both Pod types.
+- Before syncing Infra, drain old launches and verify no old Backup, Check or Prune is active for the repository. Verify the immutable producer ConfigMap and PreBackupPod reference agree. Inspect the Operator-generated StatefulSet and ready replica-0 Pod: Prometheus must mount the intended PVC at `/prometheus` with `subPath: prometheus-db`, so the API's `/prometheus/snapshots` maps to `prometheus-db/snapshots` on that claim. Confirm the SMB repository mount independently. Account for any legacy lock, marker or snapshot in either the former PVC-root `snapshots` path or the active subdirectory before enabling; do not move or remove evidence to make the check pass.
+- Rehearse on isolated matching storage with the Operator-created `prometheus-db` present but no `snapshots` directory. The runner's tokenless init mounts only `prometheus-db` and must be able to create or open its real, usable `snapshots` directory as UID 1000/GID 2000, without manual preparation, `fsGroup` or recursive ownership changes. An unusable path must block the runner before it creates a Backup. Verify the producer and runner see the same native snapshot and that the verifier still mounts neither the source PVC nor a token. Server-side admission alone does not establish these runtime mount and permission checks.
+- Verify that only the runner can use its service account. As part of pending isolated deployment acceptance, use the runner's real projected Pod-bound token to verify that the fixed Backup, Check and exact verifier clone are admitted for its own Pod UID, and that requests for a different UID or with an unbound token for the same service account are denied. Impersonation-based admission tests do not verify the token boundary.
+- Before enabling, verify that the pipeline is the only writer to the exact Restic repository, including through alternate PVCs or mounts, external SMB clients, and any K8up Restore that could use the repository as a writable destination. Alert on any pipeline failure or missed schedule. Before maintenance, stop manual launches, suspend the pipeline in Git and confirm the suspension is live. Drain its active runner, K8up children and the verifier (which may outlive the runner). Verify that no readers or writers are still using the repository before approving maintenance; never run direct Restic deletion, `forget`, compaction or prune while the pipeline is enabled. Schedule a separate reviewed retention plan before storage pressure; this change does not enable deletion of stored Restic backups. The intended 7 daily / 4 weekly repository retention is not implemented here.
+- Require a healthy bound `prometheus-k8up-repository`, SMB read access for the restore UID, source PVC headroom for pinned TSDB blocks on failure, and verified free, schedulable local capacity for the 48 GiB strict-local scratch claim on an eligible monitoring node. The restore validates a 20 GiB / 32,768-member archive at most. See [scratch and isolation gates](k8up-restore-tests.md#rollout-and-acceptance). Confirm the producer, check and restore respect their time bounds and all test-owned scratch resources disappear normally after TTL.
+- Reconcile only under approved deployment. With automatic prune disabled, retire only the verified legacy `k8up-restore-test` CronJob in this namespace if it is still present. The pipeline never unsuspends it or the current verifier template.
 
-## 2. Verify Backup and repository
+## Failure and recovery
 
-Do not infer success from `status.finished`. Require the Backup condition `type=Completed`, `status=True`, and `reason=Succeeded`, no failed K8up Job for the run, and a new K8up `Snapshot` record for repository `/repository`.
+A failed or unverified run does not delete its TSDB snapshot or any Restic objects. The retained lock blocks the next run rather than guessing what happened. Observe the existing CronJob/Job status and record the tagged Backup, Check, verification Job and binding according to the logs. Keep all source material on a missing or ambiguous result. An interrupted post-verification cleanup may leave a partially removed directory in the private cleanup path along with the lock and marker. A persisted proof is not evidence that cleanup completed. Investigate this state under separate approval, keeping protection in place while reconciling the exact identities. Do not remove a lock by age, replay a snapshot request to recover a lost reply, or delete an unrelated run's files.
 
-Then create a uniquely named repository check:
-
-```yaml
-apiVersion: k8up.io/v1
-kind: Check
-metadata:
-  name: prometheus-tsdb-check-RUN_ID
-  namespace: kube-prometheus-stack
-spec:
-  backend:
-    repoPasswordSecretRef: {name: prometheus-k8up-repository, key: password}
-    local: {mountPath: /repository}
-    volumeMounts: [{name: repository, mountPath: /repository}]
-  podConfigRef: {name: prometheus-k8up-omv}
-  activeDeadlineSeconds: 7200
-  failedJobsHistoryLimit: 3
-  successfulJobsHistoryLimit: 3
-```
-
-Require the same `Completed=True`, `reason=Succeeded` condition on the Check. Repository metadata alone is insufficient. The suspended `prometheus-restore-test` template restores with Restic `--verify`, then validates the staged, uncompressed tar on private scratch (48 GiB requested; 20 GiB archive cap, 32,768 members). Before launch, verify free, schedulable strict-local capacity on the eligible monitoring node(s), not total cluster capacity; see the [restore test rollout gates](k8up-restore-tests.md#rollout-and-acceptance). It mounts neither the live TSDB nor any source Pod volume.
-
-The final reader must successfully dump at least one `kube_node_info{node!=""}` sample with the expected info-gauge value `1` from the 24 hours preceding the selected Restic snapshot time. This checks historical data against a known metric invariant, **not** an exact timestamp/value comparison against a separately captured source reference. A stack that was not collecting node info during this window will fail the restore test.
-
-Collect `snapshot_id` and `time` from the Job Pod's `restore` container logs and `stage=read-samples result=PASS` from `verify`; also require Job completion. A successful restore or `validate-archive` exit alone is not a pass. These logs do not require the scratch PVC, but are not a permanent audit store: retain them before Job TTL/Pod cleanup. Do not collect repository contents, sample labels, or credentials.
-
-## 3. Clean up the native snapshot
-
-The pre-backup command writes the strictly validated native snapshot name to `/prometheus/snapshots/.k8up-pending`. If either the Backup or Check gate fails, retain the marker and snapshot for investigation and retry.
-
-Create the following Job with a new run ID while it is suspended. It mounts replica 0's PVC on the same node, validates the marker before constructing the target path, deletes exactly that snapshot directory, and removes the marker last.
-
-```yaml
-apiVersion: batch/v1
-kind: Job
-metadata:
-  name: prometheus-tsdb-cleanup-RUN_ID
-  namespace: kube-prometheus-stack
-spec:
-  suspend: true
-  backoffLimit: 0
-  activeDeadlineSeconds: 600
-  template:
-    spec:
-      restartPolicy: Never
-      automountServiceAccountToken: false
-      securityContext: {runAsNonRoot: true, runAsUser: 1000, runAsGroup: 2000, fsGroup: 2000, seccompProfile: {type: RuntimeDefault}}
-      affinity:
-        podAffinity:
-          requiredDuringSchedulingIgnoredDuringExecution:
-            - labelSelector: {matchLabels: {statefulset.kubernetes.io/pod-name: prometheus-kube-prometheus-stack-prometheus-0}}
-              topologyKey: kubernetes.io/hostname
-      containers:
-        - name: cleanup
-          image: python:3.13-slim-bookworm@sha256:a1165e272e578941b84abc79e4ab38a0305cd12803a5c4247979ac7655f4d641
-          command: [/usr/local/bin/python, -c]
-          args:
-            - |
-              from pathlib import Path
-              import re
-              import shutil
-              root = Path("/prometheus/snapshots")
-              marker = root / ".k8up-pending"
-              name = marker.read_text().strip()
-              if not re.fullmatch(r"[0-9]{8}T[0-9]{6}Z-[A-Za-z0-9]+", name):
-                  raise SystemExit("invalid pending snapshot name")
-              target = root / name
-              if target.parent != root or not target.is_dir() or target.is_symlink():
-                  raise SystemExit("pending snapshot target is not a safe directory")
-              shutil.rmtree(target)
-              marker.unlink()
-          resources: {requests: {cpu: 25m, memory: 32Mi}, limits: {cpu: 250m, memory: 128Mi}}
-          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
-          volumeMounts: [{name: prometheus-data, mountPath: /prometheus}]
-      volumes:
-        - name: prometheus-data
-          persistentVolumeClaim: {claimName: prometheus-kube-prometheus-stack-prometheus-db-prometheus-kube-prometheus-stack-prometheus-0}
-```
-
-After independently verifying both exact success gates, start only this reviewed Job with `kubectl patch job prometheus-tsdb-cleanup-RUN_ID -n kube-prometheus-stack --type=merge -p '{"spec":{"suspend":false}}'`. Require Job completion and verify both the marker and named snapshot directory are absent. If any gate or cleanup check fails, leave the Job suspended and retain the snapshot. Never place deletion in the `PreBackupPod`, a lifecycle hook, or an unconditional K8up post-backup action.
-
-## 4. Apply retention after success
-
-After verified Backup and Check success (cleanup may remain blocked), create a uniquely named native Prune:
-
-```yaml
-apiVersion: k8up.io/v1
-kind: Prune
-metadata:
-  name: prometheus-tsdb-prune-RUN_ID
-  namespace: kube-prometheus-stack
-spec:
-  backend:
-    repoPasswordSecretRef: {name: prometheus-k8up-repository, key: password}
-    local: {mountPath: /repository}
-    volumeMounts: [{name: repository, mountPath: /repository}]
-  podConfigRef: {name: prometheus-k8up-omv}
-  retention:
-    keepDaily: 7
-    keepWeekly: 4
-    tags: [prometheus-tsdb]
-  activeDeadlineSeconds: 7200
-  failedJobsHistoryLimit: 3
-  successfulJobsHistoryLimit: 3
-```
-
-Require `Completed=True`, `reason=Succeeded`. Prune controls Restic retention; it does not authorize deletion of a native Prometheus snapshot.
+Roll back by suspending the pipeline in Git and stopping manual launches. Suspension does not stop an existing Job. Keep isolation and both admission policies and bindings in force through draining and access revocation. Once the runner, K8up children and verifier have drained, remove the runner CronJob and RoleBinding from desired state, explicitly retire the verified live objects, and confirm runner access is revoked. Only then remove the two denying `ValidatingAdmissionPolicyBinding` resources from desired state and explicitly retire the live `prometheus-backup-pipeline-k8up` and `prometheus-backup-pipeline-verify` bindings after checking their Argo ownership and UIDs. With `prune: false`, the bindings keep enforcing until retired. Preserve the existing PVCs, source bindings, proof records and repository. Do not re-enable the former independent verifier schedule as a substitute.
