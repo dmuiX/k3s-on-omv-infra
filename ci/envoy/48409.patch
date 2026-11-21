@@ -1,0 +1,13 @@
+--- a/source/extensions/io_socket/user_space/io_handle_impl.h
++++ b/source/extensions/io_socket/user_space/io_handle_impl.h
+@@ -124,6 +124,10 @@
+   void onPeerDestroy() override {
+     peer_handle_ = nullptr;
+     sent_eof_ = true;
++    if (user_file_event_) {
++      // FlushWrite may be waiting only for Write when the peer closes.
++      user_file_event_->activateIfEnabled(Event::FileReadyType::Write);
++    }
+   }
+   void onPeerBufferLowWatermark() override {
+     if (user_file_event_) {
