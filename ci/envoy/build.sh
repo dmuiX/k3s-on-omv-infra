@@ -3,6 +3,12 @@
 set -euo pipefail
 root=$(pwd); lock=$root/ci/envoy/lock.json
 get(){ jq -er --arg k "$1" '.[$k]' "$lock"; }
+for input in stock toolchain; do
+  ref=$(get "$input"); tag=$(get "${input}_tag")
+  [[ $tag =~ ^[a-zA-Z0-9_][a-zA-Z0-9_.-]{0,127}$ ]]
+  actual=$(docker buildx imagetools inspect "${ref%@*}:$tag" --format '{{.Manifest.Digest}}')
+  [[ $actual == "${ref##*@}" ]] || { echo "Tag/digest mismatch: $input" >&2; exit 1; }
+done
 work=$(mktemp -d "${RUNNER_TEMP:-/tmp}/envoy-build.XXXXXXXX")
 mkdir "$work"/{envoy,proxy,cache,context}; cp ci/envoy/{48409.patch,regression.patch,inside.sh} "$work/"
 for component in proxy envoy; do
@@ -17,7 +23,7 @@ grep -Fx "ENVOY_SHA = \"$(get envoy)\"" "$work/proxy/MODULE.bazel"
 export BUILD_SCM_REVISION; BUILD_SCM_REVISION=$(get proxy)
 docker run --rm --user "$(id -u):$(id -g)" --cap-drop ALL --security-opt no-new-privileges -v "$work:/work" -w /work/proxy -e HOME=/work/cache -e BUILD_SCM_REVISION -e BUILD_SCM_STATUS=Modified --entrypoint /bin/bash "$(get toolchain)" /work/inside.sh
 mode=$(<"$work/mode"); case "$mode" in
-  patched) printf 'FROM %s\nCOPY --chmod=0755 envoy /usr/local/bin/envoy\n' "$(get stock)" > "$work/context/Dockerfile"
+  patched) printf '# Official upstream tag: %s\nFROM %s\nCOPY --chmod=0755 envoy /usr/local/bin/envoy\n' "$(get stock_tag)" "$(get stock)" > "$work/context/Dockerfile"
     docker build --network=none -t envoy-candidate:local "$work/context";;
   stock) docker pull "$(get stock)"; docker tag "$(get stock)" envoy-candidate:local;;
   *) exit 1;;

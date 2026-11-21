@@ -114,19 +114,23 @@ jobs:
           refs=(); for arch in amd64 arm64; do
             d=$(jq -er .digest "receipts/$arch.json"); [[ $d =~ ^sha256:[0-9a-f]{64}$ ]]; refs+=("$repo@$d")
           done
+          version=$(jq -er .istio ci/envoy/lock.json)
           if [[ $mode == patched ]]; then
             echo "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
             trap 'docker logout ghcr.io >/dev/null' EXIT
-            ref="$repo:candidate-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+            tag="$version-envoy48409-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
+            ref="$repo:$tag"
             docker buildx imagetools create -t "$ref" "${refs[@]}"
             digest=$(docker buildx imagetools inspect "$ref" --format '{{.Manifest.Digest}}')
-          else digest=$(jq -er '.stock|split("@")[1]' ci/envoy/lock.json); fi
-          version=$(jq -er .istio ci/envoy/lock.json)
+          else
+            digest=$(jq -er '.stock|split("@")[1]' ci/envoy/lock.json)
+            tag=$(jq -er .stock_tag ci/envoy/lock.json)
+          fi
           branch="ci/gateway-candidate-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT"
           if ! git diff --quiet -- ci/envoy/lock.json; then
             branch="ci/envoy-lock-$version" # do not cross-grade a running control plane
           else
-            python3 ci/envoy/promote.py "$mode" "$digest"
+            python3 ci/envoy/promote.py "$mode" "$digest" "$tag"
           fi
           git diff --quiet && exit 0
           test "$(gh api "repos/$GITHUB_REPOSITORY/commits/main" --jq .sha)" = "$GITHUB_SHA"
