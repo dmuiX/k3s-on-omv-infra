@@ -3,6 +3,7 @@
 import base64, copy, json, os, re, ssl, subprocess, sys, time, uuid
 from datetime import datetime, timezone
 from functools import cache
+from http.client import HTTPException
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
@@ -10,6 +11,7 @@ from urllib.request import Request, urlopen
 API = "https://kubernetes.default.svc"
 SOURCE_NS, VALIDATION_NS = "cloudnative-pg", "backup-validation"
 SOURCE, RESTORE, STORE = "k3s-postgres", "postgresql-pitr-validation", "postgresql-pitr-validation"
+RUN_ANNOTATION = "k3s-on-omv.io/restore-run-id"
 IMAGE = "ghcr.io/cloudnative-pg/postgresql:18.6-system-bookworm@sha256:b4bec141fa5ca2bab490b197c814fb1342147c8405be1fb0673951fa6db7f699"
 
 
@@ -22,14 +24,15 @@ def api_settings() -> tuple[dict[str, str], ssl.SSLContext]:
     return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}, tls
 
 
-def api(path, method="GET", body=None, allowed=()):
+def api(path, method="GET", body=None, allowed=(), *, timeout: float = 30):
     headers, tls = api_settings()
     data = None if body is None else json.dumps(body).encode()
     try:
-        with urlopen(Request(API + path, data=data, method=method, headers=headers), context=tls, timeout=30) as response:
+        with urlopen(Request(API + path, data=data, method=method, headers=headers), context=tls, timeout=timeout) as response:
             payload = response.read()
             return json.loads(payload) if payload else {}
     except HTTPError as exc:
+        exc.close()
         if exc.code in allowed:
             return None
         raise RuntimeError(f"Kubernetes API {method} {path} failed with HTTP {exc.code}") from exc
@@ -44,6 +47,26 @@ def connect(values, host):
     import psycopg2
 
     return psycopg2.connect(host=host, port=values.get("port", "5432"), dbname=values.get("dbname", "app"), user=values["username"], password=values["password"], connect_timeout=15, sslmode="require")
+
+
+def connect_source_at_startup(values: dict[str, str], host: str):
+    """Retry only the known libpq disconnect, before any SQL is issued."""
+    import psycopg2
+
+    for delay in (1, 2, 4):
+        try:
+            return connect(values, host)
+        except psycopg2.OperationalError as exc:
+            # Match the whole diagnostic so mixed errors (e.g. auth) do not retry.
+            if not re.fullmatch(
+                r"(?:connection to server [^\n]+ failed: )?server closed the connection unexpectedly"
+                r"(?:\n[ \t]+This probably means the server terminated abnormally"
+                r"\n[ \t]+before or while processing the request\.)?",
+                str(exc).strip(),
+            ):
+                raise
+            time.sleep(delay)
+    return connect(values, host)
 
 
 def put_lease(result, pitr=False, mirror=False):
@@ -116,16 +139,67 @@ def validation_cluster(target: str) -> dict:
     }
 
 
+def create_restore_resource(
+    collection: str, body: dict, run: str, cleanup: dict[str, str | None]
+) -> None:
+    """Track the returned UID, or mark a possibly committed POST for cleanup lookup."""
+    metadata = body["metadata"]
+    metadata.setdefault("annotations", {})[RUN_ANNOTATION] = run
+    path = f"{collection}/{metadata['name']}"
+    try:
+        uid = api(collection, "POST", body)["metadata"]["uid"]
+        if not isinstance(uid, str) or not uid:
+            raise ValueError(f"create response for {path} has no UID")
+    except (OSError, HTTPException, ValueError, KeyError, TypeError):
+        cleanup[path] = None
+        raise
+    except RuntimeError as exc:
+        # api() wraps HTTP errors. A definitive rejection (e.g. 409) is not ours.
+        cause = exc.__cause__
+        if isinstance(cause, HTTPError) and (cause.code == 408 or cause.code >= 500):
+            cleanup[path] = None
+        raise
+    cleanup[path] = uid
+
+
+def reconcile_restore_uid(path: str, run: str) -> str | None:
+    """Find the UID after an ambiguous create; never adopt another run's object."""
+    deadline = time.monotonic() + 60
+    while (remaining := deadline - time.monotonic()) > 0:
+        current = api(path, allowed=(404,), timeout=min(30, remaining))
+        if current is not None:
+            metadata = current["metadata"]
+            if (metadata.get("annotations") or {}).get(RUN_ANNOTATION) != run:
+                return None
+            uid = metadata.get("uid")
+            if not isinstance(uid, str) or not uid:
+                raise RuntimeError(f"no UID for restore resource {path}")
+            return uid
+        # A POST can still commit after a GET returns 404.
+        if (remaining := deadline - time.monotonic()) > 0:
+            time.sleep(min(2, remaining))
+    message = (
+        f"ambiguous create unresolved for {path} (run {run}): not found before reconciliation deadline; "
+        "the create may still complete"
+    )
+    print(message, file=sys.stderr)
+    raise RuntimeError(message)
+
+
 def main():
     run = uuid.uuid4().hex
     source_credentials = secret(SOURCE_NS, f"{SOURCE}-app")
     source_host = f"{SOURCE}-rw.{SOURCE_NS}.svc"
     before, after = f"{run}-before", f"{run}-after"
+    markers_need_cleanup = False
+    resources: dict[str, str | None] = {}
     try:
         put_lease("running")
-        with connect(source_credentials, source_host) as db, db.cursor() as cursor:
+        with connect_source_at_startup(source_credentials, source_host) as db, db.cursor() as cursor:
             cursor.execute("CREATE TABLE IF NOT EXISTS public.platform_backup_validation (run_id text PRIMARY KEY, phase text NOT NULL, created_at timestamptz NOT NULL DEFAULT clock_timestamp())")
             cursor.execute("INSERT INTO public.platform_backup_validation(run_id, phase) VALUES (%s, 'before')", (before,))
+            # A lost response to the context manager's commit may hide success.
+            markers_need_cleanup = True
         with connect(source_credentials, source_host) as db, db.cursor() as cursor:
             cursor.execute("SELECT clock_timestamp()")
             target = cursor.fetchone()[0].isoformat()
@@ -136,8 +210,12 @@ def main():
 
         source_store = api(f"/apis/barmancloud.cnpg.io/v1/namespaces/{SOURCE_NS}/objectstores/k3s-postgres-backups")
         store = validation_store(source_store, os.environ["S3_ENDPOINT"])
-        api(f"/apis/barmancloud.cnpg.io/v1/namespaces/{VALIDATION_NS}/objectstores", "POST", store)
-        api(f"/apis/postgresql.cnpg.io/v1/namespaces/{VALIDATION_NS}/clusters", "POST", validation_cluster(target))
+        create_restore_resource(
+            f"/apis/barmancloud.cnpg.io/v1/namespaces/{VALIDATION_NS}/objectstores", store, run, resources
+        )
+        create_restore_resource(
+            f"/apis/postgresql.cnpg.io/v1/namespaces/{VALIDATION_NS}/clusters", validation_cluster(target), run, resources
+        )
         wait_ready()
         restored = secret(VALIDATION_NS, f"{RESTORE}-app")
         with connect(restored, f"{RESTORE}-rw.{VALIDATION_NS}.svc") as db, db.cursor() as cursor:
@@ -147,28 +225,31 @@ def main():
             raise RuntimeError("PITR boundary validation failed")
         if not mirror_matches_catalog():
             raise RuntimeError("OMV mirror does not contain every completed base-backup catalog entry")
-        put_lease("success", True, True)
     except Exception:
         put_lease("failed")
         raise
     finally:
         cleanup_errors = []
-        for path in (
-            f"/apis/postgresql.cnpg.io/v1/namespaces/{VALIDATION_NS}/clusters/{RESTORE}",
-            f"/apis/barmancloud.cnpg.io/v1/namespaces/{VALIDATION_NS}/objectstores/{STORE}",
-        ):
+        for path, uid in reversed(resources.items()):
             try:
-                api(path, "DELETE", {}, (404,))
+                if uid is None:
+                    uid = reconcile_restore_uid(path, run)
+                    if uid is None:
+                        continue
+                delete_options = {"apiVersion": "v1", "kind": "DeleteOptions", "preconditions": {"uid": uid}}
+                api(path, "DELETE", delete_options, (404,))
             except Exception as exc:
                 cleanup_errors.append(exc)
-        try:
-            with connect(source_credentials, source_host) as db, db.cursor() as cursor:
-                cursor.execute("DELETE FROM public.platform_backup_validation WHERE run_id IN (%s,%s)", (before, after))
-        except Exception as exc:
-            cleanup_errors.append(exc)
+        if markers_need_cleanup:
+            try:
+                with connect(source_credentials, source_host) as db, db.cursor() as cursor:
+                    cursor.execute("DELETE FROM public.platform_backup_validation WHERE run_id IN (%s,%s)", (before, after))
+            except Exception as exc:
+                cleanup_errors.append(exc)
         if cleanup_errors:
             put_lease("failed-cleanup")
             raise RuntimeError("validation cleanup failed") from cleanup_errors[0]
+    put_lease("success", True, True)
 
 
 if __name__ == "__main__":
