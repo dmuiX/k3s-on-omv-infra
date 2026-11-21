@@ -40,7 +40,9 @@ class MeshRenderTest < Minitest::Test
     assert base.any? { |document| document["kind"] == "CustomResourceDefinition" }
     istiod = render("istiod", "istio-istiod", "istio-system")
     deployment = istiod.find { |document| document["kind"] == "Deployment" }
-    assert_equal "docker.io/istio/pilot:1.32.0-distroless", deployment.dig("spec", "template", "spec", "containers", 0, "image")
+    assert_match(/\Adocker\.io\/istio\/pilot@sha256:[0-9a-f]{64}\z/, deployment.dig("spec", "template", "spec", "containers", 0, "image"))
+    injector = istiod.find { |d| d["kind"] == "ConfigMap" && d.dig("metadata", "name") == "istio-sidecar-injector" }
+    assert_match(/\Adocker\.io\/istio\/proxyv2@sha256:[0-9a-f]{64}\z/, YAML.safe_load(injector.fetch("data").fetch("values")).dig("global", "proxy", "image"))
     [base, istiod].each do |documents|
       webhook = documents.find { |document| document["kind"] == "ValidatingWebhookConfiguration" }
       assert webhook.fetch("webhooks").all? { |item| item["failurePolicy"] == "Fail" }
