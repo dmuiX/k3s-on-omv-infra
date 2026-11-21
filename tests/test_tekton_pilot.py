@@ -1,34 +1,32 @@
 """Offline contracts for the opt-in Tekton control plane and Envoy pilot."""
 
-import hashlib
 import unittest
 from pathlib import Path
 
 import yaml
 
-from workload_contracts import render_kustomization
-
 ROOT = Path(__file__).resolve().parents[1]
 PILOT = ROOT / "ci/tekton"
-CONTROLLER = PILOT / "controller"
+CONTROLLER = ROOT / "02-controllers/tekton-pipelines/resources"
 
 
 class TektonPilotTest(unittest.TestCase):
-    def test_pinned_release_and_controller_overlay(self) -> None:
-        # Tekton Pipelines v1.18.0 upstream release.yaml asset.
-        self.assertEqual(
-            hashlib.sha256((CONTROLLER / "release.yaml").read_bytes()).hexdigest(),
-            "029c8400e42d0fcd4fc669140d382af1f1d8ae86202b710d6197ae22bd48be5f",
-        )
+    def test_controller_application_and_manifests(self) -> None:
         app_path = "02-controllers/tekton-pipelines/app.yml"
         root = yaml.safe_load((ROOT / "kustomization.yaml").read_text())
         self.assertIn(app_path, root["resources"])
         app = yaml.safe_load((ROOT / app_path).read_text())["spec"]
-        self.assertEqual(app["sources"][0]["path"], "ci/tekton/controller")
+        self.assertEqual(
+            app["sources"][0]["path"], CONTROLLER.relative_to(ROOT).as_posix()
+        )
         self.assertIs(app["syncPolicy"]["automated"]["enabled"], True)
         self.assertIs(app["syncPolicy"]["automated"]["prune"], False)
         self.assertIn("ServerSideApply=true", app["syncPolicy"]["syncOptions"])
-        docs = render_kustomization(ROOT, CONTROLLER)
+        docs = [
+            d
+            for d in yaml.safe_load_all((CONTROLLER / "release.yaml").read_text())
+            if d is not None
+        ]
         self.assertFalse(
             any(
                 d["kind"] == "ClusterRole"

@@ -13,27 +13,7 @@ spec:
   sources:
     - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
       targetRevision: main
-      path: ci/tekton/controller
-  ignoreDifferences:
-    # Tekton owns its serving keypair, certificate injection and generated webhook rules.
-    - group: ''
-      kind: Secret
-      name: webhook-certs
-      namespace: tekton-pipelines
-      jsonPointers:
-        - /data
-    - group: apiextensions.k8s.io
-      kind: CustomResourceDefinition
-      jqPathExpressions:
-        - '.spec.conversion.webhook.clientConfig | select(.service.name == "tekton-pipelines-webhook" and .service.namespace == "tekton-pipelines") | .caBundle'
-    - group: admissionregistration.k8s.io
-      kind: ValidatingWebhookConfiguration
-      jqPathExpressions:
-        - '.webhooks[] | select(.clientConfig.service.name == "tekton-pipelines-webhook" and .clientConfig.service.namespace == "tekton-pipelines") | (.clientConfig.caBundle, .clientConfig.service.path, .rules)'
-    - group: admissionregistration.k8s.io
-      kind: MutatingWebhookConfiguration
-      jqPathExpressions:
-        - '.webhooks[] | select(.clientConfig.service.name == "tekton-pipelines-webhook" and .clientConfig.service.namespace == "tekton-pipelines") | (.clientConfig.caBundle, .clientConfig.service.path, .rules)'
+      path: 02-controllers/tekton-pipelines/resources
   syncPolicy:
     automated:
       enabled: true
@@ -42,4 +22,3 @@ spec:
       allowEmpty: false
     syncOptions:
       - ServerSideApply=true
-      - RespectIgnoreDifferences=true

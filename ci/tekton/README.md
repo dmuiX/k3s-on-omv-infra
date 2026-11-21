@@ -4,12 +4,7 @@ Argo CD installs and reconciles Tekton Pipelines through `02-controllers/tekton-
 
 ## Install and run after approval
 
-1. Before merging, approve the controller rollout and verify capacity on the eligible workers. The new child occupies sync wave 2; an unhealthy first sync can hold later waves. Review cluster-wide CRDs, RBAC, and internal admission webhooks in the [official Tekton Pipelines v1.18.0 release](https://github.com/tektoncd/pipeline/releases/tag/v1.18.0). Check the upstream release checksum against the unchanged vendored file. The overlay schedules Tekton's own Deployments on Linux `amd64`, disables credential initialization and remote resolvers, and does not aggregate Tekton access into Kubernetes' default edit/admin/view roles.
-
-   ```sh
-   printf '%s  %s\n' 029c8400e42d0fcd4fc669140d382af1f1d8ae86202b710d6197ae22bd48be5f ci/tekton/controller/release.yaml | shasum -a 256 -c -
-   kubectl kustomize ci/tekton/controller
-   ```
+1. Before merging, approve the Tekton rollout and check `amd64` worker capacity. The new child runs in sync wave 2 and can hold later waves if unhealthy. The [controller manifest](../../02-controllers/tekton-pipelines/resources/release.yaml) is based on the [Tekton Pipelines v1.18.0 release](https://github.com/tektoncd/pipeline/releases/tag/v1.18.0) (upstream `release.yaml` SHA-256 `029c8400e42d0fcd4fc669140d382af1f1d8ae86202b710d6197ae22bd48be5f`). Local changes select Linux `amd64`, bound the two controller containers without upstream limits, and disable automatic credential injection, remote resolvers, and aggregation into Kubernetes' default edit/admin/view roles.
 
 2. After the reviewed merge, wait for the `tekton-pipelines` Application to report `Synced` and `Healthy`. Verify the Deployments before separately applying the opt-in pilot resources:
 

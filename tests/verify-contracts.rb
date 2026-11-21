@@ -451,14 +451,7 @@ class PlatformContractTest < Minitest::Test
   def test_static_containers_have_resources_and_hardened_security_contexts
     YAML_REPOSITORIES.each do |repository|
       yaml_files(repository).each do |path|
-        documents = if path == INFRA / "ci/tekton/controller/release.yaml"
-                      output, error, status = Open3.capture3('kubectl', 'kustomize', path.dirname.to_s)
-                      assert status.success?, error
-                      YAML.load_stream(output).compact
-                    else
-                      yaml_documents(path)
-                    end
-        documents.each do |document|
+        yaml_documents(path).each do |document|
           walk(document) do |key, value|
             next unless key == "containers" && value.is_a?(Array)
             value.each do |container|
