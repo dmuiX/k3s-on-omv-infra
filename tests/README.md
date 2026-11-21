@@ -39,8 +39,8 @@ This is input isolation for reviewed tests, **not a sandbox for arbitrary code**
 New unclassified modules, overlapping/unknown selectors, empty suites and skipped
 mandatory public checks fail. Integration-only modules are not imported by the
 selector. Remaining methods in mixed modules are integration coverage, explicitly
-reported as **NOT RUN by this runner**. Native timezone admission is covered by
-the separate job below, not by this repository-only entrypoint. Full Python discovery is not the public CI entrypoint.
+reported as **NOT RUN by this runner**. Native admission is covered by the
+separate jobs below, not by this repository-only entrypoint. Full Python discovery is not the public CI entrypoint.
 The CLI's own tests prove that an actual failing assertion exits nonzero and a
 mandatory skip cannot become green. Helper tests also reject corrupted downloads,
 unsafe redirects/archive paths, escaped source paths and broken monitor ports.
@@ -84,6 +84,35 @@ TIMEZONE_TEST_CONTAINER="$test_id" PYTHONDONTWRITEBYTECODE=1 \
 ```
 
 `192.0.2.1` is a documentation-only advertised address needed by the API's endpoint validator. Test clients use loopback inside the network-isolated container. The suite requires the dedicated purpose label, private PID namespace, unprivileged container, no bind mounts and `network=none` before installing any policy. It creates a dedicated tokenless test ServiceAccount, fixture namespaces, suspended synthetic CronJobs and unscheduled synthetic Pods/debug-container specifications. Its binding-disable tests run sequentially and restore bindings with verified mutation, not merely a successful apply. No production resources or credentials are used. Closing the dedicated shell cleans up that exact container and its anonymous volumes. The lifetime also bounds the process if the client disappears; Docker retains terminal status for recovery.
+
+## Native K8up pipeline admission
+
+The independently owned `k8up-pipeline-admission` matrix job runs
+`NativeFixtureAdmissionTest` and `NativePipelineAdmissionTest` from
+`test_prometheus_backup_pipeline_manifests.py`. It uses the same K3s image and
+container isolation as the timezone job, but creates a fresh test API with
+purpose `k8up-pipeline-test`. CI verifies the locked K8up 4.10.0 chart and
+Kustomize with `tests/ci_dependencies.py`; the tests also verify every K8up v2.16.0
+CRD's SHA-256 before making any API write.
+
+To run locally, use the container command above with
+`--label purpose=k8up-pipeline-test` and an owner label. Set
+`K8UP_PIPELINE_TEST_CONTAINER` to its exact ID, and `K8UP_PIPELINE_CRDS` to
+`k8up-4.10.0/k8up/crds` under the verified chart directory. With that isolated
+API healthy, run:
+
+```sh
+PYTHONPATH=tests KUBECONFIG=/dev/null python3 -m unittest -v \
+  test_prometheus_backup_pipeline_manifests.NativeFixtureAdmissionTest \
+  test_prometheus_backup_pipeline_manifests.NativePipelineAdmissionTest
+```
+
+The fixture test proves that native Schedule, Backup, Check and Prune requests
+remain admissible before opt-in while runner writes fail. After opting in,
+legacy creates and late Prune Job creates are denied, and the actual runner's
+Backup, Check, seed and verifier Job requests pass native admission. This is
+not runtime, retention or cutover acceptance: no Jobs execute and no backup or
+restore is performed in this API.
 
 ## Native RAM-limit contracts and API checks
 
@@ -133,7 +162,7 @@ is used. Native merge/admission is NOT full operator/runtime acceptance.
 | `openbao-backups` | Bounded exclusive CronJob/account and executable snapshot adapter transitions with fake endpoints | Real backup integrity, credentials, retention and recovery |
 | `openbao-config` | Public render, prerequisite waves and credential ownership | Mount/auth/identity operations and real policies |
 | `k3s-postgres` | Three-instance CNPG CR, required anti-affinity, supervised primary updates, encrypted local class, synchronous failover quorum, Barman plugin/ScheduledBackup; one complete raw ObjectStore with unchanged sizing and a required endpoint Secret reference; executable retention fixtures | [Opt-in pinned VSO parser](../docs/vso-required-values.md#focused-postgresql-endpoint-parser-rerun-no-sibling-repos), guarded Argo adoption, generated Pods, physical data health and backup/restore |
-| `backup-validation` | Manual-only fixture seed Job and reconciled seed tool; suspended, tokenless `k8up-backup-validation` and exact restored marker; bounded exclusive PostgreSQL restore-validation CronJob/account, stable generated ConfigMap wired to the CronJob; actual import-safe store builder preserves local R2 references through the bridge | Private application chart consumers, safe selective sync on a suspended CronJob and actual database/application restores; the scheduled validator uses an explicit endpoint, not the env-only path |
+| `backup-validation` | Suspended, session-gated `k8up-backup-validation` runner; UID-pinned seed, Backup, Check and marker restore stages; tokenless child templates and actual exact-tag restore from a disposable local Restic repo; bounded PostgreSQL restore-validation CronJob and local R2 reference contract | Native admission, K8up/Longhorn lifecycle and private repository/network wiring; actual PostgreSQL restore |
 | `kube-prometheus-stack` | Suspended TSDB restore test on monitoring nodes, verified archive and historical sample read; real chart, two-replica Prometheus with hard host anti-affinity, native alert rules, two-replica Grafana with secret refs and bounded rollout, disabled Alertmanager, independently staged Grafana policy source | Private policy tuples, gateway login, datasource queries and sidecar refresh on both replicas; real scrape delivery |
 
 K3s-owned DNS/service-LB, private Apps and Bootstrap host ceremonies are not

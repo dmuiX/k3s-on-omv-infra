@@ -1,0 +1,20 @@
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: k8up-backup-validation-verify
+spec:
+  # Suspended template; only the pipeline starts its identified run.
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            platform.k3s-on-omv.io/fixture-child: 'true'
+        spec:
+          initContainers:
+            - name: restore
+              env:
+                - name: K8UP_FIXTURE_RUN_TAG
+                  valueFrom:
+                    fieldRef:
+                      fieldPath: metadata.annotations['platform.k3s-on-omv.io/backup-run-tag']

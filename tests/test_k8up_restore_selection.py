@@ -11,6 +11,7 @@ import unittest
 
 SCRIPT = Path(__file__).resolve().parents[1] / 'adapters/k8up-restore/restore.sh'
 CANARY = '/data/k8up-validation-canary'
+CANARY_TAG = 'k8up-validation-canary'
 STREAM = '/kube-prometheus-stack-snapshottar'
 HOST = 'kube-prometheus-stack'
 TAGS = ['prometheus-tsdb', 'prometheus-replica-0']
@@ -24,7 +25,7 @@ def timestamp(delta=0):
 
 
 def snapshot(path=CANARY, **changes):
-    return dict({'paths': [path], 'tags': TAGS + [RUN_TAG] if path == STREAM else [], 'id': ID,
+    return dict({'paths': [path], 'tags': (TAGS if path == STREAM else [CANARY_TAG]) + [RUN_TAG], 'id': ID,
                  'hostname': HOST if path == STREAM else 'backup-validation',
                  'time': timestamp(-5)}, **changes)
 
@@ -40,7 +41,8 @@ class Restore(unittest.TestCase):
         self.password = self.root / 'password'
         self.password.write_text('disposable-test-only')
         self.env = dict(PATH=f'{self.root}:{os.environ["PATH"]}', SCRATCH_DIR=str(self.scratch),
-                        RESTIC_PASSWORD_FILE=str(self.password), RESTIC_REPOSITORY=str(self.repo))
+                        RESTIC_PASSWORD_FILE=str(self.password), RESTIC_REPOSITORY=str(self.repo),
+                        K8UP_FIXTURE_RUN_TAG=RUN_TAG)
         stub = self.root / 'restic'
         stub.write_text('''#!/bin/sh
 set -eu
@@ -78,13 +80,13 @@ esac
         self.assertEqual((self.scratch / 'snapshot-seconds').exists(), success and source == 'prometheus-stream')
         return log
 
-    def test_restore_newest_fixture_by_full_id_regardless_of_prometheus_pins(self):
+    def test_restore_exact_fixture_by_full_id_regardless_of_prometheus_pins(self):
         self.pin('--latest', '')
         chosen = snapshot()
-        log = self.exercise([chosen, snapshot(id='c'*64, time=timestamp(-4000))], success=True)
+        log = self.exercise([chosen], success=True)
         self.assertEqual((self.scratch / 'restored' / CANARY[1:] / 'marker.txt').read_bytes(), b'payload')
         listing, restore = (self.root / 'calls').read_text().splitlines()
-        self.assertTrue(listing.endswith(f' snapshots --json --host backup-validation --path {CANARY} --latest 2'))
+        self.assertTrue(listing.endswith(f' snapshots --json --host backup-validation --path {CANARY} --tag {RUN_TAG}'))
         self.assertTrue(restore.endswith(' ' + ID))
         self.assertEqual(log.decode(), f'snapshot_id={ID} time={chosen["time"]}\n')
 
@@ -136,11 +138,11 @@ esac
                 self.scratch.mkdir()
         self.assertNotIn(' restore ', (self.root / 'calls').read_text())
 
-    def test_newest_fixture_must_be_untagged(self):
-        older = snapshot(id='c'*64, time=timestamp(-400))
-        for tags in (['manual'], ['unexpected'], TAGS, False, None, ''):
+    def test_fixture_rejects_unrelated_or_ambiguous_snapshots(self):
+        self.assertEqual(self.exercise([snapshot(), snapshot(id='c'*64, time=timestamp(-400))]), b'')
+        for tags in ([], [RUN_TAG], [CANARY_TAG], [RUN_TAG, CANARY_TAG, 'unexpected'], TAGS, False, None, ''):
             with self.subTest(tags=tags):
-                self.assertEqual(self.exercise([older, snapshot(tags=tags)]), b'')
+                self.assertEqual(self.exercise([snapshot(tags=tags)]), b'')
                 shutil.rmtree(self.scratch)
                 self.scratch.mkdir()
         self.assertNotIn(' restore ', (self.root / 'calls').read_text())
@@ -191,10 +193,11 @@ esac
         original = SCRIPT.read_text()
         self.assertEqual(original.count(assignment), 1)
         script.write_text(original.replace(assignment, 'path=' + shlex.quote(str(source))))
-        self.restic('backup', '--host', 'backup-validation', str(source))
+        self.restic('backup', '--host', 'backup-validation', '--tag', f'{CANARY_TAG},{RUN_TAG}', str(source))
         record, = json.loads(self.restic('snapshots', '--json'))
         self.assertEqual(record['paths'], [str(source)])
-        self.assertNotIn('tags', record)
+        (source / 'marker.txt').write_bytes(b'newer unrelated fixture')
+        self.restic('backup', '--host', 'backup-validation', str(source))
         shutil.rmtree(source)
         log = self.invoke('backup-validation', True, script)
         self.assertEqual(log.decode(), f'snapshot_id={record["id"]} time={record["time"]}\n')

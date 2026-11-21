@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import stat
+import sys
 from tempfile import TemporaryDirectory
 from types import ModuleType
 from typing import Any, cast
@@ -15,6 +16,9 @@ from unittest.mock import Mock, call, patch
 import yaml
 
 BASE = Path(__file__).resolve().parents[1] / "09-kube-prometheus-stack"
+sys.path.insert(0, str(BASE.parent / "adapters/k8up-pipeline"))
+import k8up_pipeline as shared
+
 SPEC = spec_from_file_location("pipeline", BASE / "restore-test/pipeline.py")
 assert SPEC is not None and SPEC.loader is not None
 pipeline = module_from_spec(SPEC)
@@ -330,9 +334,9 @@ class PipelineTest(unittest.TestCase):
     ) -> None:
         self.replies[self.deployment] = {"metadata": {"deletionTimestamp": "now"}}
         with (
-            patch.object(pipeline, "WAIT_LIMIT", 10),
-            patch.object(pipeline.time, "monotonic", side_effect=[0, 1, 2, 10]),
-            patch.object(pipeline.time, "sleep") as sleep,
+            patch.object(shared, "WAIT_LIMIT", 10),
+            patch.object(shared.time, "monotonic", side_effect=[0, 1, 2, 10]),
+            patch.object(shared.time, "sleep") as sleep,
             self.assertRaisesRegex(
                 pipeline.PipelineError, f"timed out waiting for {BACKUP}"
             ),
@@ -349,8 +353,8 @@ class PipelineTest(unittest.TestCase):
     def test_backup_without_terminal_producer_condition_cannot_pass(self) -> None:
         self.replies[self.backup_status] = observed(BACKUP, BACKUP_UID, COMPLETED)
         with (
-            patch.object(pipeline, "WAIT_LIMIT", 10),
-            patch.object(pipeline.time, "monotonic", side_effect=[0, 1, 10]),
+            patch.object(shared, "WAIT_LIMIT", 10),
+            patch.object(shared.time, "monotonic", side_effect=[0, 1, 10]),
             self.assertRaisesRegex(pipeline.PipelineError, "timed out"),
         ):
             self.run_pipeline()
@@ -667,7 +671,7 @@ class ApiTest(unittest.TestCase):
             root = Path(tmp)
             (root / "token").write_text("synthetic-test-token\n")
             with (
-                patch.object(pipeline, "SERVICE_ACCOUNT", root),
+                patch.object(shared, "SERVICE_ACCOUNT", root),
                 patch.dict(
                     pipeline.os.environ,
                     {
@@ -675,8 +679,8 @@ class ApiTest(unittest.TestCase):
                         "KUBERNETES_SERVICE_PORT": "443",
                     },
                 ),
-                patch.object(pipeline.ssl, "create_default_context") as context,
-                patch.object(pipeline, "HTTPSConnection") as https,
+                patch.object(shared.ssl, "create_default_context") as context,
+                patch.object(shared, "HTTPSConnection") as https,
             ):
                 api = pipeline.KubeApi()
                 connection = https.return_value
@@ -707,7 +711,7 @@ class ApiTest(unittest.TestCase):
                 self.assertEqual(
                     api.request("/test", {}), {"metadata": {"name": "fixture"}}
                 )
-                response.read.assert_called_once_with(pipeline.MAX_RESPONSE + 1)
+                response.read.assert_called_once_with(shared.MAX_RESPONSE + 1)
 
                 connection.getresponse.side_effect = TimeoutError(
                     "synthetic-test-token"

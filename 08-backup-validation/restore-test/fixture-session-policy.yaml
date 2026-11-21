@@ -1,0 +1,231 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: k8up-fixture-unarmed-runner
+  annotations:
+    argocd.argoproj.io/sync-wave: '-2'
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: backup-validation
+      matchExpressions:
+        - key: platform.k3s-on-omv.io/fixture-pipeline
+          operator: NotIn
+          values: [enabled]
+    resourceRules:
+      - apiGroups: [k8up.io]
+        apiVersions: [v1]
+        operations: [CREATE]
+        resources: [backups, checks]
+        scope: Namespaced
+      - apiGroups: [batch]
+        apiVersions: [v1]
+        operations: [CREATE]
+        resources: [jobs]
+        scope: Namespaced
+  matchConditions:
+    - name: pipeline-service-account
+      expression: "request.userInfo.username == 'system:serviceaccount:backup-validation:k8up-fixture-pipeline'"
+  validations:
+    - expression: 'false'
+      message: "The fixture runner may not create repository operations or Jobs before opt-in."
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: k8up-fixture-unarmed-runner
+  annotations:
+    argocd.argoproj.io/sync-wave: '-1'
+spec:
+  policyName: k8up-fixture-unarmed-runner
+  validationActions: [Deny]
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: k8up-fixture-repository-session
+  annotations:
+    argocd.argoproj.io/sync-wave: '-2'
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: backup-validation
+        platform.k3s-on-omv.io/fixture-pipeline: enabled
+    resourceRules:
+      - apiGroups: [k8up.io]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [backups, checks, prunes, archives, restores, schedules]
+        scope: Namespaced
+  variables:
+    - name: backup
+      expression: "request.resource.resource == 'backups'"
+    - name: create
+      expression: "request.operation == 'CREATE'"
+    - name: namePrefix
+      expression: "variables.backup ? 'fx-' : 'fixture-check-'"
+    - name: podUID
+      expression: >-
+        has(request.userInfo.extra) && 'authentication.kubernetes.io/pod-uid' in request.userInfo.extra &&
+        size(request.userInfo.extra['authentication.kubernetes.io/pod-uid']) == 1 ?
+        request.userInfo.extra['authentication.kubernetes.io/pod-uid'][0] : ''
+    - name: common
+      expression: >-
+        {
+          'backend': dyn({
+            'repoPasswordSecretRef': dyn({'name': 'k8up-repository', 'key': 'password'}),
+            'local': dyn({'mountPath': '/repository'}),
+            'volumeMounts': dyn([{'name': 'repository', 'mountPath': '/repository'}])
+          }),
+          'podConfigRef': dyn({'name': 'fixture-k8up-omv-v1'}),
+          'activeDeadlineSeconds': dyn(7200),
+          'failedJobsHistoryLimit': dyn(3),
+          'successfulJobsHistoryLimit': dyn(3)
+        }
+  validations:
+    - expression: >-
+        !variables.create || (
+          request.userInfo.username == 'system:serviceaccount:backup-validation:k8up-fixture-pipeline' &&
+          request.resource.resource in ['backups', 'checks'])
+      message: "An armed fixture repository permits only the fixture runner's Backup and Check; no Schedule or maintenance."
+    - expression: "variables.create || dyn(object.spec) == dyn(oldObject.spec)"
+      message: "K8up operation specs are immutable while the fixture repository fence is armed."
+    - expression: >-
+        !variables.create || (
+          variables.podUID.matches('^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$') &&
+          object.metadata.name == variables.namePrefix + variables.podUID &&
+          ['generateName', 'labels', 'annotations', 'ownerReferences', 'finalizers'].all(k,
+            !(k in dyn(object.metadata))))
+      message: "Fixture K8up operations must use their bound runner Pod UID with no extra metadata."
+    - expression: >-
+        !variables.create || !variables.backup ||
+        dyn(object.spec).size() == variables.common.size() + 2 &&
+        variables.common.all(k, k in dyn(object.spec) && dyn(object.spec)[k] == variables.common[k]) &&
+        dyn(object.spec).labelSelectors == [{'matchLabels': {'platform.k3s-on-omv.io/backup-set': 'k8up-validation-canary'}}] &&
+        dyn(object.spec).tags == ['k8up-validation-canary', 'backup-run-' + variables.podUID]
+      message: "Fixture Backup must use the fixed repository, sole canary claim selector, PodConfig and run tags."
+    - expression: >-
+        !variables.create || request.resource.resource != 'checks' || dyn(object.spec) == variables.common
+      message: "Fixture Check must use the fixed repository, PodConfig and limits."
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: k8up-fixture-repository-session
+  annotations:
+    argocd.argoproj.io/sync-wave: '-1'
+spec:
+  policyName: k8up-fixture-repository-session
+  validationActions: [Deny]
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: k8up-fixture-prune-job
+  annotations:
+    argocd.argoproj.io/sync-wave: '-2'
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: backup-validation
+        platform.k3s-on-omv.io/fixture-pipeline: enabled
+    # K8up v2.16.0's MutateBatchJob stamps its operation type on the Job
+    # itself, independently of the Prune name, PodConfig, or controller identity.
+    objectSelector:
+      matchLabels:
+        k8up.io/type: prune
+    resourceRules:
+      - apiGroups: [batch]
+        apiVersions: [v1]
+        operations: [CREATE]
+        resources: [jobs]
+        scope: Namespaced
+  validations:
+    - expression: 'false'
+      message: "An armed fixture repository does not accept K8up Prune Jobs, including those from previously admitted operations."
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: k8up-fixture-prune-job
+  annotations:
+    argocd.argoproj.io/sync-wave: '-1'
+spec:
+  policyName: k8up-fixture-prune-job
+  validationActions: [Deny]
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: k8up-fixture-source
+  annotations:
+    argocd.argoproj.io/sync-wave: '-2'
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: backup-validation
+        platform.k3s-on-omv.io/fixture-pipeline: enabled
+    resourceRules:
+      - apiGroups: ['']
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE, DELETE]
+        resources: [persistentvolumeclaims, pods]
+        scope: Namespaced
+      - apiGroups: [k8up.io]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE, DELETE]
+        resources: [prebackuppods, podconfigs]
+        scope: Namespaced
+  variables:
+    - name: name
+      expression: "request.operation == 'DELETE' ? oldObject.metadata.name : object.metadata.name"
+    - name: source
+      expression: >-
+        request.resource.resource == 'persistentvolumeclaims' && variables.name == 'k8up-validation-canary'
+    - name: config
+      expression: "request.resource.resource == 'podconfigs' && variables.name == 'fixture-k8up-omv-v1'"
+    - name: label
+      expression: >-
+        request.operation == 'DELETE' ? '' :
+        dyn(object.metadata).?labels.orValue({})[?'platform.k3s-on-omv.io/backup-set'].orValue('')
+    - name: annotations
+      expression: "dyn(object.metadata).?annotations.orValue({})"
+  validations:
+    - expression: >-
+        request.operation == 'DELETE' ? !variables.source && !variables.config :
+        variables.label != 'k8up-validation-canary' || variables.source
+      message: "Only the fixed claim may carry the fixture backup-set label; it and the fixed PodConfig may not be removed while armed."
+    - expression: >-
+        !variables.source || request.operation == 'DELETE' || (
+          variables.label == 'k8up-validation-canary' &&
+          variables.annotations[?'k8up.io/backup'].orValue('') == 'true' &&
+          ['k8up.io/hostname', 'k8up.io/backup-restic-args'].all(k, !(k in variables.annotations)))
+      message: "The fixture claim must preserve the exact label and backup annotation without hostname or Restic overrides."
+    - expression: >-
+        request.resource.resource != 'pods' || request.operation == 'DELETE' ||
+        !('k8up.io/ownerBackupUID' in dyn(object.metadata).?labels.orValue({}))
+      message: "The fixture session permits no streamed Pod backups."
+    - expression: >-
+        !variables.config || request.operation == 'DELETE' || (request.operation == 'UPDATE' &&
+          dyn(object.spec) == dyn(oldObject.spec) &&
+          variables.annotations == dyn(oldObject.metadata).?annotations.orValue({}) &&
+          dyn(object.metadata).?labels.orValue({}) == dyn(oldObject.metadata).?labels.orValue({}))
+      message: "The armed fixture session uses the previously synced, fixed PodConfig without changes."
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: k8up-fixture-source
+  annotations:
+    argocd.argoproj.io/sync-wave: '-1'
+spec:
+  policyName: k8up-fixture-source
+  validationActions: [Deny]

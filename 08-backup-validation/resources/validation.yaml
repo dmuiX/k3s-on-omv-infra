@@ -232,6 +232,8 @@ kind: PersistentVolumeClaim
 metadata:
   name: k8up-validation-canary
   namespace: backup-validation
+  labels:
+    platform.k3s-on-omv.io/backup-set: k8up-validation-canary
   annotations:
     k8up.io/backup: 'true'
 spec:

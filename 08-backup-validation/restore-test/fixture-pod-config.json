@@ -1,0 +1,55 @@
+{
+  "apiVersion": "k8up.io/v1",
+  "kind": "PodConfig",
+  "metadata": {
+    "name": "fixture-k8up-omv-v1",
+    "annotations": {
+      "argocd.argoproj.io/sync-wave": "-3"
+    }
+  },
+  "spec": {
+    "template": {
+      "spec": {
+        "securityContext": {
+          "runAsNonRoot": true,
+          "runAsUser": 1000,
+          "runAsGroup": 1000,
+          "seccompProfile": {
+            "type": "RuntimeDefault"
+          }
+        },
+        "containers": [
+          {
+            "name": "backup",
+            "resources": {
+              "requests": {
+                "cpu": "100m",
+                "memory": "128Mi"
+              },
+              "limits": {
+                "cpu": "500m",
+                "memory": "512Mi"
+              }
+            },
+            "securityContext": {
+              "allowPrivilegeEscalation": false,
+              "capabilities": {
+                "drop": [
+                  "ALL"
+                ]
+              }
+            }
+          }
+        ],
+        "volumes": [
+          {
+            "name": "repository",
+            "persistentVolumeClaim": {
+              "claimName": "k8up-omv-repository"
+            }
+          }
+        ]
+      }
+    }
+  }
+}

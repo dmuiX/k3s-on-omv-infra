@@ -1,0 +1,229 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: k8up-fixture-seed-clone
+  annotations:
+    argocd.argoproj.io/sync-wave: '-2'
+spec:
+  failurePolicy: Fail
+  paramKind:
+    apiVersion: batch/v1
+    kind: CronJob
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: backup-validation
+        platform.k3s-on-omv.io/fixture-pipeline: enabled
+    resourceRules:
+      - apiGroups: [batch]
+        apiVersions: [v1]
+        operations: [CREATE]
+        resources: [jobs]
+        scope: Namespaced
+  matchConditions:
+    - name: pipeline-service-account
+      expression: "request.userInfo.username == 'system:serviceaccount:backup-validation:k8up-fixture-pipeline'"
+    - name: job-stage
+      expression: "!object.metadata.name.startsWith('fixture-verify-')"
+  variables:
+    - name: job
+      expression: dyn(object.spec)
+    - name: source
+      expression: dyn(params.spec.jobTemplate.spec)
+    - name: podUID
+      expression: >-
+        has(request.userInfo.extra) && 'authentication.kubernetes.io/pod-uid' in request.userInfo.extra &&
+        size(request.userInfo.extra['authentication.kubernetes.io/pod-uid']) == 1 ?
+        request.userInfo.extra['authentication.kubernetes.io/pod-uid'][0] : ''
+    - name: generatedPodLabels
+      expression: >-
+        {
+          'job-name': object.metadata.name,
+          'batch.kubernetes.io/job-name': object.metadata.name,
+          'controller-uid': dyn(object.metadata).uid,
+          'batch.kubernetes.io/controller-uid': dyn(object.metadata).uid
+        }
+    - name: podLabels
+      expression: "variables.job.template.metadata.labels"
+    - name: sourcePodLabels
+      expression: "variables.source.template.metadata.labels"
+    - name: sourcePodAnnotations
+      expression: "variables.source.template.metadata.?annotations.orValue({})"
+    - name: podAnnotations
+      expression: "variables.job.template.metadata.?annotations.orValue({})"
+    # Jobs (not CronJob jobTemplates) get these API defaults on creation.
+    - name: jobDefaults
+      expression: >-
+        {
+          'parallelism': dyn(1), 'completions': dyn(1), 'completionMode': dyn('NonIndexed'),
+          'suspend': dyn(false), 'manualSelector': dyn(false), 'podReplacementPolicy': dyn('TerminatingOrFailed')
+        }
+  validations:
+    - expression: >-
+        params != null && params.spec.suspend && params.metadata.name == 'k8up-canary-seed-template' &&
+        params.metadata.namespace == request.namespace && object.metadata.namespace == request.namespace &&
+        variables.podUID.matches('^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$') &&
+        object.metadata.name == 'fixture-seed-' + variables.podUID
+      message: "Only a named verification Job cloned from the suspended fixture Job template is allowed."
+    # Job defaulting copies the pod labels to Job metadata before appending
+    # the generated labels, so both maps include those additions.
+    - expression: >-
+        ['generateName', 'ownerReferences', 'finalizers'].all(k, !(k in dyn(object.metadata))) &&
+        dyn(object.metadata).?annotations.orValue({}) == dyn(params.spec.jobTemplate.metadata).?annotations.orValue({}) &&
+        dyn(object.metadata).?labels.orValue({}) == variables.podLabels
+      message: "Fixture Job metadata must match the trusted template and have no owners or finalizers."
+    - expression: >-
+        variables.source.all(k, k == 'template' || k == 'selector' ||
+          k in variables.job && variables.job[k] == variables.source[k]) &&
+        variables.job.all(k, k == 'template' || k == 'selector' || k in variables.source ||
+          k in variables.jobDefaults && variables.job[k] == variables.jobDefaults[k]) &&
+        variables.job.manualSelector == false &&
+        variables.job.selector == {'matchLabels': {'batch.kubernetes.io/controller-uid': dyn(object.metadata).uid}}
+      message: "Fixture Job must preserve the trusted Job spec including its time and retention bounds."
+    - expression: "variables.job.template.spec == variables.source.template.spec"
+      message: "Fixture pod spec must exactly match the trusted template."
+    - expression: >-
+        variables.job.template.metadata.all(k, k in ['labels', 'annotations'] ||
+          k in variables.source.template.metadata &&
+          variables.job.template.metadata[k] == variables.source.template.metadata[k]) &&
+        variables.source.template.metadata.all(k, k in ['labels', 'annotations'] ||
+          k in variables.job.template.metadata &&
+          variables.source.template.metadata[k] == variables.job.template.metadata[k]) &&
+        variables.sourcePodLabels.all(k, k in variables.podLabels && variables.podLabels[k] == variables.sourcePodLabels[k]) &&
+        variables.podLabels.all(k, k in variables.sourcePodLabels ||
+          k in variables.generatedPodLabels && variables.podLabels[k] == variables.generatedPodLabels[k])
+      message: "Fixture pod metadata must match the template except for API-generated Job labels and permitted annotations."
+    - expression: "variables.podAnnotations == variables.sourcePodAnnotations"
+      message: "Seed pod annotations must match the trusted template exactly."
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: k8up-fixture-seed-clone
+  annotations:
+    argocd.argoproj.io/sync-wave: '-1'
+spec:
+  policyName: k8up-fixture-seed-clone
+  validationActions: [Deny]
+  paramRef:
+    name: k8up-canary-seed-template
+    namespace: backup-validation
+    parameterNotFoundAction: Deny
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: k8up-fixture-verify-clone
+  annotations:
+    argocd.argoproj.io/sync-wave: '-2'
+spec:
+  failurePolicy: Fail
+  paramKind:
+    apiVersion: batch/v1
+    kind: CronJob
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: backup-validation
+        platform.k3s-on-omv.io/fixture-pipeline: enabled
+    resourceRules:
+      - apiGroups: [batch]
+        apiVersions: [v1]
+        operations: [CREATE]
+        resources: [jobs]
+        scope: Namespaced
+  matchConditions:
+    - name: pipeline-service-account
+      expression: "request.userInfo.username == 'system:serviceaccount:backup-validation:k8up-fixture-pipeline'"
+    - name: job-stage
+      expression: "object.metadata.name.startsWith('fixture-verify-')"
+  variables:
+    - name: job
+      expression: dyn(object.spec)
+    - name: source
+      expression: dyn(params.spec.jobTemplate.spec)
+    - name: podUID
+      expression: >-
+        has(request.userInfo.extra) && 'authentication.kubernetes.io/pod-uid' in request.userInfo.extra &&
+        size(request.userInfo.extra['authentication.kubernetes.io/pod-uid']) == 1 ?
+        request.userInfo.extra['authentication.kubernetes.io/pod-uid'][0] : ''
+    - name: generatedPodLabels
+      expression: >-
+        {
+          'job-name': object.metadata.name,
+          'batch.kubernetes.io/job-name': object.metadata.name,
+          'controller-uid': dyn(object.metadata).uid,
+          'batch.kubernetes.io/controller-uid': dyn(object.metadata).uid
+        }
+    - name: podLabels
+      expression: "variables.job.template.metadata.labels"
+    - name: sourcePodLabels
+      expression: "variables.source.template.metadata.labels"
+    - name: sourcePodAnnotations
+      expression: "variables.source.template.metadata.?annotations.orValue({})"
+    - name: podAnnotations
+      expression: "variables.job.template.metadata.?annotations.orValue({})"
+    - name: runKey
+      expression: "'platform.k3s-on-omv.io/backup-run-tag'"
+    # Jobs (not CronJob jobTemplates) get these API defaults on creation.
+    - name: jobDefaults
+      expression: >-
+        {
+          'parallelism': dyn(1), 'completions': dyn(1), 'completionMode': dyn('NonIndexed'),
+          'suspend': dyn(false), 'manualSelector': dyn(false), 'podReplacementPolicy': dyn('TerminatingOrFailed')
+        }
+  validations:
+    - expression: >-
+        params != null && params.spec.suspend && params.metadata.name == 'k8up-backup-validation-verify' &&
+        params.metadata.namespace == request.namespace && object.metadata.namespace == request.namespace &&
+        variables.podUID.matches('^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$') &&
+        object.metadata.name == 'fixture-verify-' + variables.podUID
+      message: "Only a named verification Job cloned from the suspended fixture Job template is allowed."
+    # Job defaulting copies the pod labels to Job metadata before appending
+    # the generated labels, so both maps include those additions.
+    - expression: >-
+        ['generateName', 'ownerReferences', 'finalizers'].all(k, !(k in dyn(object.metadata))) &&
+        dyn(object.metadata).?annotations.orValue({}) == dyn(params.spec.jobTemplate.metadata).?annotations.orValue({}) &&
+        dyn(object.metadata).?labels.orValue({}) == variables.podLabels
+      message: "Fixture Job metadata must match the trusted template and have no owners or finalizers."
+    - expression: >-
+        variables.source.all(k, k == 'template' || k == 'selector' ||
+          k in variables.job && variables.job[k] == variables.source[k]) &&
+        variables.job.all(k, k == 'template' || k == 'selector' || k in variables.source ||
+          k in variables.jobDefaults && variables.job[k] == variables.jobDefaults[k]) &&
+        variables.job.manualSelector == false &&
+        variables.job.selector == {'matchLabels': {'batch.kubernetes.io/controller-uid': dyn(object.metadata).uid}}
+      message: "Fixture Job must preserve the trusted Job spec including its time and retention bounds."
+    - expression: "variables.job.template.spec == variables.source.template.spec"
+      message: "Fixture pod spec must exactly match the trusted template."
+    - expression: >-
+        variables.job.template.metadata.all(k, k in ['labels', 'annotations'] ||
+          k in variables.source.template.metadata &&
+          variables.job.template.metadata[k] == variables.source.template.metadata[k]) &&
+        variables.source.template.metadata.all(k, k in ['labels', 'annotations'] ||
+          k in variables.job.template.metadata &&
+          variables.source.template.metadata[k] == variables.job.template.metadata[k]) &&
+        variables.sourcePodLabels.all(k, k in variables.podLabels && variables.podLabels[k] == variables.sourcePodLabels[k]) &&
+        variables.podLabels.all(k, k in variables.sourcePodLabels ||
+          k in variables.generatedPodLabels && variables.podLabels[k] == variables.generatedPodLabels[k])
+      message: "Fixture pod metadata must match the template except for API-generated Job labels and permitted annotations."
+    - expression: >-
+        !(variables.runKey in variables.sourcePodAnnotations) &&
+        variables.podAnnotations.size() == variables.sourcePodAnnotations.size() + 1 &&
+        variables.sourcePodAnnotations.all(k, k in variables.podAnnotations && variables.podAnnotations[k] == variables.sourcePodAnnotations[k]) &&
+        variables.podAnnotations[?variables.runKey].orValue('') == 'backup-run-' + variables.podUID
+      message: "Fixture pod annotations may only add the exact run tag."
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: k8up-fixture-verify-clone
+  annotations:
+    argocd.argoproj.io/sync-wave: '-1'
+spec:
+  policyName: k8up-fixture-verify-clone
+  validationActions: [Deny]
+  paramRef:
+    name: k8up-backup-validation-verify
+    namespace: backup-validation
+    parameterNotFoundAction: Deny

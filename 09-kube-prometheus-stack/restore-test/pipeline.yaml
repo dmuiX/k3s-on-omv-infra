@@ -340,6 +340,7 @@ spec:
                 limits: {cpu: 250m, memory: 128Mi}
               volumeMounts:
                 - {name: pipeline, mountPath: /pipeline, readOnly: true}
+                - {name: runner, mountPath: /runner, readOnly: true}
                 - {name: producer, mountPath: /producer, readOnly: true}
                 - {name: snapshots, mountPath: /snapshots, subPath: prometheus-db/snapshots}
                 - name: api-access
@@ -348,6 +349,8 @@ spec:
           volumes:
             - name: pipeline
               configMap: {name: prometheus-backup-pipeline, defaultMode: 0444}
+            - name: runner
+              configMap: {name: k8up-pipeline-common, defaultMode: 0444}
             - name: producer
               configMap:
                 name: prometheus-snapshot-contract-v1

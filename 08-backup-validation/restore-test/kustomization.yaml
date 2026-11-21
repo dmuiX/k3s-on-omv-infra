@@ -1,9 +1,28 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-namespace: backup-validation
 resources:
   - ../../adapters/k8up-restore
+  - ../../adapters/k8up-pipeline
+  - fixture.yaml
+  - fixture-pod-config.json
+  - fixture-session-policy.yaml
+  - fixture-job-policies.yaml
+  - fixture-seed-template.yaml
+patches:
+  - path: fixture-verifier.patch
+    target: {kind: CronJob, name: k8up-restore-template}
+    options: {allowNameChange: true}
+  # Kustomize's built-in Namespace transformer may put namespaces on cluster
+  # scoped ValidatingAdmissionPolicies. Namespace only actual namespaced kinds.
+  - target: {kind: 'ConfigMap|CronJob|NetworkPolicy|PodConfig|Role|RoleBinding|ServiceAccount'}
+    patch: |-
+      - op: add
+        path: /metadata/namespace
+        value: backup-validation
 configMapGenerator:
+  - name: k8up-fixture-pipeline
+    files: [fixture_pipeline.py, fixture-pod-config.json]
+    options: {immutable: true}
   # Stable, versioned reference for the separately created manual/seed-job.yaml.
   - name: k8up-canary-seed-v1
     options: {disableNameSuffixHash: true, immutable: true}

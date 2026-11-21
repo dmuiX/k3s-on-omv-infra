@@ -681,13 +681,17 @@ class RepositoryWorkloads(unittest.TestCase):
                 "postgresql-r2-backup-budget-preview",
                 "postgresql-restore-validation",
                 "k8up-backup-validation",
+                "k8up-backup-validation-verify",
+                "k8up-canary-seed-template",
             },
         )
         for job in jobs:
             with self.subTest(job=job["metadata"]["name"]):
                 self.assertEqual(job["spec"]["concurrencyPolicy"], "Forbid")
                 pod = job["spec"]["jobTemplate"]["spec"]["template"]["spec"]
-                if job["metadata"]["name"] == "k8up-backup-validation":
+                if job["metadata"]["name"].startswith(
+                    ("k8up-backup-validation", "k8up-canary-seed-template")
+                ):
                     self.assertIs(pod["automountServiceAccountToken"], False)
                 else:
                     self.assertNotEqual(pod["serviceAccountName"], "default")

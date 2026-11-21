@@ -12,8 +12,12 @@ max_age=$2
 case $max_age in ''|0*|*[!0-9]*|??????????*) die 'invalid maximum age' ;; esac
 case $source in
     backup-validation)
-        host=backup-validation; path=/data/k8up-validation-canary; run_tag=
-        set -- --latest 2 ;;
+        host=backup-validation; path=/data/k8up-validation-canary
+        run_tag=${K8UP_FIXTURE_RUN_TAG:-}
+        jq -en --arg tag "$run_tag" '
+            $tag | test("\\Abackup-run-[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}\\z")
+        ' >/dev/null || die 'invalid or missing fixture backup run tag'
+        set -- --tag "$run_tag" ;;
     prometheus-stream)
         # K8up v2.16 backupAnnotatedPod + StdinBackup: /<namespace>-<container><fileExtension>.
         # The PreBackupPod specifies container snapshot and literal extension tar (no dot).
@@ -56,16 +60,9 @@ selected=$(jq -ers --arg host "$host" --arg path "$path" --arg tag "$run_tag" --
         + ("0." + ($t.frac // "0") | tonumber)
         - (if $t.sign then (($t.h|tonumber)*3600 + ($t.m|tonumber)*60) * (if $t.sign=="+" then 1 else -1 end) else 0 end);
     select(length == 1) | .[0] | select(type == "array")
-    | if $host == "backup-validation" then
-          select(length == 1 or length == 2)
-          | sort_by(.time | epoch) | select(length == 1 or (.[0].time|epoch) < (.[1].time|epoch)) | last
-      else select(length == 1) | first
-      end
+    | select(length == 1) | first
     | select(.hostname == $host and .paths == [$path] and (.id | test("\\A[0-9a-f]{64}\\z")))
-    # The validation Schedule has no backup.tags; K8up v2.16 adds no default
-    # tag. Restic 0.19 omits tags for an empty list. Check *after* choosing
-    # the newest snapshot, so a tagged manual run cannot cause fallback.
-    | select(if $host == "backup-validation" then (has("tags") | not) or .tags == []
+    | select(if $host == "backup-validation" then (.tags | sort) == ([$tag, "k8up-validation-canary"] | sort)
              else (.tags | sort) == ([$tag, "prometheus-replica-0", "prometheus-tsdb"] | sort)
              end)
     | (now - (.time | epoch)) as $elapsed | select($elapsed >= 0 and $elapsed <= $age)

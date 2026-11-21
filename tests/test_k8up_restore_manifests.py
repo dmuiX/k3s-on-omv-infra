@@ -11,7 +11,7 @@ from workload_contracts import public_path, render_kustomization
 
 ROOT = Path(__file__).resolve().parents[1]
 POD_NAME = 'k8up-restore-test'
-CRON_NAME = {'backup-validation': 'k8up-backup-validation', 'kube-prometheus-stack': 'prometheus-restore-test'}
+CRON_NAME = {'backup-validation': 'k8up-backup-validation-verify', 'kube-prometheus-stack': 'prometheus-restore-test'}
 LABEL = 'app.kubernetes.io/name'
 BACKUP = '08-backup-validation'
 PROM = '09-kube-prometheus-stack'
@@ -98,7 +98,9 @@ class RestoreTestManifests(unittest.TestCase):
                 for c in stages[1:]:
                     self.assertNotIn('repository', [m['name'] for m in c['volumeMounts']])
                 if ns == 'backup-validation':
-                    self.assertEqual(refs, [password, {}])
+                    run_tag = {'K8UP_FIXTURE_RUN_TAG': {'fieldRef': {
+                        'fieldPath': "metadata.annotations['platform.k3s-on-omv.io/backup-run-tag']"}}}
+                    self.assertEqual(refs, [password | run_tag, {}])
                     self.assertEqual(restore['args'], ['backup-validation', '172800'])
                     self.assertEqual([c['name'] for c in stages], ['restore', 'verify'])
                     self.assertEqual(stages[-1]['args'], ['backup-validation'])

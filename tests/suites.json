@@ -4,6 +4,7 @@
     "test_ci_dependencies",
     "test_cloudnativepg_vso_account",
     "test_credential_resource_ownership",
+    "test_fixture_backup_pipeline",
     "test_k3s_component_metrics",
     "test_k8up_restore_manifests",
     "test_k8up_restore_selection",
