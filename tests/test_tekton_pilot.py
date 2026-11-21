@@ -37,6 +37,13 @@ class TektonPilotTest(unittest.TestCase):
         )
         deployments = [d for d in docs if d["kind"] == "Deployment"]
         self.assertEqual(len(deployments), 4)
+        builds = yaml.safe_load((CONTROLLER / "ci-builds.yaml").read_text())
+        self.assertEqual(builds["kind"], "Namespace")
+        self.assertEqual(builds["metadata"]["name"], "ci-builds")
+        self.assertEqual(
+            builds["metadata"]["labels"]["pod-security.kubernetes.io/enforce"],
+            "restricted",
+        )
         for deployment in deployments:
             spec = deployment["spec"]["template"]["spec"]
             self.assertEqual(
@@ -81,7 +88,6 @@ class TektonPilotTest(unittest.TestCase):
         self.assertEqual(
             set(docs),
             {
-                "Namespace",
                 "ServiceAccount",
                 "NetworkPolicy",
                 "Task",

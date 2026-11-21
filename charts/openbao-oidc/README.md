@@ -1,7 +1,7 @@
 # openbao-oidc
 
-Narrow Git-sourced Helm component for Radar, Audiobookshelf and Longhorn's
-existing OpenBao identities. It emits only `Group`, `OidcAssignment`, `OidcKey`,
+Narrow Git-sourced Helm component for the OpenBao identities of Radar,
+Audiobookshelf, Longhorn and Tekton Dashboard. It emits only `Group`, `OidcAssignment`, `OidcKey`,
 `OidcScope`, `OidcClient` and `OidcProvider` from the existing Crossplane API.
 No arbitrary manifests, workload auth, VSO delivery, credentials, proxy,
 configurator, human membership or platform profile scope are generated.
@@ -15,7 +15,7 @@ rendering fails validation; every integration must explicitly supply its policy.
 
 | Field | Meaning |
 | --- | --- |
-| `providerConfigName`, `deletionPolicy` | Explicit existing provider and lifecycle policy (`Orphan` for all three consumers). |
+| `providerConfigName`, `deletionPolicy` | Explicit existing provider and lifecycle policy (`Orphan` for the existing consumers). |
 | `key` | `name`, `algorithm` (RS256), explicit `allowedClientIds`, `rotationPeriod`, `verificationTtl`. |
 | `scopes[]` | Existing `name` and exact OpenBao claim `template` string; never evaluated by Helm `tpl`. |
 | `client` | Existing `name`, `key`, nonempty `assignments`, HTTPS `redirectUris`, `idTokenTtl`, `accessTokenTtl`. Always confidential. |
@@ -36,8 +36,8 @@ The existing wildcard **key** allowlist avoids the generated-client/key cycle;
 the dedicated provider's explicit client references constrain token issuance.
 This does not make a broad client assignment a default. Radar alone explicitly
 retains `allow_all` for authentication; its separate admin-group authorization
-is unchanged. Audiobookshelf and Longhorn retain their distinct group-based
-assignments. Audiobookshelf references the existing platform-owned
+is unchanged. Audiobookshelf, Longhorn and Tekton Dashboard use explicit
+group-based assignments. Audiobookshelf references the existing platform-owned
 `oidc-profile`; it does not create it.
 
 ## Adoption

@@ -1,3 +1,20 @@
+{{- $issuerURL := required "issuerURL is required" .Values.issuerURL -}}
+{{- $backchannelURL := .Values.openbaoBackchannelURL -}}
+{{- if $backchannelURL -}}
+{{- $public := urlParse $issuerURL -}}
+{{- $internal := urlParse $backchannelURL -}}
+{{- if or (ne $public.scheme "https") (not (regexMatch "^/v1/identity/oidc/provider/[a-z0-9-]+$" $public.path)) (ne $internal.path $public.path) (not (has $internal.scheme (list "http" "https"))) -}}
+{{- fail "openbaoBackchannelURL must point to the same OpenBao OIDC provider as the public HTTPS issuer" -}}
+{{- end -}}
+{{- if and (eq $internal.scheme "http") (not .Values.ambient) -}}
+{{- fail "an HTTP OpenBao backchannel requires Istio Ambient enrollment" -}}
+{{- end -}}
+{{- range list $public $internal -}}
+{{- if or (empty .host) .query .fragment .userinfo -}}
+{{- fail "OpenBao issuer and backchannel URLs must contain a host and no query, fragment, or credentials" -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -12,24 +29,46 @@ spec:
       app.kubernetes.io/name: {{ .Values.name }}
   template:
     metadata:
+      {{- if $backchannelURL }}
+      annotations:
+        checksum/oidc-inputs: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+      {{- end }}
       labels:
         app.kubernetes.io/name: {{ .Values.name }}
+        {{- with .Values.ambient }}
+        istio.io/dataplane-mode: ambient
+        {{- end }}
     spec:
       serviceAccountName: {{ .Values.name }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       containers:
         - name: proxy
           image: quay.io/oauth2-proxy/oauth2-proxy:v7.15.5@sha256:8498b0d0ef0a7b29686414000a08aee467f02d0299c9ed1e006a8f33fc017916
           args:
             - --provider=oidc
-            - --upstream=http://longhorn-frontend.longhorn.svc:80
+            - {{ printf "--upstream=%s" (required "upstream is required" .Values.upstream) | quote }}
             - --http-address=0.0.0.0:4180
             - --email-domain=*
-            - --scope=openid longhorn
+            - {{ printf "--scope=%s" (required "scope is required" .Values.scope) | quote }}
             - --oidc-email-claim=username
             # OpenBao supplies the authenticated entity name, not a verified mailbox.
             - --insecure-oidc-allow-unverified-email=true
-            - --allowed-group=radar:admin
+            - {{ printf "--allowed-group=%s" (required "allowedGroup is required" .Values.allowedGroup) | quote }}
             - --skip-provider-button=true
+            {{- if not .Values.passBasicAuth }}
+            - --pass-basic-auth=false
+            - --pass-authorization-header=false
+            {{- end }}
+            {{- if $backchannelURL }}
+            - --skip-oidc-discovery=true
+            - {{ printf "--login-url=%s/authorize" (replace "/v1/identity/oidc/provider/" "/ui/vault/identity/oidc/provider/" $issuerURL) | quote }}
+            - {{ printf "--redeem-url=%s/token" $backchannelURL | quote }}
+            - {{ printf "--oidc-jwks-url=%s/.well-known/keys" $backchannelURL | quote }}
+            - --skip-claims-from-profile-url=true
+            {{- end }}
           env:
             - name: OAUTH2_PROXY_OIDC_ISSUER_URL
               valueFrom:

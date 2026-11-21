@@ -48,6 +48,7 @@ jobs:
                  tests/test_native_request_profile.py tests/test_request_rightsizing.py
                  tests/test_small_node_placement.py tests/test_memory_limits.py
                  tests/test_shutdown_pod_preview.py tests/test_tekton_pilot.py
+                 tests/test_tekton_dashboard.py
                  06-platform/shutdown-pod-preview/preview.py)
           python -m black --check "${files[@]}"
           python -m ruff check "${files[@]}"

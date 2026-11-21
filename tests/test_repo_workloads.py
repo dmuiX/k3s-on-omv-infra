@@ -98,7 +98,12 @@ class RepositoryWorkloads(unittest.TestCase):
             data: dict[str, str]
 
         repo = Repository()
-        for app in ("k3s-postgres", "longhorn-config", "kube-prometheus-stack"):
+        for app in (
+            "k3s-postgres",
+            "longhorn-config",
+            "kube-prometheus-stack",
+            "tekton-dashboard",
+        ):
             with self.subTest(application=app):
                 docs = repo.render(app)
                 helper = types.ModuleType("credential_helpers")
@@ -115,7 +120,8 @@ class RepositoryWorkloads(unittest.TestCase):
                 def request(
                     _base: str, path: str, _token: str, data: CustodyWrite | None = None
                 ) -> dict[str, object]:
-                    if path == "identity/oidc/client/longhorn":
+                    oidc_client = "longhorn" if app == "longhorn-config" else app
+                    if path == f"identity/oidc/client/{oidc_client}":
                         return {
                             "data": {
                                 "client_id": "fixture-client",
@@ -209,6 +215,7 @@ class RepositoryWorkloads(unittest.TestCase):
             "platform-credentials",
             "letsencrypt-dns01-credentials",
             "longhorn-config",
+            "tekton-dashboard",
             "openbao-backups",
             "openbao-config",
             "k3s-postgres",
