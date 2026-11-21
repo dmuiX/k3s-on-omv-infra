@@ -29,6 +29,69 @@ This is a test name change, not a data migration. The fixture PVC, Restic path, 
 3. With operator approval, clone **one** suspended CronJob at a time as a uniquely named Job (e.g. `kubectl --context "${REVIEWED_CONTEXT:?}" -n backup-validation create job "k8up-backup-validation-${RUN_ID:?}" --from=cronjob/k8up-backup-validation`). Observe the selected snapshot ID/time and terminal verification result in the respective container logs and Job condition. Record this bounded evidence before TTL, not raw application contents. For the fixture, require `stage=backup-validation result=PASS` in the `verify` log. Require `Complete=True`, not merely a successful restore init container.
 4. Record the restore test Pod's **own** ephemeral PVC UID, bound PV and CSI handle; check `longhorn-single-node-delete`, `Delete` and `k8up.io/backup: 'false'`. After the Job TTL (one hour), verify that this exact Pod, PVC, PV and Longhorn volume disappear on success and failure. Never force a finalizer or delete another run's resources. Only then enable each schedule by reviewed change. The fixture and both retained repository PVCs are deliberately not cleaned up.
 
+## Recover a terminating canary claim
+
+The canary is a synthetic fixture, not application data. A terminating canary
+PVC can keep `backup-validation` progressing and block later waves of the root
+Application, even when the child reports `Synced`. A scheduled Pod can still
+[hold a claim reference after completion](https://github.com/kubernetes/kubernetes/blob/v1.37.1/pkg/controller/volume/pvcprotection/pvc_protection_controller.go#L457-L470). Check the PV's CSI volume handle against
+Longhorn: a `Bound` PV with `Retain` does not prove the disk still exists.
+
+1. Keep the restore test suspended and stop manual seed/restore launches. Pause
+   the K8up Backup producer for the canary: temporarily omit `spec.backup` from
+   the Live `backup-validation/validation` Schedule through a reviewed change
+   and verify it reconciled. [K8up v2.16.0 removes the Backup schedule entry
+   when that section is absent](https://github.com/k8up-io/k8up/blob/v2.16.0/operator/schedulecontroller/handler.go#L119-L129);
+   suspending the restore CronJob alone does not pause backups. Verify no other
+   schedule or manual Backup can select the canary during the pause. Wait for
+   already-created Backups and their Jobs to finish; a schedule change does not
+   cancel them.
+   Before releasing the claim, verify there are no pending or active consumers,
+   no consumers besides validation, and no repository maintenance in progress.
+2. Record the terminating PVC's UID and bound PV name, UID, reclaim policy and
+   CSI volume handle. Check that exact handle in Longhorn. Record the completed
+   Backup and Job identities (namespace, name and UID), conditions, and the
+   latest Snapshot object's identity and full ID for
+   `/data/k8up-validation-canary`. If the backing volume exists, its status is
+   uncertain, or the claim may contain anything besides the fixture, stop and
+   establish data custody before releasing the claim.
+3. If the backing volume is already gone and the only remaining claim
+   references are Pods in `Succeeded` state owned by Jobs with `Complete=True`,
+   retire only those Pods after approval. Verify each Pod's namespace, name,
+   UID and owner Job UID. Do not use a label-wide delete or force any finalizer.
+   Wait for Kubernetes to remove the **old PVC UID** naturally; the name may
+   already have been reused by Argo self-heal. Stop if the old PVC remains
+   terminating after its consumers are gone and investigate the blocker.
+
+   **Retain the old objects separately.** Do not delete the completed Jobs,
+   Backups, Snapshot objects or OMV repository as part of claim recovery;
+   preserve the recorded evidence in case normal retention removes objects
+   later. A PV with [reclaim policy `Retain`](https://kubernetes.io/docs/concepts/storage/persistent-volumes/#retain)
+   can remain `Released` with its `claimRef` pointing to the old PVC UID. Its
+   disappearance is not a recovery gate. Leave that exact PV untouched; do not
+   clear the claim reference or reuse the PV. Any later disposition requires
+   separate review of that PV's recorded UID and CSI handle.
+4. Reconcile the existing Argo-managed claim if self-heal has not already done
+   so. Require `Bound` on a **different PVC UID** to a freshly provisioned PV
+   with a different name and UID and a different CSI handle. Verify the PV's
+   claim reference matches the replacement PVC UID and the new Longhorn volume
+   exists. With `WaitForFirstConsumer`, if used in a later migration, creating
+   the approved seed Job may trigger provisioning; still verify this binding
+   before accepting the seed. Stop if any identity is reused or cannot be
+   verified.
+5. Keep the Backup producer paused through reseeding. Use the seed procedure
+   in rollout step 2 and require the seed Job to complete on the replacement
+   claim and its Pods to release the mount. Only then restore the reviewed Backup
+   schedule, require a fresh successful Backup of the reseeded fixture and a
+   successful repository Check, and run the normal supervised restore test.
+   Bind the exact post-reseed Backup and its owned Job to one new Snapshot for
+   `/data/k8up-validation-canary` in the same repository. Record the full
+   snapshot ID from that evidence and require the restore Job's logged full ID
+   to match it. If the Backup cannot be tied unambiguously to one new snapshot,
+   or the restore picked a different ID, do not accept recovery even if the
+   unchanged canary marker matches. Verify the parent Application resumes; a
+   new binding alone is not a restore test result.
+
 ## Rollback order (both repositories)
 
 1. Stop manual seed/clone approvals and suspend both schedules in Git. Suspension does not stop existing Jobs or prevent manual clones. **Keep both repos' policy exclusions and the isolation policies in force.**
