@@ -201,6 +201,7 @@ class RepositoryWorkloads(unittest.TestCase):
             "csi-driver-smb",
             "k8up",
             "longhorn",
+            "tekton-pipelines",
             "vault-secrets-operator",
             "provider-vault",
             "openbao",

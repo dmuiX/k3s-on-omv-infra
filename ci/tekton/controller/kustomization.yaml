@@ -1,0 +1,60 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  # Unmodified Tekton Pipelines v1.18.0 release; see ../README.md for the SHA-256.
+  - release.yaml
+patches:
+  # Do not extend the built-in Kubernetes edit/admin/view roles with Tekton access.
+  - patch: |-
+      $patch: delete
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: ClusterRole
+      metadata:
+        name: tekton-aggregate-edit
+  - patch: |-
+      $patch: delete
+      apiVersion: rbac.authorization.k8s.io/v1
+      kind: ClusterRole
+      metadata:
+        name: tekton-aggregate-view
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+    patch: |-
+      - op: add
+        path: /spec/template/spec/nodeSelector
+        value:
+          kubernetes.io/os: linux
+          kubernetes.io/arch: amd64
+  - target:
+      group: apps
+      version: v1
+      kind: Deployment
+      name: tekton-(pipelines|events)-controller
+    patch: |-
+      - op: add
+        path: /spec/template/spec/containers/0/resources
+        value:
+          requests: {cpu: 100m, memory: 128Mi}
+          limits: {cpu: 500m, memory: 512Mi}
+  - patch: |-
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: feature-flags
+        namespace: tekton-pipelines
+      data:
+        disable-creds-init: "true"
+  - patch: |-
+      apiVersion: v1
+      kind: ConfigMap
+      metadata:
+        name: resolvers-feature-flags
+        namespace: tekton-pipelines-resolvers
+      data:
+        enable-bundles-resolver: "false"
+        enable-hub-resolver: "false"
+        enable-git-resolver: "false"
+        enable-cluster-resolver: "false"
+        enable-http-resolver: "false"

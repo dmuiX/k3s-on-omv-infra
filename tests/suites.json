@@ -20,6 +20,7 @@
     "test_snapshot",
     "test_small_node_placement",
     "test_smb_vso_account",
+    "test_tekton_pilot",
     "test_repo_suite",
     "test_repo_workloads",
     "test_request_rightsizing",
