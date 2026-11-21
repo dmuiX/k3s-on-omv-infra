@@ -68,7 +68,7 @@ esac
         self.assertNotIn(b'sensitive filename', proc.stderr)
         return proc.stdout
 
-    def exercise(self, records, source='canary', success=False):
+    def exercise(self, records, source='backup-validation', success=False):
         (self.root / 'snapshots').write_text(json.dumps(records))
         log = self.invoke(source, success)
         self.assertEqual((self.scratch / 'restored').exists(), success)
@@ -76,13 +76,13 @@ esac
         return log
 
     def test_restore_exact_sources_and_id(self):
-        for source, path in [('canary', CANARY), ('prometheus-stream', STREAM)]:
+        for source, path in [('backup-validation', CANARY), ('prometheus-stream', STREAM)]:
             with self.subTest(source=source):
                 offset_time = dt.datetime.fromisoformat(timestamp(-5)).astimezone(dt.timezone(dt.timedelta(hours=3)))
                 chosen = snapshot(path, time=offset_time.isoformat())
                 log = self.exercise([chosen, snapshot(path, id='c'*64, time=timestamp(-4000))], source, True)
                 data = self.scratch / 'restored' / path[1:]
-                self.assertEqual((data / 'marker.txt' if source == 'canary' else data).read_bytes(), b'payload')
+                self.assertEqual((data / 'marker.txt' if source == 'backup-validation' else data).read_bytes(), b'payload')
                 if source == 'prometheus-stream':
                     self.assertEqual(int((self.scratch / 'snapshot-seconds').read_text()), int(offset_time.timestamp()))
                 calls = (self.root / 'calls').read_text().splitlines()
@@ -107,7 +107,7 @@ esac
                 self.scratch.mkdir()
         self.assertNotIn(' restore ', (self.root / 'calls').read_text())
 
-    def test_newest_canary_must_be_untagged(self):
+    def test_newest_fixture_must_be_untagged(self):
         older = snapshot(id='c'*64, time=timestamp(-400))
         for tags in (['manual'], ['unexpected'], TAGS, False, None, ''):
             with self.subTest(tags=tags):
@@ -122,7 +122,7 @@ esac
         self.assertEqual(self.exercise([snapshot(time='2025-02-29T04:17:00Z'), snapshot()]), b'')
         self.assertNotIn(' restore ', (self.root / 'calls').read_text())
 
-    def test_reject_canary_prefix(self):
+    def test_reject_fixture_path_prefix(self):
         self.exercise([snapshot(CANARY + '-other')])
         self.assertNotIn(' restore ', (self.root / 'calls').read_text())
 
@@ -148,7 +148,7 @@ esac
         self.assertEqual(self.restic('version').split()[:2], [b'restic', b'0.19.0'])
         self.restic('init')
 
-    def test_actual_verified_canary_directory(self):
+    def test_actual_verified_fixture_directory(self):
         self.init_real_repo()
         # Restic records the absolute source path even for a relative backup.
         # Relocate only the fixed source in a test copy; never create host /data
@@ -167,7 +167,7 @@ esac
         self.assertEqual(record['paths'], [str(source)])
         self.assertNotIn('tags', record)
         shutil.rmtree(source)
-        log = self.invoke('canary', True, script)
+        log = self.invoke('backup-validation', True, script)
         self.assertEqual(log.decode(), f'snapshot_id={record["id"]} time={record["time"]}\n')
         restored = self.scratch / 'restored' / source.relative_to('/')
         self.assertEqual((restored / 'marker.txt').read_bytes(), marker)

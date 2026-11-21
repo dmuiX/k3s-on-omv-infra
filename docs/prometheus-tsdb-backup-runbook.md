@@ -58,7 +58,7 @@ spec:
   successfulJobsHistoryLimit: 3
 ```
 
-Require the same `Completed=True`, `reason=Succeeded` condition on the Check. Repository metadata alone is insufficient. The suspended `k8up-restore-test` template restores with Restic `--verify`, then validates the staged, uncompressed tar on private scratch (48 GiB requested; 20 GiB archive cap, 32,768 members). Before launch, verify free, schedulable strict-local capacity on the eligible monitoring node(s), not total cluster capacity; see the [restore test rollout gates](k8up-restore-tests.md#rollout-and-acceptance). It mounts neither the live TSDB nor any source Pod volume.
+Require the same `Completed=True`, `reason=Succeeded` condition on the Check. Repository metadata alone is insufficient. The suspended `prometheus-restore-test` template restores with Restic `--verify`, then validates the staged, uncompressed tar on private scratch (48 GiB requested; 20 GiB archive cap, 32,768 members). Before launch, verify free, schedulable strict-local capacity on the eligible monitoring node(s), not total cluster capacity; see the [restore test rollout gates](k8up-restore-tests.md#rollout-and-acceptance). It mounts neither the live TSDB nor any source Pod volume.
 
 The final reader must successfully dump at least one `kube_node_info{node!=""}` sample with the expected info-gauge value `1` from the 24 hours preceding the selected Restic snapshot time. This checks historical data against a known metric invariant, **not** an exact timestamp/value comparison against a separately captured source reference. A stack that was not collecting node info during this window will fail the restore test.
 
