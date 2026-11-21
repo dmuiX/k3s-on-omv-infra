@@ -57,7 +57,8 @@ spec:
           image: ghcr.io/tektoncd/dashboard/dashboard-9623576a202fe86c8b7d1bc489905f86:v0.74.0@sha256:8ee17097dd8d21ab083db6de6006252413444f60b35b4af50ff4e9f1115c911b
           args:
             - --port=9097
-            - --read-only=true
+            # Kubernetes RBAC denies writes until the separately guarded Envoy run grant is installed.
+            - --read-only=false
             - --namespaces=ci-builds
             - --default-namespace=ci-builds
             - --stream-logs=true

@@ -86,11 +86,14 @@ class TektonDashboardTest(unittest.TestCase):
         self.assertEqual(api_source["path"], "infra/tekton-dashboard")
         self.assertEqual(api_source["directory"], {"include": "network-peers.yaml"})
 
-    def test_dashboard_can_only_read_ci_builds_and_named_version_maps(self) -> None:
+    def test_ui_enables_run_creation_but_app_does_not_grant_writes(self) -> None:
         pod = self.spec("Deployment", APP)["template"]["spec"]
         self.assertEqual(pod["serviceAccountName"], APP)
         (container,) = pod["containers"]
-        self.assertIn("--read-only=true", container["args"])
+        self.assertEqual(
+            [arg for arg in container["args"] if arg.startswith("--read-only=")],
+            ["--read-only=false"],
+        )
         self.assertIn("--namespaces=ci-builds", container["args"])
         self.assertIn("--logout-url=/oauth2/sign_out", container["args"])
         self.assertRegex(container["image"], r"v0\.74\.0@sha256:[a-f0-9]{64}$")
@@ -98,10 +101,15 @@ class TektonDashboardTest(unittest.TestCase):
         self.assertFalse(
             any(kind in {"ClusterRole", "ClusterRoleBinding"} for kind, _ in self.docs)
         )
-        for name, namespace in (
-            ("tekton-dashboard-info", NAMESPACE),
-            ("tekton-dashboard-reader", "ci-builds"),
-        ):
+        readers = {
+            "tekton-dashboard-info": NAMESPACE,
+            "tekton-dashboard-reader": "ci-builds",
+        }
+        for kind in ("Role", "RoleBinding"):
+            self.assertEqual(
+                {name for doc_kind, name in self.docs if doc_kind == kind}, set(readers)
+            )
+        for name, namespace in readers.items():
             role = self.docs["Role", name]
             binding = self.docs["RoleBinding", name]
             self.assertEqual(role["metadata"]["namespace"], namespace)
