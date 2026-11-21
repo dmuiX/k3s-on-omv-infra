@@ -53,6 +53,9 @@ class MeshRenderTest < Minitest::Test
     cni = render("cni", "istio-cni", "istio-system")
     ztunnel = render("ztunnel", "ztunnel", "istio-system")
     cni_pod = cni.find { |document| document["kind"] == "DaemonSet" }.dig("spec", "template", "spec")
+    assert_match(/\Adocker\.io\/istio\/install-cni@sha256:[0-9a-f]{64}\z/, cni_pod.fetch("containers").first.fetch("image"))
+    tunnel = ztunnel.find { |d| d["kind"] == "DaemonSet" }
+    assert_match(/\Adocker\.io\/istio\/ztunnel@sha256:[0-9a-f]{64}\z/, tunnel.dig("spec", "template", "spec", "containers", 0, "image"))
     paths = cni_pod.fetch("volumes").map { |volume| volume.dig("hostPath", "path") }.compact
     assert_includes paths, "/var/lib/rancher/k3s/data/cni"
     assert_includes paths, "/var/lib/rancher/k3s/agent/etc/cni/net.d"
