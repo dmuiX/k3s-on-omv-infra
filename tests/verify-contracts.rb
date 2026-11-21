@@ -592,8 +592,8 @@ class PlatformContractTest < Minitest::Test
     pipeline = yaml_documents(INFRA / "09-kube-prometheus-stack/restore-test/pipeline.yaml")
     cron = pipeline.find { |document| document["kind"] == "CronJob" }
     assert_equal true, cron.dig("spec", "suspend")
-    assert_equal %w[credential-custody k8up-restore openbao-snapshot postgresql-size-retention], (INFRA / "adapters").children.select(&:directory?).map { |path| path.basename.to_s }.sort
-    assert_equal 3, (INFRA / "adapters").glob("**/*.py").length
+    assert_equal %w[credential-custody k8up-pipeline k8up-restore openbao-snapshot postgresql-size-retention], (INFRA / "adapters").children.select(&:directory?).map { |path| path.basename.to_s }.sort
+    assert_equal 4, (INFRA / "adapters").glob("**/*.py").length
   end
 
   def test_native_chart_routes_are_preferred_over_duplicate_live_manifests
