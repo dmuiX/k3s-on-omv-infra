@@ -49,10 +49,11 @@ spec:
                 memory: 256Mi
   - repoURL: https://blob.istio.io/istio-release/charts
     chart: cni
-    targetRevision: 1.31.2
+    targetRevision: 1.32.0
     helm:
       releaseName: istio-cni
       valuesObject:
+        image: docker.io/istio/install-cni@sha256:bf8fa30fe56fc7209941af23999f1463071b9885c22ec81f5998645718698787 # 1.32.0-distroless
         profile: ambient
         global:
           platform: k3s
@@ -65,10 +66,11 @@ spec:
             memory: 256Mi
   - repoURL: https://blob.istio.io/istio-release/charts
     chart: ztunnel
-    targetRevision: 1.31.2
+    targetRevision: 1.32.0
     helm:
       releaseName: ztunnel
       valuesObject:
+        image: docker.io/istio/ztunnel@sha256:9d7bdca90124e3680317c29b1e19a94335a15dba3ca51b8676c027b333869f69 # 1.32.0
         resources:
           requests:
             cpu: 150m
