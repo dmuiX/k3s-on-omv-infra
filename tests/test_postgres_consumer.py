@@ -2,6 +2,7 @@
 import copy
 import json
 from pathlib import Path
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -61,7 +62,7 @@ def render(config, namespace="radar", check=True, *, env=None):
         path.write_text(yaml.safe_dump(config))
         result = subprocess.run(
             ["helm", "template", "consumer", str(CHART), "--namespace", namespace, "-f", str(path)],
-            text=True, capture_output=True, env=env,
+            text=True, capture_output=True, env=env, timeout=30,
         )
     if check and result.returncode:
         raise AssertionError(result.stderr)
@@ -132,7 +133,7 @@ def keyed(docs):
              doc["metadata"]["name"]): doc for doc in docs}
 
 
-def rotation_sql(*renders, env=None):
+def rotation_sql(*renders, env=None, hook=()):
     with tempfile.TemporaryDirectory(prefix="rotation-grants-") as directory:
         paths = []
         for i, render_text in enumerate(renders):
@@ -141,12 +142,109 @@ def rotation_sql(*renders, env=None):
             paths.append(path)
         return subprocess.run(
             [sys.executable, str(ROOT / "07-k3s-postgres/tools/render_rotation_grants.py"),
-             "--namespace", "cloudnative-pg", "--cluster", "k3s-postgres", *paths],
-            text=True, capture_output=True, env=env,
+             "--namespace", "cloudnative-pg", "--cluster", "k3s-postgres", *hook, *paths],
+            text=True, capture_output=True, env=env, timeout=30,
         )
 
 
+HOOK_PRIMARY = "k3s-postgres-2"
+HOOK_CLUSTER_UID = "fce60004-619e-42ac-9888-117201afcbcb"
+HOOK_POD_UID = "85d30f18-8bb9-4e7f-8629-575a8b75760b"
+HOOK_SYSTEM_ID = "1234567890"
+HOOK = ("--argo-hook", HOOK_PRIMARY, HOOK_CLUSTER_UID, HOOK_POD_UID, HOOK_SYSTEM_ID)
+
+
 class RotationGrantTests(unittest.TestCase):
+    def test_argo_hook_is_scoped_and_ordered_before_rotation(self):
+        manifests = render(values("radar")).stdout
+        result = rotation_sql(manifests, hook=HOOK)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        rendered = {doc["kind"]: doc for doc in yaml.safe_load_all(result.stdout)}
+        self.assertEqual(set(rendered), {"ConfigMap", "ServiceAccount", "Role", "RoleBinding", "Job"})
+        config = rendered["ConfigMap"]
+        self.assertTrue(config["immutable"])
+        self.assertIn(f"IS DISTINCT FROM '{HOOK_SYSTEM_ID}'", config["data"]["grants.sql"])
+        self.assertIn("SET LOCAL lock_timeout = '5s'", config["data"]["grants.sql"])
+        rules = rendered["Role"]["rules"]
+        by_resource = {rule["resources"][0]: rule for rule in rules}
+        self.assertEqual(set(by_resource), {"clusters", "databaseroles", "pods", "pods/exec"})
+        self.assertEqual(by_resource["databaseroles"]["verbs"], ["list"])
+        self.assertEqual(by_resource["clusters"]["resourceNames"], ["k3s-postgres"])
+        self.assertEqual(by_resource["pods"]["resourceNames"], [HOOK_PRIMARY])
+        self.assertEqual(by_resource["pods/exec"]["resourceNames"], [HOOK_PRIMARY])
+        self.assertEqual(set(by_resource["pods/exec"]["verbs"]), {"create", "get"})
+        wave = "argocd.argoproj.io/sync-wave"
+        job = rendered["Job"]
+        self.assertEqual(job["metadata"]["annotations"]["argocd.argoproj.io/hook"], "Sync")
+        job_wave = int(job["metadata"]["annotations"][wave])
+        for kind in set(rendered) - {"Job"}:
+            self.assertLess(int(rendered[kind]["metadata"]["annotations"][wave]), job_wave)
+        static_role = next(d for d in yaml.safe_load_all(manifests) if d["kind"] == "SecretBackendStaticRole")
+        self.assertLess(job_wave, int(static_role["metadata"]["annotations"][wave]))
+        pod = job["spec"]["template"]["spec"]
+        self.assertEqual(pod["serviceAccountName"], rendered["ServiceAccount"]["metadata"]["name"])
+        self.assertEqual(pod["volumes"][0]["configMap"]["name"], config["metadata"]["name"])
+
+    def test_argo_hook_refuses_changed_primary_or_cnpg_ownership(self):
+        rendered = rotation_sql(render(values("radar")).stdout, hook=HOOK)
+        self.assertEqual(rendered.returncode, 0, rendered.stderr)
+        manifests = {doc["kind"]: doc for doc in yaml.safe_load_all(rendered.stdout)}
+        job = manifests["Job"]
+        expected_sql = manifests["ConfigMap"]["data"]["grants.sql"]
+        container = job["spec"]["template"]["spec"]["containers"][0]
+        env = {entry["name"]: entry["value"] for entry in container["env"]}
+        with tempfile.TemporaryDirectory(prefix="rotation-hook-") as directory:
+            kubectl = Path(directory) / "kubectl"
+            kubectl.write_text('''#!/bin/sh
+case "$*" in
+  *status.currentPrimary*) printf '%s' "$MOCK_CLUSTER" ;;
+  *databaseroles*) [ "$MOCK_OWNERS" != fail ] || exit 42; printf '%s' "$MOCK_OWNERS" ;;
+  *ownerReferences*) printf '%s' "$MOCK_POD" ;;
+  *' exec '*) cat; exit "$MOCK_PSQL_EXIT" ;;
+  *) exit 42 ;;
+esac
+''')
+            kubectl.chmod(0o700)
+            sql = Path(directory) / "grants.sql"
+            script = container["command"][-1].replace("/bin/kubectl", shlex.quote(str(kubectl))).replace(
+                "MIGRATION_PATH=/migration/grants.sql", f"MIGRATION_PATH={shlex.quote(str(sql))}")
+            observations = f"{HOOK_CLUSTER_UID}/{HOOK_PRIMARY}/{HOOK_PRIMARY}/{HOOK_SYSTEM_ID}/"
+            defaults = {"PATH": "/usr/bin:/bin:/sbin", "MOCK_CLUSTER": observations, "MOCK_OWNERS": "other/",
+                        "MOCK_POD": f"{HOOK_POD_UID}/{HOOK_CLUSTER_UID}", "MOCK_PSQL_EXIT": "0"}
+            for observed, contents, code, diagnostic, calls_psql in (
+                ({}, expected_sql, 0, "", True),
+                ({"MOCK_CLUSTER": f"{HOOK_CLUSTER_UID}/{HOOK_PRIMARY}/new-primary/{HOOK_SYSTEM_ID}/"},
+                 expected_sql, 1, "identity or primary changed", False),
+                ({"MOCK_CLUSTER": observations + "openbao_manager"}, expected_sql, 1, "still owns", False),
+                ({"MOCK_OWNERS": "other/k3s-postgres/"}, expected_sql, 1, "DatabaseRole owns", False),
+                ({"MOCK_OWNERS": "fail"}, expected_sql, 42, "", False),
+                ({"MOCK_POD": f"other-pod/{HOOK_CLUSTER_UID}"}, expected_sql, 1, "identity or ownership", False),
+                ({}, "wrong migration\n", 1, "does not match", False),
+                ({"MOCK_PSQL_EXIT": "3"}, expected_sql, 3, "", True),
+            ):
+                with self.subTest(observed=observed, diagnostic=diagnostic):
+                    sql.write_text(contents)
+                    result = subprocess.run(["/bin/sh", "-ec", script], text=True, capture_output=True,
+                                            env=env | defaults | observed, timeout=10)
+                    self.assertEqual(result.returncode, code, result.stderr)
+                    self.assertIn(diagnostic, result.stderr)
+                    self.assertEqual(result.stdout, expected_sql if calls_psql else "")
+
+    def test_argo_hook_requires_valid_identity_and_opted_in_login(self):
+        config = values("radar")
+        config["postgresConsumer"]["roleSyncWave"] = "-11"
+        for text, target, diagnostic in (
+            ("", HOOK, "no opted-in logins"),
+            ("", (*HOOK[:3], "not-a-uid", HOOK_SYSTEM_ID), "Kubernetes UUID"),
+            ("", (*HOOK[:-1], "1234;"), "unsigned 64-bit decimal"),
+            (render(config).stdout, HOOK, "sync wave -10 or later"),
+        ):
+            with self.subTest(diagnostic=diagnostic):
+                result = rotation_sql(text, hook=target)
+                self.assertEqual(result.returncode, 1)
+                self.assertIn(diagnostic, result.stderr)
+                self.assertEqual(result.stdout, "")
+
     def test_rendered_consumers_opt_in_without_a_second_list(self):
         ordinary = copy.deepcopy(baseline("radar")[0])
         ordinary["metadata"]["name"] = "ordinary"

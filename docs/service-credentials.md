@@ -78,7 +78,22 @@ python3 07-k3s-postgres/tools/render_rotation_grants.py \
   rendered-grafana.yaml rendered-radar.yaml other-databases.yaml
 ```
 
-The migration requires the restricted manager login to exist. It must run as `postgres` in the `postgres` maintenance database on the verified writable primary, not inside a consumer database. It creates missing app logins without passwords and preserves existing app login passwords and ownership. It refuses mismatched ownership, privileged targets, and conflicting grants from other grantors. This is an add/update preview: disabling a consumer does not revoke existing membership. Before activation, define how the writer identifies and revokes stale grants that it owns, without touching unrelated memberships. It is not wired to a Sync hook yet: the manager ownership handoff, verified primary destination, OpenBao allowlist derivation, rotation readiness gate across Applications, and real GitOps restore test must happen before any live use. In particular, do not pipe this draft output into production while CloudNativePG still owns the manager's memberships.
+The migration requires the restricted manager login to exist. It must run as `postgres` in the `postgres` maintenance database on the verified writable primary, not inside a consumer database. It creates missing app logins without passwords and preserves existing app login passwords and ownership. It refuses mismatched ownership, privileged targets, and conflicting grants from other grantors. This is an add/update preview: disabling a consumer does not revoke existing membership. Before activation, define how the writer identifies and revokes stale grants that it owns, without touching unrelated memberships. The optional sandbox Sync hook below checks the primary destination. The manager ownership handoff, OpenBao allowlist derivation, rotation readiness gate across production Applications, and real GitOps restore test are still required before any live use. Do not pipe this draft output into production while CloudNativePG still owns the manager's memberships.
+
+### Isolated Argo Sync hook
+
+Use a dedicated Kubernetes and OpenBao sandbox, not merely a separate namespace on the live platform: static roles are cluster-scoped. For a single-instance disposable CNPG Cluster with an existing restricted `openbao_manager` login not managed by CNPG, render the migration as an Argo CD Sync hook. Supply the approved Pod name and UID, Kubernetes Cluster UID and PostgreSQL system identifier:
+
+```bash
+python3 07-k3s-postgres/tools/render_rotation_grants.py \
+  --namespace "$sandbox_namespace" --cluster "$sandbox_cluster" \
+  --argo-hook "$primary_pod" "$cluster_uid" "$primary_pod_uid" "$system_id" \
+  rendered-grafana.yaml rendered-radar.yaml other-databases.yaml
+```
+
+The hook has no direct Kubernetes Secret API permissions. It limits pod exec to the named primary, checks that current and target primary agree, rejects inline and standalone CNPG management of the manager login, verifies the approved Cluster and Pod identities, and checks the SQL digest before opening a local Unix-socket `psql` session. The transaction checks the PostgreSQL system identifier and writability again and bounds lock and statement waits. The API checks are snapshots, not a failover fence; the sandbox must exclude concurrent Pod replacement or operator changes during execution. The hook never automatically picks a new target. Pod exec is database-admin authority: review the generated Job (including its digest) and inputs together at pinned revisions, use a platform-owned Application in a trusted namespace without app workload creation rights, and remove the binding at retirement. Input matching and a digest do not establish app entitlement.
+
+Include the generated resources and the matching static roles (wave `-10` or later) in a **single isolated Argo Application**, and run a full Sync. The hook's configuration and RBAC are in wave `-12`; the hook is in `-11`. This orders initial creation in that Application only: selective sync skips hooks, and OpenBao can still rotate already-created roles independently. Production Applications do not consume this generated output and no automated credential handoff is performed here.
 
 **Acceptance in an isolated GitOps environment:**
 

@@ -12,6 +12,8 @@ from typing import Any
 import yaml
 from yaml.nodes import MappingNode
 
+from rotation_grant_hook import Target, manifests
+
 IDENTIFIER = re.compile(r"[a-z_][a-z0-9_]{0,62}\Z")
 RESERVED_ROLES = {
     "app",
@@ -75,6 +77,8 @@ def select_bindings(
     cluster: str,
     backend: str,
     provider: str,
+    *,
+    hook: bool = False,
 ) -> dict[str, str]:
     databases: dict[str, Database] = {}
     opted_in: dict[str, Database] = {}
@@ -134,6 +138,18 @@ def select_bindings(
                 )
                 if target_connection != (cluster, backend, provider):
                     continue
+                if hook:
+                    annotations = mapping(metadata.get("annotations", {}))
+                    wave = annotations.get("argocd.argoproj.io/sync-wave", "0")
+                    if (
+                        "argocd.argoproj.io/hook" in annotations
+                        or not isinstance(wave, str)
+                        or not re.fullmatch(r"-?[0-9]+", wave)
+                        or not -10 <= int(wave) < 2**31
+                    ):
+                        raise ValueError(
+                            f"static role {name} must use sync wave -10 or later and not be a hook"
+                        )
                 if for_provider.get("name") != name:
                     raise ValueError(f"static role {name} must match its provider name")
                 static_roles[name] = identifier(for_provider.get("username"))
@@ -161,7 +177,7 @@ def select_bindings(
     return {database.owner: identifier(database.name) for database in opted_in.values()}
 
 
-def render_sql(logins: dict[str, str]) -> str:
+def render_sql(logins: dict[str, str], target: Target | None = None) -> str:
     if not logins:
         return "-- No opted-in PostgreSQL logins.\n"
     # Names are restricted to simple identifiers before interpolation.
@@ -169,8 +185,17 @@ def render_sql(logins: dict[str, str]) -> str:
         f"('{identifier(login)}', '{identifier(database)}')"
         for login, database in sorted(logins.items())
     )
+    target_guard = ""
+    if target is not None:
+        target_guard = f"""    IF (SELECT system_identifier::text FROM pg_catalog.pg_control_system())
+       IS DISTINCT FROM '{target.system_id}' THEN
+        RAISE EXCEPTION 'PostgreSQL system identifier does not match the approved Cluster';
+    END IF;
+"""
     return f"""BEGIN;
 SET LOCAL search_path = pg_catalog;
+SET LOCAL lock_timeout = '5s';
+SET LOCAL statement_timeout = '15s';
 DO $rotation_grants$
 DECLARE
     binding record;
@@ -181,7 +206,7 @@ BEGIN
        OR pg_catalog.current_database() <> 'postgres' THEN
         RAISE EXCEPTION 'Run rotation grants as postgres in the postgres database on the writable primary';
     END IF;
-    SELECT oid INTO manager FROM pg_catalog.pg_roles
+{target_guard}    SELECT oid INTO manager FROM pg_catalog.pg_roles
     WHERE rolname = 'openbao_manager' AND rolcanlogin AND rolcreaterole
       AND NOT (rolsuper OR rolreplication OR rolbypassrls OR rolcreatedb);
     IF NOT FOUND THEN
@@ -259,6 +284,12 @@ def main() -> None:
         type=Path,
         help="separate render file for each consumer or ordinary database source",
     )
+    parser.add_argument(
+        "--argo-hook",
+        nargs=4,
+        metavar=("PRIMARY", "CLUSTER_UID", "POD_UID", "SYSTEM_ID"),
+        help="emit a sandbox Argo Sync hook bound to an explicitly approved CNPG primary",
+    )
     args = parser.parse_args()
     try:
         sources = (
@@ -266,9 +297,33 @@ def main() -> None:
             for path in args.renders
         )
         logins = select_bindings(
-            sources, args.namespace, args.cluster, args.backend, args.provider
+            sources,
+            args.namespace,
+            args.cluster,
+            args.backend,
+            args.provider,
+            hook=args.argo_hook is not None,
         )
-        sys.stdout.write(render_sql(logins))
+        if args.argo_hook:
+            target = Target(
+                args.namespace,
+                args.cluster,
+                args.argo_hook[1],
+                args.argo_hook[0],
+                args.argo_hook[2],
+                args.argo_hook[3],
+            )
+            if not logins:
+                raise ValueError(
+                    "refusing to create a database-admin hook with no opted-in logins"
+                )
+            sys.stdout.write(
+                yaml.safe_dump_all(
+                    manifests(target, render_sql(logins, target)), sort_keys=False
+                )
+            )
+        else:
+            sys.stdout.write(render_sql(logins))
     except (OSError, ValueError, yaml.YAMLError) as exc:
         parser.exit(1, f"Cannot render rotation grants: {exc}\n")
 

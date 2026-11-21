@@ -175,7 +175,7 @@ class LocalPostgres:
         )
 
 
-def rendered_sql(env: dict[str, str]) -> tuple[str, list[str]]:
+def rendered_sql(env: dict[str, str], system_id: str) -> tuple[str, list[str]]:
     manifests = [
         render(
             values(login),
@@ -184,8 +184,20 @@ def rendered_sql(env: dict[str, str]) -> tuple[str, list[str]]:
         ).stdout
         for login in APP_ROLES
     ]
-    migration = rotation_sql(*manifests, env=env)
+    hook = (
+        "--argo-hook",
+        "k3s-postgres-1",
+        "fce60004-619e-42ac-9888-117201afcbcb",
+        "85d30f18-8bb9-4e7f-8629-575a8b75760b",
+        system_id,
+    )
+    migration = rotation_sql(*manifests, env=env, hook=hook)
     migration.check_returncode()
+    (config,) = (
+        doc
+        for doc in yaml.safe_load_all(migration.stdout)
+        if doc["kind"] == "ConfigMap"
+    )
     statements = []
     for manifest in manifests:
         (role,) = (
@@ -196,11 +208,11 @@ def rendered_sql(env: dict[str, str]) -> tuple[str, list[str]]:
         (statement,) = role["spec"]["forProvider"]["rotationStatements"]
         (sql,) = json.loads(statement)
         statements.append(sql.replace("{{password}}", ROTATED_PASSWORD))
-    return migration.stdout, statements
+    migration_sql: str = config["data"]["grants.sql"]
+    return migration_sql, statements
 
 
 def check_restore(pg: LocalPostgres, work: Path) -> None:
-    migration, rotation_statements = rendered_sql(pg.env)
     source, restored = work / "source", work / "restored"
     pg.run(
         "initdb",
@@ -251,6 +263,18 @@ def check_restore(pg: LocalPostgres, work: Path) -> None:
         FROM pg_auth_members WHERE member = 'openbao_manager'::regrole ORDER BY 1;
     """
     with pg.running(restored):
+        system_id = pg.query("SELECT system_identifier FROM pg_control_system();")
+        migration, rotation_statements = rendered_sql(pg.env, system_id)
+        wrong_id = "2" if system_id == "1" else "1"
+        wrong_cluster, _ = rendered_sql(pg.env, wrong_id)
+        try:
+            pg.query(wrong_cluster)
+        except subprocess.CalledProcessError as exc:
+            assert (
+                exc.returncode == 3
+            ), "psql must reject a mismatched system identifier"
+        else:
+            raise AssertionError("migration accepted a mismatched system identifier")
         assert (
             pg.query(membership) == "radar|f|t|t"
         ), "backup did not contain the expected failing grants"
