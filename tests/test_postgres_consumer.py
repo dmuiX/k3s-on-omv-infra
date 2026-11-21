@@ -55,13 +55,13 @@ def values(consumer):
     return {"postgresConsumer": result}
 
 
-def render(config, namespace="radar", check=True):
+def render(config, namespace="radar", check=True, *, env=None):
     with tempfile.TemporaryDirectory(prefix="postgres-consumer-") as directory:
         path = Path(directory) / "values.yaml"
         path.write_text(yaml.safe_dump(config))
         result = subprocess.run(
             ["helm", "template", "consumer", str(CHART), "--namespace", namespace, "-f", str(path)],
-            text=True, capture_output=True,
+            text=True, capture_output=True, env=env,
         )
     if check and result.returncode:
         raise AssertionError(result.stderr)
@@ -132,7 +132,7 @@ def keyed(docs):
              doc["metadata"]["name"]): doc for doc in docs}
 
 
-def rotation_sql(*renders):
+def rotation_sql(*renders, env=None):
     with tempfile.TemporaryDirectory(prefix="rotation-grants-") as directory:
         paths = []
         for i, render_text in enumerate(renders):
@@ -142,7 +142,7 @@ def rotation_sql(*renders):
         return subprocess.run(
             [sys.executable, str(ROOT / "07-k3s-postgres/tools/render_rotation_grants.py"),
              "--namespace", "cloudnative-pg", "--cluster", "k3s-postgres", *paths],
-            text=True, capture_output=True,
+            text=True, capture_output=True, env=env,
         )
 
 

@@ -96,6 +96,26 @@ inherited access, access obtained by setting a different role, and a conflicting
 grantor each abort the whole migration. This opt-in SQL check is not CI or native
 CloudNativePG/OpenBao acceptance and must not be run against a live database.
 
+### Native physical PostgreSQL restore
+
+With Helm, Python/PyYAML and native PostgreSQL 18 executables on a non-root test
+host, run the physical restore check:
+
+```sh
+python3 tests/rotation_grants_restore.py /path/to/postgresql-18/bin
+```
+
+This starts only disposable clusters under a private `/tmp` directory, disables
+TCP, gives its subprocesses a scratch home and a minimal environment, and uses
+synthetic test passwords. It takes a `pg_basebackup` of a database with one missing and one
+incorrect grant, verifies it with `pg_verifybackup`, and boots the copied data
+directory. It applies the generated migration twice, runs the exact rotation SQL
+from both Helm renders over a SCRAM-authenticated connection as the restricted
+manager, and verifies that both app roles
+can log in with the rotated passwords and read their restored marker. This proves
+the native SQL and physical restore behavior, not Argo CD execution or CloudNativePG,
+Barman and OpenBao controller integration. CI does not invoke this opt-in check.
+
 ## Native timezone admission tests
 
 The `timezone-admission` job executes all tests in `test_timezone_defaults.py`
