@@ -1,0 +1,11 @@
+{
+  "istio": "1.32.0",
+  "proxy": "74027068e941c7a295be2bb7938f53fe4722a593",
+  "proxy_tar_sha256": "6c3036386865153a891077871448ed644fae49edf12fcd8a46a013cb6db79374",
+  "envoy": "56e0748e3deaeb8af7efcbf2f97329bb15539767",
+  "envoy_tar_sha256": "2bdd7974dee1c87bcf69fdebb0d1b9e93b688dbec03ec8614d5e2a8b8856c8cf",
+  "toolchain_tag": "release-1.32-f03dc190ffca2d139d72fd1c04d2fd9ec78cb23e",
+  "toolchain": "registry.istio.io/testing/build-tools-proxy@sha256:9e67e35ccc9fd81a8c59bc399a602024d972da254dda755904e1cb82c73ebf39",
+  "stock_tag": "1.32.0-distroless",
+  "stock": "docker.io/istio/proxyv2@sha256:9cd1f1cc261f3fe250ab483543e7256c39d5871eae5f1817c0809eff09e365d4"
+}
