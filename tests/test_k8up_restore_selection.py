@@ -92,6 +92,28 @@ esac
                 self.assertEqual(log.decode(), f'snapshot_id={ID} time={chosen["time"]}\n')
                 self.scratch.mkdir()
 
+    def test_expected_snapshot_never_falls_back_or_restores_a_different_backup(self):
+        wanted = snapshot(STREAM, time=timestamp(-100))
+        newer = snapshot(STREAM, id='de' * 32)
+        stale = dict(wanted, time=timestamp(-4000))
+        wrong_path = dict(wanted, paths=[CANARY])
+        wrong_tags = dict(wanted, tags=[])
+        for expected, snapshots in ((ID, []), (ID, [newer]), (ID, [wanted, newer]),
+                                    (ID, [stale]), (ID, [wrong_path]), (ID, [wrong_tags]),
+                                    ('', [wanted]), (ID[:8], [wanted]), ('--latest', [wanted])):
+            with self.subTest(expected=expected):
+                self.env['EXPECTED_RESTIC_SNAPSHOT_ID'] = expected
+                self.assertEqual(self.exercise(snapshots, 'prometheus-stream'), b'')
+                shutil.rmtree(self.scratch)
+                self.scratch.mkdir()
+        self.assertNotIn(' restore ', (self.root / 'calls').read_text())
+        self.env['EXPECTED_RESTIC_SNAPSHOT_ID'] = ID
+        log = self.exercise([wanted], 'prometheus-stream', success=True)
+        self.assertIn(f'snapshot_id={ID}'.encode(), log)
+        calls = (self.root / 'calls').read_text().splitlines()
+        self.assertTrue(calls[-2].endswith(f' snapshots --json {ID}'))
+        self.assertTrue(calls[-1].endswith(f' {ID}'))
+
     def test_no_eligible_snapshot(self):
         good = snapshot(STREAM, time=timestamp(-400))
         for records in ([], {}, [snapshot(STREAM, time=timestamp(-4000))],
@@ -179,6 +201,12 @@ esac
                     '--tag', ','.join(TAGS), data=b'synthetic bytes')
         self.restic('backup', '--stdin', '--stdin-filename', '/other', data=b'unrelated')
         snapshots = json.loads(self.restic('snapshots', '--json', '--path', STREAM))
+        self.restic('backup', '--stdin', '--stdin-filename', STREAM, '--host', 'kube-prometheus-stack',
+                    '--tag', ','.join(TAGS), data=b'newer synthetic bytes')
+        older, newer = sorted(json.loads(self.restic('snapshots', '--json', '--path', STREAM)),
+                              key=lambda snap: snap['time'])
+        self.assertEqual(older['id'], snapshots[0]['id'])
+        self.assertGreater(dt.datetime.fromisoformat(newer['time']), dt.datetime.fromisoformat(older['time']))
         # Make repository writes (including a transient lock) impossible for non-root callers.
         dirs = [self.repo, *(p for p in self.repo.rglob('*') if p.is_dir())]
         for p in dirs:
@@ -187,9 +215,10 @@ esac
         (self.scratch / 'lost+found').mkdir()
         del self.env['RESTIC_PASSWORD_FILE']
         self.env['RESTIC_PASSWORD'] = 'disposable-test-only'
+        record, = snapshots
+        self.env['EXPECTED_RESTIC_SNAPSHOT_ID'] = record['id']
         log = self.invoke('prometheus-stream', True)
         self.assertEqual((self.scratch / 'restored' / STREAM[1:]).read_bytes(), b'synthetic bytes')
-        record, = snapshots
         self.assertEqual(log.decode(), f'snapshot_id={record["id"]} time={record["time"]}\n')
         seconds = int(dt.datetime.fromisoformat(record['time'].replace('Z', '+00:00')).timestamp())
         self.assertEqual((self.scratch / 'snapshot-seconds').read_text(), f'{seconds}\n')

@@ -101,6 +101,23 @@ class RestoreTestManifests(unittest.TestCase):
                     self.assertEqual(stages[1]['command'][-2:], ['/tools/verify.py', 'prometheus'])
                     self.assertEqual(stages[-1]['command'], ['/bin/sh', '/tools/read-samples.sh'])
 
+    def test_restore_mounts_reviewed_pin_script_without_a_default_pin(self):
+        script = (ROOT / 'adapters/k8up-restore/restore.sh').read_text()
+        for ns, docs in self.docs.items():
+            with self.subTest(namespace=ns):
+                pod = docs['CronJob', NAME]['spec']['jobTemplate']['spec']['template']['spec']
+                restore, = [c for c in pod['initContainers'] if c['name'] == 'restore']
+                self.assertEqual(restore['command'], ['/bin/sh', '/tools/restore.sh'])
+                self.assertNotIn('EXPECTED_RESTIC_SNAPSHOT_ID', {e['name'] for e in restore['env']})
+                mount, = [m for m in restore['volumeMounts'] if m['mountPath'] == '/tools']
+                self.assertEqual(mount, {'name': 'tools', 'mountPath': '/tools', 'readOnly': True})
+                volume, = [v for v in pod['volumes'] if v['name'] == mount['name']]
+                config = volume['configMap']['name']
+                self.assertRegex(config, r'^k8up-restore-tools-[a-z0-9]{10}$')
+                tools = docs['ConfigMap', config]
+                self.assertEqual(tools['metadata']['namespace'], ns)
+                self.assertEqual(tools['data']['restore.sh'], script)
+
     def test_network_isolation_in_infra_render(self):
         for ns, docs in self.docs.items():
             job = docs['CronJob', NAME]['spec']['jobTemplate']['spec']
