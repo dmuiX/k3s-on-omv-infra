@@ -47,7 +47,7 @@ spec:
                 memory: 256Mi
   - repoURL: https://blob.istio.io/istio-release/charts
     chart: cni
-    targetRevision: 1.31.2
+    targetRevision: 1.32.0
     helm:
       releaseName: istio-cni
       valuesObject:
@@ -63,7 +63,7 @@ spec:
             memory: 256Mi
   - repoURL: https://blob.istio.io/istio-release/charts
     chart: ztunnel
-    targetRevision: 1.31.2
+    targetRevision: 1.32.0
     helm:
       releaseName: ztunnel
       valuesObject:
