@@ -26,6 +26,7 @@ EXPECTED_INFRA = {
   "vault-secrets-operator" => 2,
   "cloudnative-pg" => 2,
   "barman-cloud" => 2,
+  "tekton-pipelines" => 2,
   "istio-core" => -3,
   "istio-ambient" => -2,
   "provider-vault" => 3,
