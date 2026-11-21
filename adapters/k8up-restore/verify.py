@@ -104,13 +104,13 @@ def extract(data: BinaryIO, dest: Path) -> None:
 def verify(mode: str, scratch: Path) -> None:
     restored = scratch / "restored"
     require(stat.S_ISDIR(restored.lstat().st_mode))
-    if mode == "canary":
+    if mode == "backup-validation":
         for name in ("data", "k8up-validation-canary"):
             restored = restored / name
             require(stat.S_ISDIR(restored.lstat().st_mode))
         with open_regular(restored / "marker.txt") as marker:
             require(marker.read(len(MARKER) + 1) == MARKER)
-        print("stage=canary result=PASS")
+        print("stage=backup-validation result=PASS")
         return
     require(mode == "prometheus")
     with os.scandir(restored) as entries:

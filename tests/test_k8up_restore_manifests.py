@@ -10,7 +10,8 @@ import yaml
 from workload_contracts import public_path, render_kustomization
 
 ROOT = Path(__file__).resolve().parents[1]
-NAME = 'k8up-restore-test'
+POD_NAME = 'k8up-restore-test'
+CRON_NAME = {'backup-validation': 'k8up-backup-validation', 'kube-prometheus-stack': 'prometheus-restore-test'}
 LABEL = 'app.kubernetes.io/name'
 BACKUP = '08-backup-validation'
 PROM = '09-kube-prometheus-stack'
@@ -38,11 +39,12 @@ class RestoreTestManifests(unittest.TestCase):
                 source, = [s for s in app['spec']['sources'] if s.get('path') == str(path)]
                 self.assertNotIn('helm', source)
                 self.assertEqual(app['spec']['destination']['namespace'], ns)
-                self.assertEqual(docs['CronJob', NAME]['metadata']['namespace'], ns)
-                cron = docs['CronJob', NAME]['spec']; job = cron['jobTemplate']['spec']
+                metadata = docs['CronJob', CRON_NAME[ns]]['metadata']
+                self.assertEqual(metadata['namespace'], ns)
+                cron = docs['CronJob', CRON_NAME[ns]]['spec']; job = cron['jobTemplate']['spec']
                 self.assertIs(cron['suspend'], True); self.assertEqual(cron['timeZone'], 'Europe/Berlin')
                 self.assertNotIn('argocd.argoproj.io/ignore-healthcheck',
-                                 docs['CronJob', NAME]['metadata'].get('annotations', {}))
+                                 metadata.get('annotations', {}))
                 self.assertEqual(cron['concurrencyPolicy'], 'Forbid')
                 self.assertRegex(cron['schedule'], r'^\d+ \d+ \* \* [0-6]$')
                 schedules.add(cron['schedule'])
@@ -59,7 +61,7 @@ class RestoreTestManifests(unittest.TestCase):
     def test_scratch_and_credential_boundaries(self):
         for ns, (_, repo, secret, size) in TARGETS.items():
             with self.subTest(namespace=ns):
-                docs = self.docs[ns]; pod = docs['CronJob', NAME]['spec']['jobTemplate']['spec']['template']['spec']
+                docs = self.docs[ns]; pod = docs['CronJob', CRON_NAME[ns]]['spec']['jobTemplate']['spec']['template']['spec']
                 vols = {v['name']: v for v in pod['volumes']}
                 self.assertEqual(set(vols), {'repository', 'scratch', 'tools'})
                 self.assertEqual(vols['repository']['persistentVolumeClaim'], {'claimName': repo, 'readOnly': True})
@@ -91,9 +93,9 @@ class RestoreTestManifests(unittest.TestCase):
                     self.assertFalse(any('valueFrom' in e for e in c.get('env', [])))
                     self.assertNotIn('repository', [m['name'] for m in c['volumeMounts']])
                 if ns == 'backup-validation':
-                    self.assertEqual(restore['args'], ['canary', '172800'])
+                    self.assertEqual(restore['args'], ['backup-validation', '172800'])
                     self.assertEqual([c['name'] for c in stages], ['restore', 'verify'])
-                    self.assertEqual(stages[-1]['args'], ['canary'])
+                    self.assertEqual(stages[-1]['args'], ['backup-validation'])
                 else:
                     self.assertEqual(pod['nodeSelector'], {'monitoring': 'true'})
                     self.assertEqual(restore['args'], ['prometheus-stream', '691200'])
@@ -103,19 +105,19 @@ class RestoreTestManifests(unittest.TestCase):
 
     def test_network_isolation_in_infra_render(self):
         for ns, docs in self.docs.items():
-            job = docs['CronJob', NAME]['spec']['jobTemplate']['spec']
+            job = docs['CronJob', CRON_NAME[ns]]['spec']['jobTemplate']['spec']
             pods = [job['template']]
             if ns == 'backup-validation':
                 pods.append(self.seed['spec']['template'])
                 for name in ('allow-backup-validation-egress', 'allow-backup-validation-metrics'):
                     selector = docs['NetworkPolicy', name]['spec']['podSelector']
-                    self.assertIn({'key': LABEL, 'operator': 'NotIn', 'values': [NAME]}, selector['matchExpressions'])
+                    self.assertIn({'key': LABEL, 'operator': 'NotIn', 'values': [POD_NAME]}, selector['matchExpressions'])
             for pod in pods:
-                self.assertEqual(pod['metadata']['labels'][LABEL], NAME)
+                self.assertEqual(pod['metadata']['labels'][LABEL], POD_NAME)
                 self.assertEqual(pod['metadata']['labels']['istio.io/dataplane-mode'], 'none')
             policy = docs['NetworkPolicy', 'isolate-k8up-restore-test']
             self.assertEqual(policy['metadata']['namespace'], ns)
-            self.assertEqual(policy['spec'], {'podSelector': {'matchLabels': {LABEL: NAME}},
+            self.assertEqual(policy['spec'], {'podSelector': {'matchLabels': {LABEL: POD_NAME}},
                              'policyTypes': ['Ingress', 'Egress'], 'ingress': [], 'egress': []})
 
     def test_one_shot_seed_is_confined_and_non_destructive(self):

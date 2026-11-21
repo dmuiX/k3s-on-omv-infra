@@ -36,35 +36,35 @@ class RestoreTest(unittest.TestCase):
         self.marker = self.restored / "data/k8up-validation-canary/marker.txt"
         (self.scratch / "snapshot-seconds").write_text("1710000100\n")
 
-    def test_canary_compares_known_bytes_not_a_restored_checksum(self) -> None:
+    def test_fixture_compares_known_bytes_not_a_restored_checksum(self) -> None:
         self.marker.parent.mkdir(parents=True)
         for bad in (b"", b"wrong\n", MARKER[:-1], MARKER + b"x"):
             with self.subTest(bad=bad):
                 self.marker.write_bytes(bad)
                 with self.assertRaises(ValueError):
-                    verify.verify("canary", self.scratch)
+                    verify.verify("backup-validation", self.scratch)
         self.marker.write_bytes(MARKER)
         with redirect_stdout(io.StringIO()) as log:
-            verify.verify("canary", self.scratch)
-        self.assertEqual(log.getvalue(), "stage=canary result=PASS\n")
+            verify.verify("backup-validation", self.scratch)
+        self.assertEqual(log.getvalue(), "stage=backup-validation result=PASS\n")
 
-    def test_canary_does_not_follow_marker_or_ancestor_links(self) -> None:
+    def test_fixture_does_not_follow_marker_or_ancestor_links(self) -> None:
         outside = self.scratch / "source"
         outside.mkdir()
         (outside / "marker.txt").write_bytes(MARKER)
         self.marker.parent.parent.mkdir()
         self.marker.parent.symlink_to(outside)
         with self.assertRaises(ValueError):
-            verify.verify("canary", self.scratch)
+            verify.verify("backup-validation", self.scratch)
         self.marker.parent.unlink()
         self.marker.parent.mkdir()
         self.marker.symlink_to(outside / "marker.txt")
         with self.assertRaises(ValueError):
-            verify.verify("canary", self.scratch)
+            verify.verify("backup-validation", self.scratch)
         self.marker.unlink()
         os.link(outside / "marker.txt", self.marker)
         with self.assertRaises(ValueError):
-            verify.verify("canary", self.scratch)
+            verify.verify("backup-validation", self.scratch)
 
     def make_snapshot(self, member: tarfile.TarInfo | None = None) -> None:
         # Exactly snapshot.py's format (PAX fractional mtimes, single root, w|).
