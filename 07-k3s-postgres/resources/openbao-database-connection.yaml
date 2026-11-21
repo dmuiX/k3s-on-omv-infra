@@ -8,6 +8,7 @@ spec:
     backend: database
     name: k3s-postgres
     allowedRoles:
+      - gitea
       - grafana
       - radar
     postgresql:

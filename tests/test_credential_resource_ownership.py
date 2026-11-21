@@ -23,6 +23,10 @@ class CredentialResourceOwnership(unittest.TestCase):
              '4ca28d3de16f42353f2035f148fd56391b2aa861311fac82a8008cfc739d9f7b'),
         ):
             doc, = documents(path)
+            if doc['kind'] == 'SecretBackendConnection':
+                roles = doc['spec']['forProvider']['allowedRoles']
+                self.assertEqual(roles, ['gitea', 'grafana', 'radar'])
+                roles.remove('gitea')
             self.assertEqual(hashlib.sha256(json.dumps(doc, sort_keys=True).encode()).hexdigest(), expected)
         self.assertFalse(any(d['kind'] == 'SecretBackendConnection' for d in
                              documents('07-k3s-postgres/resources/credentials.yaml')))
