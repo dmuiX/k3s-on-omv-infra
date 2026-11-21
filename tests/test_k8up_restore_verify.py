@@ -20,13 +20,15 @@ assert spec and spec.loader
 verify = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(verify)
 
-SNAP = "20261015T120000Z-123abc"
+SNAP = "20261015T120000Z-0123456789abcdef"
+LEGACY_SNAP = "20261015T120000Z-123abc"
 BLOCK = "01ARZ3NDEKTSV4RRFFQ69G5FAV"
 MARKER = b"k8up-validation-canary:v1\n"
 
 
 class RestoreTest(unittest.TestCase):
     def setUp(self) -> None:
+        self.enterContext(patch.dict(os.environ, PROMETHEUS_EXPECTED_SNAPSHOT=SNAP))
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
         self.scratch = Path(tmp.name)
@@ -37,6 +39,7 @@ class RestoreTest(unittest.TestCase):
         (self.scratch / "snapshot-seconds").write_text("1710000100\n")
 
     def test_fixture_compares_known_bytes_not_a_restored_checksum(self) -> None:
+        os.environ.pop("PROMETHEUS_EXPECTED_SNAPSHOT")
         self.marker.parent.mkdir(parents=True)
         for bad in (b"", b"wrong\n", MARKER[:-1], MARKER + b"x"):
             with self.subTest(bad=bad):
@@ -66,9 +69,9 @@ class RestoreTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             verify.verify("backup-validation", self.scratch)
 
-    def make_snapshot(self, member: tarfile.TarInfo | None = None) -> None:
+    def make_snapshot(self, member: tarfile.TarInfo | None = None, *, name: str = SNAP) -> None:
         # Exactly snapshot.py's format (PAX fractional mtimes, single root, w|).
-        root = self.scratch / SNAP
+        root = self.scratch / name
         chunk_dir = root / BLOCK / "chunks"
         chunk_dir.mkdir(parents=True, exist_ok=True)
         (chunk_dir / "000001").write_bytes(b"chunk")
@@ -93,6 +96,28 @@ class RestoreTest(unittest.TestCase):
         self.assertFalse((self.scratch / "read-samples.sh").exists())
         with self.assertRaises(FileExistsError):
             verify.verify("prometheus", self.scratch)
+
+    def test_missing_or_empty_pin_rejects_valid_archive_before_extraction(self) -> None:
+        self.make_snapshot()
+        os.environ.pop("PROMETHEUS_EXPECTED_SNAPSHOT")
+        self.rejected()
+        self.assertFalse((self.scratch / "tsdb").exists())
+        os.environ["PROMETHEUS_EXPECTED_SNAPSHOT"] = ""
+        self.rejected()
+        self.assertFalse((self.scratch / "tsdb").exists())
+
+    def test_pinned_root_must_match_before_extracting(self) -> None:
+        self.make_snapshot()
+        for expected in ("20261015T120000Z-fedcba9876543210", SNAP + "\n", f"../{SNAP}"):
+            with self.subTest(expected=expected), patch.dict(os.environ, PROMETHEUS_EXPECTED_SNAPSHOT=expected):
+                self.rejected()
+                self.assertFalse((self.scratch / "tsdb").exists())
+
+    def test_pin_rejects_legacy_root_even_if_equal(self) -> None:
+        self.make_snapshot(name=LEGACY_SNAP)
+        with patch.dict(os.environ, PROMETHEUS_EXPECTED_SNAPSHOT=LEGACY_SNAP):
+            self.rejected()
+        self.assertFalse((self.scratch / "tsdb").exists())
 
     def test_rejects_nested_special_files_and_ambiguous_members(self) -> None:
         chunk = f"{SNAP}/{BLOCK}/chunks/000002"
@@ -124,7 +149,8 @@ class RestoreTest(unittest.TestCase):
         for invalid in (gzip.compress(full), full[:1600], full + full):
             self.archive.write_bytes(invalid)
             self.rejected()
-            shutil.rmtree(self.scratch / "tsdb")
+            if (self.scratch / "tsdb").exists():
+                shutil.rmtree(self.scratch / "tsdb")
 
     def test_rejects_pax_overrides_and_oversize_extended_header(self) -> None:
         member = tarfile.TarInfo(f"{SNAP}/{BLOCK}/chunks/000002")

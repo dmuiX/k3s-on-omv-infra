@@ -3,6 +3,12 @@ kind: Kustomization
 namespace: kube-prometheus-stack
 resources:
   - ../../adapters/k8up-restore
+  - pipeline.yaml
+configMapGenerator:
+  - name: prometheus-backup-pipeline
+    files: [pipeline.py]
+    options:
+      immutable: true
 patches:
   - path: prometheus.patch
     target: {kind: CronJob, name: k8up-backup-validation}
