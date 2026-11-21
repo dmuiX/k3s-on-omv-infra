@@ -56,6 +56,46 @@ below describe public desired-state interfaces, **not current live health**.
 Every Infra child must be explicitly classified by the render contract; a new
 Application fails until its intended test scope is reviewed.
 
+## Isolated PostgreSQL 18 rotation-grant check
+
+From the repository root with Helm, Python with PyYAML, and Node/npm, render the
+synthetic consumer fixtures and execute the generated migration in memory. PGlite
+0.5.17 runs PostgreSQL 18.7 without a server connection. Only the temporary npm
+install needs network access; use an existing install as the first argument to
+`test_rotation_grants.mjs` to run fully offline.
+
+```sh
+(
+  set -eu
+  work=$(mktemp -d)
+  trap 'rm -rf "$work"' EXIT
+  npm install --prefix "$work" --ignore-scripts --no-audit --no-fund @electric-sql/pglite@0.5.17
+  PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=tests python3 - > "$work/grants.sql" <<'PY'
+import yaml
+from test_postgres_consumer import baseline, render, rotation_sql, values
+
+ordinary = baseline("radar")[0]
+ordinary["metadata"]["name"] = "ordinary"
+ordinary["spec"].update(name="ordinary", owner="ordinary")
+migration = rotation_sql(
+    render(values("grafana"), "kube-prometheus-stack").stdout,
+    render(values("radar")).stdout,
+    yaml.safe_dump(ordinary),
+)
+if migration.returncode:
+    raise SystemExit(migration.stderr)
+print(migration.stdout, end="")
+PY
+  node tests/test_rotation_grants.mjs "$work" "$work/grants.sql"
+)
+```
+
+The check verifies repeat application, restricted membership options, unchanged
+synthetic password, and no grant for the ordinary login. It also checks that
+inherited access, access obtained by setting a different role, and a conflicting
+grantor each abort the whole migration. This opt-in SQL check is not CI or native
+CloudNativePG/OpenBao acceptance and must not be run against a live database.
+
 ## Native timezone admission tests
 
 The `timezone-admission` job executes all tests in `test_timezone_defaults.py`

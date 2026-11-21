@@ -223,9 +223,11 @@ BEGIN
             WHERE roleid = target AND member = manager) <> 1 OR NOT EXISTS (
             SELECT FROM pg_catalog.pg_auth_members WHERE roleid = target AND member = manager
               AND admin_option AND NOT inherit_option AND NOT set_option
-        ) OR pg_catalog.pg_has_role(manager, target, 'SET') OR EXISTS (
+        ) OR pg_catalog.pg_has_role(manager, target, 'USAGE')
+          OR pg_catalog.pg_has_role(manager, target, 'SET') OR EXISTS (
             SELECT FROM pg_catalog.pg_roles r
-            WHERE pg_catalog.pg_has_role(manager, r.oid, 'SET')
+            WHERE r.oid <> manager
+              AND pg_catalog.pg_has_role(manager, r.oid, 'SET')
               AND pg_catalog.pg_has_role(r.oid, target, 'USAGE')
         ) THEN
             RAISE EXCEPTION 'Unexpected or conflicting grant for %', binding.login_name;
