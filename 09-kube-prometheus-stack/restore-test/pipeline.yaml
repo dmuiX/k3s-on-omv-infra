@@ -1,0 +1,372 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus-backup-pipeline
+automountServiceAccountToken: false
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: prometheus-backup-pipeline
+rules:
+  - apiGroups: [batch]
+    resources: [cronjobs]
+    resourceNames: [prometheus-restore-test]
+    verbs: [get]
+  - apiGroups: [apps]
+    resources: [deployments]
+    resourceNames: [prometheus-tsdb-snapshot]
+    verbs: [get]
+  - apiGroups: [k8up.io]
+    resources: [backups, checks]
+    verbs: [get, create]
+  - apiGroups: [batch]
+    resources: [jobs]
+    verbs: [get, create]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: prometheus-backup-pipeline
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: prometheus-backup-pipeline
+subjects:
+  - kind: ServiceAccount
+    name: prometheus-backup-pipeline
+    namespace: kube-prometheus-stack
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: prometheus-backup-pipeline-k8up
+  annotations:
+    argocd.argoproj.io/sync-wave: '-2'
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: kube-prometheus-stack
+    resourceRules:
+      - apiGroups: [k8up.io]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [backups, checks, prunes]
+        scope: Namespaced
+  variables:
+    - name: backup
+      expression: "request.resource.resource == 'backups'"
+    - name: create
+      expression: "request.operation == 'CREATE'"
+    - name: namePrefix
+      expression: "variables.backup ? 'pt-' : 'prometheus-check-'"
+    # The projected token supplies the same Pod UID as the downward API.
+    - name: podUID
+      expression: >-
+        has(request.userInfo.extra) && 'authentication.kubernetes.io/pod-uid' in request.userInfo.extra &&
+        size(request.userInfo.extra['authentication.kubernetes.io/pod-uid']) == 1 ?
+        request.userInfo.extra['authentication.kubernetes.io/pod-uid'][0] : ''
+    - name: common
+      expression: >-
+        {
+          'backend': dyn({
+            'repoPasswordSecretRef': dyn({'name': 'prometheus-k8up-repository', 'key': 'password'}),
+            'local': dyn({'mountPath': '/repository'}),
+            'volumeMounts': dyn([{'name': 'repository', 'mountPath': '/repository'}])
+          }),
+          'podConfigRef': dyn({'name': 'prometheus-k8up-omv'}),
+          'activeDeadlineSeconds': dyn(7200),
+          'failedJobsHistoryLimit': dyn(3),
+          'successfulJobsHistoryLimit': dyn(3)
+        }
+  validations:
+    # The verifier opens the read-only SMB repository without a Restic lock.
+    - expression: "!variables.create || request.resource.resource != 'prunes'"
+      message: "Prune is not allowed in the Prometheus repository namespace."
+    - expression: "variables.create || dyn(object.spec) == dyn(oldObject.spec)"
+      message: "The specs of Prometheus backup operations are immutable after creation."
+    - expression: "!variables.create || request.userInfo.username == 'system:serviceaccount:kube-prometheus-stack:prometheus-backup-pipeline'"
+      message: "Only the Prometheus backup pipeline can create a Backup or Check in this namespace."
+    - expression: >-
+        !variables.create || (
+          variables.podUID.matches('^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$') &&
+          object.metadata.name == variables.namePrefix + variables.podUID &&
+          ['generateName', 'labels', 'annotations', 'ownerReferences', 'finalizers'].all(k,
+            !(k in dyn(object.metadata))))
+      message: "K8up resources must use the pipeline run name and no controller metadata."
+    - expression: >-
+        !variables.create || !variables.backup ||
+        dyn(object.spec).size() == variables.common.size() + 2 &&
+        variables.common.all(k, k in dyn(object.spec) && dyn(object.spec)[k] == variables.common[k]) &&
+        dyn(object.spec).labelSelectors == [{'matchLabels': {'platform.k3s-on-omv.io/backup-set': 'prometheus-tsdb'}}] &&
+        dyn(object.spec).tags == ['prometheus-tsdb', 'prometheus-replica-0', 'backup-run-' + variables.podUID]
+      message: "Backup must use the fixed Prometheus repository, selector, limits and exact run tags."
+    - expression: >-
+        !variables.create || request.resource.resource != 'checks' || dyn(object.spec) == variables.common
+      message: "Check must use the fixed Prometheus repository, PodConfig and limits."
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: prometheus-backup-pipeline-k8up
+  annotations:
+    argocd.argoproj.io/sync-wave: '-1'
+spec:
+  policyName: prometheus-backup-pipeline-k8up
+  validationActions: [Deny]
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: prometheus-backup-pipeline-verify
+  annotations:
+    argocd.argoproj.io/sync-wave: '-2'
+spec:
+  failurePolicy: Fail
+  paramKind:
+    apiVersion: batch/v1
+    kind: CronJob
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: kube-prometheus-stack
+    resourceRules:
+      - apiGroups: [batch]
+        apiVersions: [v1]
+        operations: [CREATE]
+        resources: [jobs]
+        scope: Namespaced
+  matchConditions:
+    - name: pipeline-service-account
+      expression: "request.userInfo.username == 'system:serviceaccount:kube-prometheus-stack:prometheus-backup-pipeline'"
+  variables:
+    - name: job
+      expression: dyn(object.spec)
+    - name: source
+      expression: dyn(params.spec.jobTemplate.spec)
+    - name: podUID
+      expression: >-
+        has(request.userInfo.extra) && 'authentication.kubernetes.io/pod-uid' in request.userInfo.extra &&
+        size(request.userInfo.extra['authentication.kubernetes.io/pod-uid']) == 1 ?
+        request.userInfo.extra['authentication.kubernetes.io/pod-uid'][0] : ''
+    - name: generatedPodLabels
+      expression: >-
+        {
+          'job-name': object.metadata.name,
+          'batch.kubernetes.io/job-name': object.metadata.name,
+          'controller-uid': dyn(object.metadata).uid,
+          'batch.kubernetes.io/controller-uid': dyn(object.metadata).uid
+        }
+    - name: podLabels
+      expression: "variables.job.template.metadata.labels"
+    - name: sourcePodLabels
+      expression: "variables.source.template.metadata.labels"
+    - name: sourcePodAnnotations
+      expression: "variables.source.template.metadata.?annotations.orValue({})"
+    - name: podAnnotations
+      expression: "variables.job.template.metadata.?annotations.orValue({})"
+    - name: runKey
+      expression: "'platform.k3s-on-omv.io/backup-run-tag'"
+    - name: nativeKey
+      expression: "'platform.k3s-on-omv.io/native-snapshot'"
+    # Jobs (not CronJob jobTemplates) get these API defaults on creation.
+    - name: jobDefaults
+      expression: >-
+        {
+          'parallelism': dyn(1), 'completions': dyn(1), 'completionMode': dyn('NonIndexed'),
+          'suspend': dyn(false), 'manualSelector': dyn(false), 'podReplacementPolicy': dyn('TerminatingOrFailed')
+        }
+  validations:
+    - expression: >-
+        params != null && params.spec.suspend && params.metadata.name == 'prometheus-restore-test' &&
+        params.metadata.namespace == request.namespace && object.metadata.namespace == request.namespace &&
+        variables.podUID.matches('^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$') &&
+        object.metadata.name == 'prometheus-verify-' + variables.podUID
+      message: "Only a named verification Job cloned from the suspended Prometheus restore template is allowed."
+    # Job defaulting copies the pod labels to Job metadata before appending
+    # the generated labels, so both maps include those additions.
+    - expression: >-
+        ['generateName', 'ownerReferences', 'finalizers'].all(k, !(k in dyn(object.metadata))) &&
+        dyn(object.metadata).?annotations.orValue({}) == dyn(params.spec.jobTemplate.metadata).?annotations.orValue({}) &&
+        dyn(object.metadata).?labels.orValue({}) == variables.podLabels
+      message: "Verification Job metadata must match the trusted template and have no owners or finalizers."
+    - expression: >-
+        variables.source.all(k, k == 'template' || k == 'selector' ||
+          k in variables.job && variables.job[k] == variables.source[k]) &&
+        variables.job.all(k, k == 'template' || k == 'selector' || k in variables.source ||
+          k in variables.jobDefaults && variables.job[k] == variables.jobDefaults[k]) &&
+        variables.job.manualSelector == false &&
+        variables.job.selector == {'matchLabels': {'batch.kubernetes.io/controller-uid': dyn(object.metadata).uid}}
+      message: "Verification Job must preserve the trusted Job spec including its time and retention bounds."
+    - expression: "variables.job.template.spec == variables.source.template.spec"
+      message: "Verification pod spec must exactly match the trusted template."
+    - expression: >-
+        variables.job.template.metadata.all(k, k in ['labels', 'annotations'] ||
+          k in variables.source.template.metadata &&
+          variables.job.template.metadata[k] == variables.source.template.metadata[k]) &&
+        variables.source.template.metadata.all(k, k in ['labels', 'annotations'] ||
+          k in variables.job.template.metadata &&
+          variables.source.template.metadata[k] == variables.job.template.metadata[k]) &&
+        variables.sourcePodLabels.all(k, k in variables.podLabels && variables.podLabels[k] == variables.sourcePodLabels[k]) &&
+        variables.podLabels.all(k, k in variables.sourcePodLabels ||
+          k in variables.generatedPodLabels && variables.podLabels[k] == variables.generatedPodLabels[k])
+      message: "Verification pod metadata must match the template except for API-generated Job labels and permitted annotations."
+    - expression: >-
+        !(variables.runKey in variables.sourcePodAnnotations) && !(variables.nativeKey in variables.sourcePodAnnotations) &&
+        variables.podAnnotations.size() == variables.sourcePodAnnotations.size() + 2 &&
+        variables.sourcePodAnnotations.all(k, k in variables.podAnnotations && variables.podAnnotations[k] == variables.sourcePodAnnotations[k]) &&
+        variables.podAnnotations[?variables.runKey].orValue('') == 'backup-run-' + variables.podUID &&
+        variables.podAnnotations[?variables.nativeKey].orValue('').matches('^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{16}$')
+      message: "Verification pod annotations may only add the exact run tag and a valid native snapshot name."
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: prometheus-backup-pipeline-verify
+  annotations:
+    argocd.argoproj.io/sync-wave: '-1'
+spec:
+  policyName: prometheus-backup-pipeline-verify
+  validationActions: [Deny]
+  paramRef:
+    name: prometheus-restore-test
+    namespace: kube-prometheus-stack
+    parameterNotFoundAction: Deny
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: isolate-prometheus-backup-pipeline
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: prometheus-backup-pipeline
+  policyTypes: [Ingress, Egress]
+  ingress: []
+  # The separate Live companion owns the only allowance, to the in-cluster API.
+  # No public egress allowance; the K8up producer, not this runner, contacts Prometheus.
+  egress: []
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: prometheus-backup-pipeline
+  annotations:
+    argocd.argoproj.io/sync-wave: '1'
+spec:
+  # After the overnight backup window, before the evening Longhorn trim.
+  schedule: '55 11 * * *'
+  timeZone: Europe/Berlin
+  suspend: true
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 180
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 22800
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: prometheus-backup-pipeline
+            istio.io/dataplane-mode: none
+            sidecar.istio.io/inject: 'false'
+        spec:
+          serviceAccountName: prometheus-backup-pipeline
+          automountServiceAccountToken: false
+          enableServiceLinks: false
+          restartPolicy: Never
+          terminationGracePeriodSeconds: 10
+          nodeSelector: {monitoring: 'true'}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 2000
+            seccompProfile: {type: RuntimeDefault}
+          affinity:
+            podAffinity:
+              requiredDuringSchedulingIgnoredDuringExecution:
+                - labelSelector:
+                    matchLabels:
+                      statefulset.kubernetes.io/pod-name: prometheus-kube-prometheus-stack-prometheus-0
+                  topologyKey: kubernetes.io/hostname
+          initContainers:
+            - name: prepare-snapshots
+              image: python:3.13-slim-bookworm@sha256:a1165e272e578941b84abc79e4ab38a0305cd12803a5c4247979ac7655f4d641
+              command: [/usr/local/bin/python, -IB, -c]
+              args:
+                - |
+                  import os
+                  import sys
+
+                  flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+                  source_fd = os.open(sys.argv[1], flags)
+                  try:
+                      os.mkdir("snapshots", 0o750, dir_fd=source_fd)
+                  except FileExistsError:
+                      pass
+                  snapshot_fd = os.open("snapshots", flags, dir_fd=source_fd)
+                  if not os.access(".", os.R_OK | os.W_OK | os.X_OK, dir_fd=snapshot_fd):
+                      sys.exit("Prometheus snapshots directory is not usable")
+                - /source
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: {drop: [ALL]}
+              resources:
+                requests: {cpu: 25m, memory: 32Mi}
+                limits: {cpu: 250m, memory: 128Mi}
+              volumeMounts:
+                - {name: snapshots, mountPath: /source, subPath: prometheus-db}
+          containers:
+            - name: pipeline
+              image: python:3.13-slim-bookworm@sha256:a1165e272e578941b84abc79e4ab38a0305cd12803a5c4247979ac7655f4d641
+              command: [/usr/local/bin/python, -IB, /pipeline/pipeline.py]
+              env:
+                - name: POD_UID
+                  valueFrom:
+                    fieldRef: {fieldPath: metadata.uid}
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: {drop: [ALL]}
+              resources:
+                requests: {cpu: 25m, memory: 32Mi}
+                limits: {cpu: 250m, memory: 128Mi}
+              volumeMounts:
+                - {name: pipeline, mountPath: /pipeline, readOnly: true}
+                - {name: producer, mountPath: /producer, readOnly: true}
+                - {name: snapshots, mountPath: /snapshots, subPath: prometheus-db/snapshots}
+                - name: api-access
+                  mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+                  readOnly: true
+          volumes:
+            - name: pipeline
+              configMap: {name: prometheus-backup-pipeline, defaultMode: 0444}
+            - name: producer
+              configMap:
+                name: prometheus-snapshot-contract-v1
+                defaultMode: 0444
+                items: [{key: snapshot.py, path: snapshot.py}]
+            # Do not set fsGroup: kubelet must not recursively change the live TSDB.
+            - name: snapshots
+              persistentVolumeClaim:
+                claimName: prometheus-kube-prometheus-stack-prometheus-db-prometheus-kube-prometheus-stack-prometheus-0
+            - name: api-access
+              projected:
+                defaultMode: 0444
+                sources:
+                  - serviceAccountToken:
+                      path: token
+                      expirationSeconds: 3600
+                  - configMap:
+                      name: kube-root-ca.crt
+                      items: [{key: ca.crt, path: ca.crt}]
+                  - downwardAPI:
+                      items:
+                        - path: namespace
+                          fieldRef: {fieldPath: metadata.namespace}

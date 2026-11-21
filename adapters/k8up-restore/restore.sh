@@ -7,14 +7,28 @@ umask 077
 trap '[ "$?" -eq 0 ] || echo "stage=restore result=FAIL" >&2' EXIT
 die() { echo "$1" >&2; exit 1; }
 [ "$#" = 2 ] || die 'expected source and maximum age in seconds'
-case $1 in
-    backup-validation) host=backup-validation; path=/data/k8up-validation-canary ;;
-    # K8up v2.16 backupAnnotatedPod + StdinBackup: /<namespace>-<container><fileExtension>.
-    # The PreBackupPod specifies container snapshot and literal extension tar (no dot).
-    prometheus-stream) host=kube-prometheus-stack; path=/kube-prometheus-stack-snapshottar ;;
+source=$1
+max_age=$2
+case $max_age in ''|0*|*[!0-9]*|??????????*) die 'invalid maximum age' ;; esac
+case $source in
+    backup-validation)
+        host=backup-validation; path=/data/k8up-validation-canary; run_tag=
+        set -- --latest 2 ;;
+    prometheus-stream)
+        # K8up v2.16 backupAnnotatedPod + StdinBackup: /<namespace>-<container><fileExtension>.
+        # The PreBackupPod specifies container snapshot and literal extension tar (no dot).
+        host=kube-prometheus-stack; path=/kube-prometheus-stack-snapshottar
+        run_tag=${K8UP_PROMETHEUS_RUN_TAG:-}
+        expected=${PROMETHEUS_EXPECTED_SNAPSHOT:-}
+        # Missing Pod annotations resolve to empty strings. Require both pins
+        # before touching scratch or the repository; there is no latest fallback.
+        jq -en --arg tag "$run_tag" --arg name "$expected" '
+            ($tag | test("\\Abackup-run-[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}\\z")) and
+            ($name | test("\\A[0-9]{8}T[0-9]{6}Z-[0-9a-f]{16}\\z"))
+        ' >/dev/null || die 'invalid or incomplete Prometheus backup pin'
+        set -- --tag "$run_tag" ;;
     *) die 'unknown restore source' ;;
 esac
-case $2 in ''|0*|*[!0-9]*|??????????*) die 'invalid maximum age' ;; esac
 repository=${RESTIC_REPOSITORY:-/repository}
 case $repository in /*) ;; *) die 'local repository mount required' ;; esac
 unset RESTIC_PASSWORD_COMMAND RESTIC_REPOSITORY_FILE
@@ -28,11 +42,12 @@ for entry in * .[!.]* ..?*; do
 done
 mkdir .stage
 export TMPDIR="$PWD/.stage" TZ=UTC0
-# Native host/path filtering, bounded JSON, no grouping. A path match can still
-# include other PVCs. Do not fall back to an older snapshot if the newest is mixed.
-(ulimit -f 128 && repo snapshots --json --host "$host" --path "$path" --latest 2 >.stage/list 2>.stage/warnings) || die 'snapshot listing failed'
+# Bound the listing and do not truncate exact-tag matches: a duplicate must
+# fail even when the records have different times. Restic filters can still
+# match records with additional paths or tags; verify the full metadata below.
+(ulimit -f 128 && repo snapshots --json --host "$host" --path "$path" "$@" >.stage/list 2>.stage/warnings) || die 'snapshot listing failed'
 [ ! -s .stage/warnings ] || die 'incomplete snapshot listing'
-selected=$(jq -ers --arg host "$host" --arg path "$path" --argjson age "$2" '
+selected=$(jq -ers --arg host "$host" --arg path "$path" --arg tag "$run_tag" --argjson age "$max_age" '
     # Go timestamps may have fractional seconds and a numeric timezone offset.
     def epoch:
         (capture("\\A(?<dt>[0-9-]{10}T[0-9:]{8})(?:\\.(?<frac>[0-9]{1,9}))?(?:Z|(?<sign>[+-])(?<h>[01][0-9]|2[0-3]):(?<m>[0-5][0-9]))\\z") // error("time")) as $t
@@ -40,14 +55,19 @@ selected=$(jq -ers --arg host "$host" --arg path "$path" --argjson age "$2" '
         | if ($sec | todateiso8601) != ($t.dt + "Z") then error("date") else $sec end
         + ("0." + ($t.frac // "0") | tonumber)
         - (if $t.sign then (($t.h|tonumber)*3600 + ($t.m|tonumber)*60) * (if $t.sign=="+" then 1 else -1 end) else 0 end);
-    select(length == 1) | .[0] | select(type == "array" and (length == 1 or length == 2))
-    | sort_by(.time | epoch) | select(length == 1 or (.[0].time|epoch) < (.[1].time|epoch)) | last
+    select(length == 1) | .[0] | select(type == "array")
+    | if $host == "backup-validation" then
+          select(length == 1 or length == 2)
+          | sort_by(.time | epoch) | select(length == 1 or (.[0].time|epoch) < (.[1].time|epoch)) | last
+      else select(length == 1) | first
+      end
     | select(.hostname == $host and .paths == [$path] and (.id | test("\\A[0-9a-f]{64}\\z")))
     # The validation Schedule has no backup.tags; K8up v2.16 adds no default
     # tag. Restic 0.19 omits tags for an empty list. Check *after* choosing
     # the newest snapshot, so a tagged manual run cannot cause fallback.
     | select(if $host == "backup-validation" then (has("tags") | not) or .tags == []
-             else (.tags | sort) == ["prometheus-replica-0", "prometheus-tsdb"] end)
+             else (.tags | sort) == ([$tag, "prometheus-replica-0", "prometheus-tsdb"] | sort)
+             end)
     | (now - (.time | epoch)) as $elapsed | select($elapsed >= 0 and $elapsed <= $age)
     | [.id, .time, (.time | epoch | floor)] | @tsv
 ' .stage/list 2>/dev/null) || die 'no unambiguous fresh snapshot of expected source'
@@ -60,12 +80,12 @@ printf 'snapshot_id=%s time=%s\n' "$id" "$time"
 rm .stage/list .stage/warnings
 repo restore --verify --include "$path" --target .stage/tree "$id" >/dev/null 2>&1 || die 'verified restore failed'
 target=.stage/tree$path
-case $1 in
+case $source in
     backup-validation) [ ! -L .stage/tree/data ] && [ ! -L "$target" ] || die 'invalid fixture directory'
         target=$target/marker.txt ;;
 esac
 [ ! -L "$target" ] && [ -f "$target" ] && [ -s "$target" ] || die 'empty or invalid restored source'
 mv .stage/tree restored
 # Trusted scalar handoff for promtool's native time filter, never shell code.
-if [ "$1" = prometheus-stream ]; then printf '%s\n' "$seconds" >snapshot-seconds; fi
+if [ "$source" = prometheus-stream ]; then printf '%s\n' "$seconds" >snapshot-seconds; fi
 rmdir .stage

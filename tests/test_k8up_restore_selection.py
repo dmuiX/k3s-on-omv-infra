@@ -12,7 +12,10 @@ import unittest
 SCRIPT = Path(__file__).resolve().parents[1] / 'adapters/k8up-restore/restore.sh'
 CANARY = '/data/k8up-validation-canary'
 STREAM = '/kube-prometheus-stack-snapshottar'
+HOST = 'kube-prometheus-stack'
 TAGS = ['prometheus-tsdb', 'prometheus-replica-0']
+RUN_TAG = 'backup-run-b97ee5b0-f083-4d08-a789-4964a4ddef54'
+EXPECTED = '20261015T120000Z-0123456789abcdef'
 ID = 'ab' * 32
 
 
@@ -21,8 +24,8 @@ def timestamp(delta=0):
 
 
 def snapshot(path=CANARY, **changes):
-    return dict({'paths': [path], 'tags': TAGS if path == STREAM else [], 'id': ID,
-                 'hostname': 'kube-prometheus-stack' if path == STREAM else 'backup-validation',
+    return dict({'paths': [path], 'tags': TAGS + [RUN_TAG] if path == STREAM else [], 'id': ID,
+                 'hostname': HOST if path == STREAM else 'backup-validation',
                  'time': timestamp(-5)}, **changes)
 
 
@@ -75,32 +78,58 @@ esac
         self.assertEqual((self.scratch / 'snapshot-seconds').exists(), success and source == 'prometheus-stream')
         return log
 
-    def test_restore_exact_sources_and_id(self):
-        for source, path in [('backup-validation', CANARY), ('prometheus-stream', STREAM)]:
-            with self.subTest(source=source):
-                offset_time = dt.datetime.fromisoformat(timestamp(-5)).astimezone(dt.timezone(dt.timedelta(hours=3)))
-                chosen = snapshot(path, time=offset_time.isoformat())
-                log = self.exercise([chosen, snapshot(path, id='c'*64, time=timestamp(-4000))], source, True)
-                data = self.scratch / 'restored' / path[1:]
-                self.assertEqual((data / 'marker.txt' if source == 'backup-validation' else data).read_bytes(), b'payload')
-                if source == 'prometheus-stream':
-                    self.assertEqual(int((self.scratch / 'snapshot-seconds').read_text()), int(offset_time.timestamp()))
-                calls = (self.root / 'calls').read_text().splitlines()
-                self.assertIn(f'--host {chosen["hostname"]} --path {path}', calls[-2])
-                self.assertTrue(calls[-1].endswith(' ' + ID))
-                shutil.rmtree(self.scratch)
-                self.assertEqual(log.decode(), f'snapshot_id={ID} time={chosen["time"]}\n')
-                self.scratch.mkdir()
+    def test_restore_newest_fixture_by_full_id_regardless_of_prometheus_pins(self):
+        self.pin('--latest', '')
+        chosen = snapshot()
+        log = self.exercise([chosen, snapshot(id='c'*64, time=timestamp(-4000))], success=True)
+        self.assertEqual((self.scratch / 'restored' / CANARY[1:] / 'marker.txt').read_bytes(), b'payload')
+        listing, restore = (self.root / 'calls').read_text().splitlines()
+        self.assertTrue(listing.endswith(f' snapshots --json --host backup-validation --path {CANARY} --latest 2'))
+        self.assertTrue(restore.endswith(' ' + ID))
+        self.assertEqual(log.decode(), f'snapshot_id={ID} time={chosen["time"]}\n')
 
-    def test_no_eligible_snapshot(self):
-        good = snapshot(STREAM, time=timestamp(-400))
-        for records in ([], {}, [snapshot(STREAM, time=timestamp(-4000))],
-                        [snapshot(STREAM, time=timestamp(90))], [snapshot(STREAM, time='bad')],
-                        [good, dict(good, id='c'*64)], [good, snapshot(STREAM, paths=[STREAM, '/data'])],
-                        [good, snapshot(STREAM, tags=TAGS[:1])], [snapshot(STREAM, hostname='other')],
-                        [snapshot(STREAM, id='latest')], [snapshot(STREAM, id='extra\n' + ID)],
-                        [snapshot(STREAM, time='extra\n' + timestamp(-5))],
-                        [snapshot(STREAM, paths=[STREAM + '.tar'])]):
+    def pin(self, tag: str = RUN_TAG, expected: str = EXPECTED) -> None:
+        self.env.update(K8UP_PROMETHEUS_RUN_TAG=tag, PROMETHEUS_EXPECTED_SNAPSHOT=expected)
+
+    def test_pinned_selects_only_exact_tag_and_full_id(self) -> None:
+        self.pin()
+        offset_time = dt.datetime.fromisoformat(timestamp(-5)).astimezone(dt.timezone(dt.timedelta(hours=3)))
+        record = snapshot(STREAM, time=offset_time.isoformat(), tags=[TAGS[0], RUN_TAG, TAGS[1]])
+        self.assertEqual(self.exercise([record], 'prometheus-stream', True),
+                         f'snapshot_id={ID} time={record["time"]}\n'.encode())
+        listing, restore = (self.root / 'calls').read_text().splitlines()
+        self.assertTrue(listing.endswith(f' snapshots --json --host {HOST} --path {STREAM} --tag {RUN_TAG}'))
+        self.assertNotIn('--latest', listing)
+        self.assertTrue(restore.endswith(' ' + ID))
+        self.assertEqual(int((self.scratch / 'snapshot-seconds').read_text()), int(offset_time.timestamp()))
+
+    def test_missing_or_invalid_pins_stop_before_scratch_and_repository_access(self) -> None:
+        for tag, expected in ((None, None), ('', ''), (None, EXPECTED), (RUN_TAG, None),
+                              (RUN_TAG, ''), ('', EXPECTED), (RUN_TAG, EXPECTED + '\n'),
+                              (RUN_TAG, '20261015T120000Z-abc'), (RUN_TAG + '\n', EXPECTED),
+                              (RUN_TAG + ',' + TAGS[0], EXPECTED), ('--latest', EXPECTED),
+                              ('backup-run-not-a-uuid', EXPECTED)):
+            with self.subTest(tag=tag, expected=expected):
+                for name, value in (('K8UP_PROMETHEUS_RUN_TAG', tag), ('PROMETHEUS_EXPECTED_SNAPSHOT', expected)):
+                    if value is None:
+                        self.env.pop(name, None)
+                    else:
+                        self.env[name] = value
+                self.assertEqual(self.exercise([snapshot(STREAM, tags=TAGS)], 'prometheus-stream'), b'')
+                self.assertFalse((self.root / 'calls').exists())
+                self.assertEqual(list(self.scratch.iterdir()), [])
+
+    def test_inexact_or_ambiguous_pinned_listing_never_restores(self) -> None:
+        self.pin()
+        good = snapshot(STREAM)
+        for records in ([], {}, [good, dict(good, id='c'*64)], [good, dict(good, id='c'*64, time=timestamp(-60))],
+                        [dict(good, id=ID[:8])], [dict(good, id='latest')], [dict(good, id='extra\n' + ID)],
+                        [dict(good, time=timestamp(-4000))], [dict(good, time=timestamp(90))],
+                        [dict(good, time='bad')], [dict(good, time='extra\n' + timestamp(-5))],
+                        [dict(good, paths=[STREAM, '/other'])], [dict(good, paths=[STREAM + '.tar'])],
+                        [dict(good, hostname='other')], [dict(good, tags=TAGS)],
+                        [dict(good, tags=TAGS[:1] + [RUN_TAG])], [dict(good, tags=TAGS + [RUN_TAG, 'extra'])],
+                        [dict(good, tags=TAGS + [RUN_TAG, RUN_TAG])]):
             with self.subTest(records=records):
                 self.assertEqual(self.exercise(records, 'prometheus-stream'), b'')
                 shutil.rmtree(self.scratch)
@@ -173,11 +202,59 @@ esac
         self.assertEqual((restored / 'marker.txt').read_bytes(), marker)
         self.assertFalse((self.scratch / 'snapshot-seconds').exists())
 
-    def test_actual_verified_stream(self):
+    def backup_stream(self, payload: bytes, tags: list[str], *, host: str = HOST, path: str = STREAM) -> None:
+        self.restic('backup', '--stdin', '--stdin-filename', path, '--host', host,
+                    '--tag', ','.join(tags), data=payload)
+
+    def test_actual_exact_tag_restore_ignores_newer_legacy_and_other_sources(self) -> None:
         self.init_real_repo()
-        self.restic('backup', '--stdin', '--stdin-filename', STREAM, '--host', 'kube-prometheus-stack',
-                    '--tag', ','.join(TAGS), data=b'synthetic bytes')
-        self.restic('backup', '--stdin', '--stdin-filename', '/other', data=b'unrelated')
+        self.pin()
+        tags = TAGS + [RUN_TAG]
+        self.backup_stream(b'exact artifact', tags)
+        expected, = json.loads(self.restic('snapshots', '--json'))
+        self.backup_stream(b'newer legacy artifact', TAGS)
+        self.backup_stream(b'wrong path', tags, path='/other')
+        self.backup_stream(b'wrong host', tags, host='other')
+        log = self.invoke('prometheus-stream', True)
+        self.assertEqual(log.decode(), f'snapshot_id={expected["id"]} time={expected["time"]}\n')
+        self.assertEqual((self.scratch / 'restored' / STREAM[1:]).read_bytes(), b'exact artifact')
+
+    def test_actual_missing_or_extra_tag_never_falls_back(self) -> None:
+        self.init_real_repo()
+        self.pin()
+        self.backup_stream(b'legacy artifact', TAGS)
+        self.backup_stream(b'lookalike tag', TAGS + [RUN_TAG + '0'])
+        self.assertEqual(self.invoke('prometheus-stream', False), b'')
+        self.assertFalse((self.scratch / '.stage/tree').exists())
+        shutil.rmtree(self.scratch)
+        self.scratch.mkdir()
+        self.backup_stream(b'additional tag', TAGS + [RUN_TAG, 'extra'])
+        self.assertEqual(self.invoke('prometheus-stream', False), b'')
+        self.assertFalse((self.scratch / '.stage/tree').exists())
+
+    def test_actual_duplicate_run_tag_never_chooses_newest(self) -> None:
+        self.init_real_repo()
+        self.pin()
+        self.backup_stream(b'first artifact', TAGS + [RUN_TAG])
+        self.backup_stream(b'second artifact', TAGS + [RUN_TAG])
+        snapshots = json.loads(self.restic('snapshots', '--json', '--tag', RUN_TAG))
+        self.assertEqual(len({record['time'] for record in snapshots}), 2)
+        self.assertEqual(self.invoke('prometheus-stream', False), b'')
+        self.assertFalse((self.scratch / '.stage/tree').exists())
+
+    def test_actual_unpinned_stream_never_restores_eligible_legacy_backup(self) -> None:
+        self.init_real_repo()
+        self.backup_stream(b'eligible legacy artifact', TAGS)
+        self.assertEqual(self.invoke('prometheus-stream', False), b'')  # Both env vars unset.
+        self.assertEqual(list(self.scratch.iterdir()), [])
+        self.pin('', '')  # Missing Pod annotations produce empty Downward API values.
+        self.assertEqual(self.invoke('prometheus-stream', False), b'')
+        self.assertEqual(list(self.scratch.iterdir()), [])
+
+    def test_actual_verified_pinned_stream_on_read_only_repository(self) -> None:
+        self.init_real_repo()
+        self.pin()
+        self.backup_stream(b'synthetic bytes', TAGS + [RUN_TAG])
         snapshots = json.loads(self.restic('snapshots', '--json', '--path', STREAM))
         # Make repository writes (including a transient lock) impossible for non-root callers.
         dirs = [self.repo, *(p for p in self.repo.rglob('*') if p.is_dir())]

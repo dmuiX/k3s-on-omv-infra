@@ -587,10 +587,12 @@ class PlatformContractTest < Minitest::Test
     runbook = (INFRA / "docs/prometheus-tsdb-backup-runbook.md").read
     assert_includes runbook, "Completed=True"
     assert_includes runbook, "reason=Succeeded"
-    assert_includes runbook, "keepDaily: 7"
-    assert_includes runbook, "keepWeekly: 4"
-    assert_equal %w[credential-custody openbao-snapshot postgresql-size-retention], (INFRA / "adapters").children.select(&:directory?).map { |path| path.basename.to_s }.sort
-    assert_equal 2, (INFRA / "adapters").glob("**/*.py").length
+    assert_includes runbook, "Prune creation is blocked"
+    pipeline = yaml_documents(INFRA / "09-kube-prometheus-stack/restore-test/pipeline.yaml")
+    cron = pipeline.find { |document| document["kind"] == "CronJob" }
+    assert_equal true, cron.dig("spec", "suspend")
+    assert_equal %w[credential-custody k8up-restore openbao-snapshot postgresql-size-retention], (INFRA / "adapters").children.select(&:directory?).map { |path| path.basename.to_s }.sort
+    assert_equal 3, (INFRA / "adapters").glob("**/*.py").length
   end
 
   def test_native_chart_routes_are_preferred_over_duplicate_live_manifests

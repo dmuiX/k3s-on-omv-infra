@@ -6,7 +6,7 @@
 | OpenBao | Raft snapshot adapter | `openbao-backups` | `openbao-backups` |
 | Future application PVCs | K8up/Restic | `<namespace>/<repository-pvc>` | Never |
 | etcd | native K3s snapshot | `etcd-backups` | `etcd-backups` |
-| Prometheus | Native TSDB snapshot, then one-shot K8up Backup | `kube-prometheus-stack/prometheus-k8up-repository` | Never |
+| Prometheus | Scheduled K8up Backup of a native TSDB snapshot, followed by an exact restore test | `kube-prometheus-stack/prometheus-k8up-repository` | Never |
 
 All OMV storage is beneath the dedicated `k3s-cluster` Btrfs subvolume on the verified backup filesystem. The Live StorageClass source is exactly `//192.168.1.5/k3s-cluster`. Verify that the backing disk and SMB share are available; never create a substitute directory on the root filesystem. PostgreSQL/OpenBao PVCs are excluded from generic K8up backups. Longhorn replication is not backup.
 
@@ -110,7 +110,7 @@ The validation Schedule keeps 7 daily, 4 weekly, and 6 monthly successful snapsh
 
 Prometheus admin API access is enabled. K8up's `PreBackupPod` calls the replica-0 native snapshot API, validates the returned snapshot name, and streams only that snapshot directory to Restic. Its Backup selector matches only the `PreBackupPod`, never the live Prometheus PVC. The exact tool image digest and runtime attachment behavior remain deployment blockers; no image tag or digest is invented.
 
-K8up 2.16 has no conditional post-backup cleanup hook. Therefore cleanup is separate and fail-closed: require `Completed=True` with `reason=Succeeded` on both a uniquely named one-shot Backup and Check, and verify the new K8up Snapshot record before deleting the source snapshot. On any failure, retain it. See [the Prometheus runbook](prometheus-tsdb-backup-runbook.md) for exact native resource templates and the blocked cleanup contract. Restic retention is a one-shot Prune with 7 daily and 4 weekly snapshots.
+K8up 2.16 has no conditional post-backup cleanup hook. A daily CronJob (suspended until rollout acceptance) submits a uniquely tagged K8up Backup, waits for its Check, and launches an isolated restore Job. Cleanup requires the exact Backup UID, native snapshot name, and a successful restore and historical sample read. On any failure before verification, retain the native snapshot and recovery evidence. See [the Prometheus runbook](prometheus-tsdb-backup-runbook.md). Automatic Restic pruning is not part of this workflow.
 
 ## Host-side mirrors and remaining recovery gates
 
