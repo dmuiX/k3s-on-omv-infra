@@ -131,4 +131,5 @@ jobs:
           TIMEZONE_TEST_CONTAINER="$test_id" python -m unittest discover -s tests -p test_timezone_defaults.py -v
           TIMEZONE_TEST_CONTAINER="$test_id" python -m unittest discover -s tests -p test_resource_admission.py -v
           PYTHONPATH=tests TIMEZONE_TEST_CONTAINER="$test_id" python -m unittest test_memory_limits.NativeMemoryLimitApiTest -v
-          echo 'Native timezone, scoped resource admission, and RAM cap/init merge API tests passed in a network-isolated disposable API; no production access or actual Prometheus Operator execution.' >> "$GITHUB_STEP_SUMMARY"
+          PYTHONPATH=tests TIMEZONE_TEST_CONTAINER="$test_id" python -m unittest test_envoy_dashboard_access.NativeEnvoyDashboardAccessTest -v
+          echo 'Native timezone, resource, RAM cap and Envoy Dashboard admission tests passed in a network-isolated disposable API. No production access, Prometheus Operator execution or Tekton webhook execution.' >> "$GITHUB_STEP_SUMMARY"
