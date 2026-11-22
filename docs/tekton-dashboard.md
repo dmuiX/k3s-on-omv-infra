@@ -8,15 +8,12 @@ proxy is reachable through another route. NetworkPolicy limits the dashboard
 pod ingress to its oauth2-proxy and egress to the Kubernetes API peers in Live.
 
 The dashboard is pinned to [v0.74.0](https://github.com/tektoncd/dashboard/tree/dac0320946ed1905e97587d5bff683c1de170352),
-which supports the installed Tekton Pipelines v1.18.x LTS. It shows pipelines,
-runs and logs from `ci-builds`. The UI offers PipelineRun creation. The
-Application syncs the build and its admission policy before the run-management
-RoleBinding. The grant allows create, update, patch and delete of PipelineRuns
-only in `ci-builds`; creation is restricted by admission to the reviewed Envoy
-run. It grants no other resource writes, secret reads or cross-namespace logs. The Dashboard uses
-one Kubernetes identity for all authenticated users; it does not grant
-impersonation or forward browser-supplied Kubernetes authorization. The Pipelines
-Application owns `ci-builds`.
+which supports the installed Tekton Pipelines v1.18.x LTS. It runs in
+`--read-only=true` mode and shows pipelines, runs and logs from `ci-builds`. It
+grants no resource writes, secret reads or cross-namespace logs. The Dashboard
+uses one Kubernetes identity for all authenticated users; it does not grant
+impersonation or forward browser-supplied Kubernetes authorization. The
+Pipelines Application owns `ci-builds`.
 
 OpenBao assigns the confidential client only to the existing `radar-admin`
 group (external name `radar:admin`). The proxy independently enforces the group
@@ -49,24 +46,13 @@ KV entry to recover a failed rollout.
    the UI and an API path, a nonmember cannot sign in, and a `radar:admin` can see
    an existing run and stream its logs. Sign out and confirm the local session
    no longer grants access. Verify an unrelated workload cannot reach the
-   internal dashboard Service or the proxy directly. Before installing the run
-   grant, verify that the Dashboard ServiceAccount cannot create PipelineRuns,
-   read Secrets or read Pod logs outside `ci-builds`. No new run is needed to
-   validate login.
-
-## Enable Envoy runs
-
-Follow the [Envoy Dashboard runbook](../01-bootstrap/istio-gateway/build/dashboard/README.md).
-Argo CD owns the build, guard and run-management RoleBinding. Verify the policy and
-access after sync. No further Bootstrap or OpenBao changes are needed. Use
-Tekton API v1 and the reviewed payload in the Dashboard YAML editor, not the
-simple form. The UI flag is not a security boundary.
+   internal dashboard Service or the proxy directly. Verify that the Dashboard
+   ServiceAccount cannot create PipelineRuns, read Secrets or read Pod logs
+   outside `ci-builds`. No new run is needed to validate login.
 
 ## Rollback
 
-Block Dashboard traffic and revoke the Envoy run RoleBinding through GitOps
-first; verify that run creation is denied before removing the admission guard. To
-retire the Dashboard, remove its route, verify the host no longer serves it,
+To retire the Dashboard, remove its route, verify the host no longer serves it,
 then retire the Application and its owned resources. A Git revert alone does
 not remove the route because automated pruning is disabled. Keep `ci-builds`,
 Pipelines, Longhorn and any existing runs intact. Crossplane resources are

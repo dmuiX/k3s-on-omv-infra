@@ -1,13 +1,11 @@
-"""Offline contracts for the opt-in Tekton control plane and Envoy pilot."""
+"""Offline contracts for the Tekton Pipelines controller and CRD hygiene."""
 
-import json
 import unittest
 from pathlib import Path
 
 import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
-BUILD = ROOT / "01-bootstrap/istio-gateway/build"
 CONTROLLER = ROOT / "02-controllers/tekton-pipelines/resources"
 
 
@@ -74,67 +72,21 @@ class TektonPilotTest(unittest.TestCase):
             },
         )
 
-    def test_pilot_requires_manual_run_and_an_explicit_builder(self) -> None:
-        self.assertFalse(list(BUILD.rglob("app.yml")))
+    def test_tekton_crds_omit_the_api_default_for_unknown_fields(self) -> None:
+        docs = yaml.safe_load_all((CONTROLLER / "release.yaml").read_text())
+        crds = [d for d in docs if d and d["kind"] == "CustomResourceDefinition"]
+        self.assertTrue(crds)
+        for crd in crds:
+            with self.subTest(crd=crd["metadata"]["name"]):
+                self.assertNotIn("preserveUnknownFields", crd["spec"])
+
+    def test_envoy_backport_pipeline_is_retired(self) -> None:
+        self.assertFalse((ROOT / "01-bootstrap/istio-gateway/build").exists())
         self.assertFalse((ROOT / ".github/workflows/envoy-backport.yml").exists())
-        gateway = yaml.safe_load((BUILD.parent / "app.yml").read_text())
+        gateway = yaml.safe_load(
+            (ROOT / "01-bootstrap/istio-gateway/app.yml").read_text()
+        )
         self.assertEqual(
             gateway["spec"]["sources"][0]["path"],
             "01-bootstrap/istio-gateway/resources",
         )
-        manifests = list(yaml.safe_load_all((BUILD / "pipeline.yaml").read_text()))
-        docs = {d["kind"]: d for d in manifests}
-        self.assertEqual(len(docs), len(manifests))
-        self.assertEqual(
-            set(docs),
-            {
-                "ServiceAccount",
-                "NetworkPolicy",
-                "Task",
-                "Pipeline",
-            },
-        )
-        account = docs["ServiceAccount"]
-        self.assertIs(account["automountServiceAccountToken"], False)
-        self.assertNotIn("secrets", account)
-        run = yaml.safe_load((BUILD / "run.yaml").read_text())
-        template = run["spec"]["taskRunTemplate"]
-        self.assertEqual(template["serviceAccountName"], account["metadata"]["name"])
-        self.assertEqual(
-            run["spec"]["pipelineRef"]["name"], docs["Pipeline"]["metadata"]["name"]
-        )
-        self.assertEqual(
-            template["podTemplate"]["nodeSelector"],
-            {
-                "ci.dmuix.com/envoy-builder": "true",
-                "kubernetes.io/arch": "amd64",
-                "kubernetes.io/os": "linux",
-            },
-        )
-        task = docs["Task"]["spec"]
-        self.assertEqual(
-            docs["Pipeline"]["spec"]["tasks"],
-            [{"name": "build", "taskRef": {"name": docs["Task"]["metadata"]["name"]}}],
-        )
-        policy = docs["NetworkPolicy"]["spec"]
-        self.assertEqual(set(policy["policyTypes"]), {"Ingress", "Egress"})
-        self.assertNotIn("ingress", policy)
-        self.assertEqual(
-            {(p["protocol"], p["port"]) for r in policy["egress"] for p in r["ports"]},
-            {("TCP", 53), ("UDP", 53), ("TCP", 443)},
-        )
-        volumes = {volume["name"]: volume for volume in task["volumes"]}
-        self.assertEqual(set(volumes["build"]), {"name", "emptyDir"})
-        self.assertEqual(volumes["inputs"]["configMap"], {"name": "envoy-build-inputs"})
-        (step,) = task["steps"]
-        self.assertIn(
-            {"name": "inputs", "mountPath": "/inputs", "readOnly": True},
-            step["volumeMounts"],
-        )
-        lock = json.loads((BUILD / "lock.json").read_text())
-        self.assertEqual(step["image"], lock["toolchain"])
-        self.assertNotIn("raw.githubusercontent.com", step["script"])
-        for filename in ("lock.json", "48409.patch", "regression.patch", "inside.sh"):
-            self.assertTrue((BUILD / filename).is_file())
-            self.assertIn(filename, step["script"])
-        self.assertIs(step["securityContext"]["allowPrivilegeEscalation"], False)
