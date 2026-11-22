@@ -105,7 +105,7 @@ The exact pinned container and actual ConfigMap entrypoint were exercised on OMV
 
 ## Rollback
 
-**Stopping the helper does not revert persistent LUKS flags.** First remove/disable the policy's GitOps resources in a reviewed follow-up. Because this Application has `prune: false`, deleting YAML from Git alone does not delete its live resources. With explicit approval, delete exactly the named DaemonSet and RecurringJob, suspend/inspect its generated CronJob if still present, and wait for helper pods and any trim Jobs to stop. Do not remove `longhorn-crypto` or unrelated Longhorn resources. Remove the dedicated ConfigMap, ServiceAccount and NetworkPolicy only after the workload is stopped.
+**Stopping the helper does not revert persistent LUKS flags.** First remove/disable the policy's GitOps resources in a reviewed follow-up. With `prune: true` (`PruneLast=true`), syncing removes the deleted DaemonSet, RecurringJob, ConfigMap, ServiceAccount and NetworkPolicy; verify the generated CronJob is gone and wait for helper pods and any trim Jobs to stop. Do not remove `longhorn-crypto` or unrelated Longhorn resources.
 
 If the policy itself must be reversed, use a separately reviewed, authenticated operation on the same independently validated devices to refresh persistent activation flags **without** `--allow-discards`, preserving any other intentionally configured flags. Feed the key through a projected file/stdin, not argv or copied files; verify both persistent and live flags afterward. Do not run a blanket refresh against all host LUKS mappings. Blocks already discarded and old snapshot rollback points already removed cannot be recovered by disabling discard. Shrinking PVCs is unrelated and is not part of rollback.
 

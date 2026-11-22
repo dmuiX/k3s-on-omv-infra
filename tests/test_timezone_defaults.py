@@ -121,8 +121,9 @@ class TimezoneContractTest(unittest.TestCase):
         self.assertEqual(app["spec"]["sources"][0]["targetRevision"], "main")
         self.assertEqual(
             app["spec"]["syncPolicy"]["automated"],
-            {"enabled": True, "prune": False, "selfHeal": True, "allowEmpty": False},
+            {"enabled": True, "prune": True, "selfHeal": True, "allowEmpty": False},
         )
+        self.assertIn("PruneLast=true", app["spec"]["syncPolicy"]["syncOptions"])
         self.assertIn(
             "01-bootstrap/timezone-defaults/app.yml",
             yaml.safe_load((ROOT / "kustomization.yaml").read_text())["resources"],
