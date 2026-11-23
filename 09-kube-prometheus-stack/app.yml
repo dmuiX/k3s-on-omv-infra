@@ -38,7 +38,9 @@ spec:
                 memory: 128Mi
         prometheus:
           podDisruptionBudget:
-            enabled: false
+            enabled: true
+            minAvailable: 1
+            unhealthyPodEvictionPolicy: IfHealthyBudget
           prometheusSpec:
             # Named init cap must exceed its 256Mi request, not inherit 128Mi.
             initContainers:
@@ -49,7 +51,7 @@ spec:
                   memory: 256Mi
                 limits:
                   memory: 512Mi
-            replicas: 1
+            replicas: 2
             enableAdminAPI: true
             retention: 15d
             retentionSize: 18GB
@@ -111,8 +113,8 @@ spec:
             existingSecret: grafana-admin
             userKey: admin-user
             passwordKey: admin-password
-          replicas: 1
-          # Single monitoring node leaves no second node for a surge pod.
+          replicas: 2
+          # Hard anti-affinity leaves no third monitoring node for a surge pod.
           deploymentStrategy:
             type: RollingUpdate
             rollingUpdate:
@@ -124,7 +126,8 @@ spec:
           # Local caches and provisioned files are disposable across replicas.
           persistence:
             enabled: false
-          podDisruptionBudget: {}
+          podDisruptionBudget:
+            minAvailable: 1
           affinity:
             podAntiAffinity:
               requiredDuringSchedulingIgnoredDuringExecution:
