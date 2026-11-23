@@ -114,6 +114,7 @@ all future reservations merely because OpenBao is now Ready.
 
 Rollback is a reviewed revert of the request values and another controlled
 reconciliation, not an immediate undo of born Pods. The ServiceLB default only
-affects new matching Pods; existing admitted values are preserved. Admission
-bindings are not auto-pruned, so disabling mutation requires the separate explicit
-binding-retirement procedure in scoped-resource-admission.md. No blind Pod delete.
+affects new matching Pods; existing admitted values are preserved. With
+`prune: true` (`PruneLast=true`) on `resource-defaults`, removing the admission
+bindings from Git prunes them on sync; follow the verification checks in
+`scoped-resource-admission.md`. No blind Pod delete.

@@ -65,7 +65,7 @@ Bootstrap owns the work that precedes the responsible controllers or requires pr
 
 ### Handoff rather than parallel management
 
-Argo CD takes over the same pinned chart/public values used for its initial installation; Helm and Argo are not competing release managers. Applications self-heal, but automatic pruning is disabled. Removing a file from Git is not an approved stateful-resource retirement, ownership transfer or disaster-recovery operation.
+Argo CD takes over the same pinned chart/public values used for its initial installation; Helm and Argo are not competing release managers. Applications self-heal, while automatic pruning stays disabled on the root, CRD, controller and stateful Applications (only allowlisted stateless platform Applications prune automatically with `PruneLast=true`). Removing a file from Git is not an approved stateful-resource retirement, ownership transfer or disaster-recovery operation.
 
 Sync waves order children within a root; they do not create a dependency between unrelated roots. The current bootstrap can activate Apps-owned identity prerequisites for a protected ceremony before the final platform gate. **Full Apps acceptance still follows Infra acceptance.**
 

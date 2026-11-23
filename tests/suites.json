@@ -59,6 +59,7 @@
       "BootstrapOrderTest.test_certificate_phase_has_no_openbao_or_istio_resource_dependency",
       "BootstrapOrderTest.test_gateway_namespace_has_one_early_metadata_steward",
       "BootstrapOrderTest.test_root_selects_every_application_once_at_both_directory_depths",
+      "BootstrapOrderTest.test_automatic_pruning_is_restricted_to_stateless_allowlist",
       "BootstrapOrderTest.test_application_schema_options_and_infra_paths"
     ],
     "test_infra_root_values": [

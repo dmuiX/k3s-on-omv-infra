@@ -53,8 +53,10 @@ KV entry to recover a failed rollout.
 ## Rollback
 
 To retire the Dashboard, remove its route, verify the host no longer serves it,
-then retire the Application and its owned resources. A Git revert alone does
-not remove the route because automated pruning is disabled. Keep `ci-builds`,
-Pipelines, Longhorn and any existing runs intact. Crossplane resources are
-Orphan by design: review the Tekton-only OpenBao client/assignment, access roles
-and KV retention separately. No rollback or live sync is performed by tests.
+then retire the Application and its owned resources. With `prune: true`
+(`PruneLast=true`), removing owned manifests from Git prunes them on sync, while
+the `extensions.dashboard.tekton.dev` CRD keeps `Prune=false` and Crossplane
+resources are `Orphan` by design. Keep `ci-builds`, Pipelines, Longhorn and any
+existing runs intact; review the Tekton-only OpenBao client/assignment, access
+roles and KV retention separately. No rollback or live sync is performed by
+tests.

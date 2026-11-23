@@ -159,12 +159,31 @@ class RepositoryContractTest < Minitest::Test
     assert (LIVE / "apps/radar/values.yml").file?
   end
 
-  def test_argo_automation_self_heals_without_pruning
+  PRUNE_ALLOWLIST = %w[
+    letsencrypt-dns01-credentials
+    longhorn-config
+    metrics-server
+    openbao-backups
+    platform-credentials
+    resource-defaults
+    tekton-dashboard
+    timezone-defaults
+  ].freeze
+
+  def test_argo_automation_self_heals_with_scoped_pruning
     (application_files(INFRA) + application_files(APPS) + [INFRA / "infra.yml", APPS / "apps.yml"]).each do |path|
-      automated = application(path).dig("spec", "syncPolicy", "automated")
+      app = application(path)
+      policy = app.dig("spec", "syncPolicy")
+      automated = policy.fetch("automated")
       assert_equal true, automated["selfHeal"], path.to_s
-      assert_equal false, automated["prune"], path.to_s
       assert_equal false, automated["allowEmpty"], path.to_s
+      if path.to_s.start_with?(INFRA.to_s) && path != INFRA / "infra.yml" &&
+          PRUNE_ALLOWLIST.include?(app.dig("metadata", "name"))
+        assert_equal true, automated["prune"], path.to_s
+        assert_includes Array(policy["syncOptions"]), "PruneLast=true", path.to_s
+      else
+        assert_equal false, automated["prune"], path.to_s
+      end
     end
   end
 

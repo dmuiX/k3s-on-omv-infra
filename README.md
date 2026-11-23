@@ -82,7 +82,7 @@ tests/                            Public fixtures, render and workload contracts
 docs/                             Architecture decisions, migrations and runbooks
 ```
 
-Numbered directories make the phases readable; Application `sync-wave` annotations remain authoritative. Automatic pruning is disabled, so removing a manifest from Git is **not** a resource-retirement procedure.
+Numbered directories make the phases readable; Application `sync-wave` annotations remain authoritative. Automatic pruning stays disabled on the root, CRD, controller and stateful Applications (removing a manifest from Git is **not** a stateful resource-retirement procedure); only allowlisted stateless/platform Applications enable `prune: true` with `PruneLast=true`.
 
 ## 🧪 Validation
 
