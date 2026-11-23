@@ -171,10 +171,12 @@ spec:
     expression: >-
       !has(object.spec.nodeSelector) || !('compute-class' in object.spec.nodeSelector)
   mutations:
-  - patchType: ApplyConfiguration
-    applyConfiguration:
+  - patchType: JSONPatch
+    jsonPatch:
       expression: >-
-        Object{spec: Object.spec{nodeSelector: {'compute-class': 'standard'}}}
+        !has(object.spec.nodeSelector)
+          ? [JSONPatch{op: 'add', path: '/spec/nodeSelector', value: {'compute-class': 'standard'}}]
+          : [JSONPatch{op: 'add', path: '/spec/nodeSelector/compute-class', value: 'standard'}]
 ---
 apiVersion: admissionregistration.k8s.io/v1
 kind: MutatingAdmissionPolicyBinding

@@ -41,7 +41,7 @@
       "RemainingAPINetwork.test_rendered_restore_instance_paths"
     ],
     "test_resource_admission": [
-      "ResourceAdmissionContractTest.test_only_two_namespaced_create_policies_and_their_bindings",
+      "ResourceAdmissionContractTest.test_only_three_namespaced_create_policies_and_their_bindings",
       "ResourceAdmissionContractTest.test_application_is_registered_and_does_not_own_workload_pods"
     ],
     "test_backup_validation_templates": [
