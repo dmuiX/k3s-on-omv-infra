@@ -447,7 +447,7 @@ class PlatformContractTest < Minitest::Test
     monitoring = chart_values("09-kube-prometheus-stack/app.yml")
     assert_equal 1, monitoring.dig("prometheus", "prometheusSpec", "replicas")
     assert_equal 0, monitoring.dig("alertmanager", "alertmanagerSpec", "replicas")
-    assert_equal 2, monitoring.dig("grafana", "replicas")
+    assert_equal 1, monitoring.dig("grafana", "replicas")
   end
 
   def test_static_containers_have_resources_and_hardened_security_contexts

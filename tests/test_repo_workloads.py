@@ -636,7 +636,7 @@ class RepositoryWorkloads(unittest.TestCase):
             if d["kind"] == "Deployment"
             and d["metadata"]["name"] == "kube-prometheus-stack-grafana"
         )
-        self.assertEqual(grafana["spec"]["replicas"], 2)
+        self.assertEqual(grafana["spec"]["replicas"], 1)
         self.assertEqual(
             grafana["spec"]["strategy"]["rollingUpdate"],
             {"maxSurge": 0, "maxUnavailable": 1},

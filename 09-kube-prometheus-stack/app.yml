@@ -111,8 +111,8 @@ spec:
             existingSecret: grafana-admin
             userKey: admin-user
             passwordKey: admin-password
-          replicas: 2
-          # Hard anti-affinity leaves no third monitoring node for a surge pod.
+          replicas: 1
+          # Single monitoring node leaves no second node for a surge pod.
           deploymentStrategy:
             type: RollingUpdate
             rollingUpdate:
@@ -124,8 +124,7 @@ spec:
           # Local caches and provisioned files are disposable across replicas.
           persistence:
             enabled: false
-          podDisruptionBudget:
-            minAvailable: 1
+          podDisruptionBudget: {}
           affinity:
             podAntiAffinity:
               requiredDuringSchedulingIgnoredDuringExecution:

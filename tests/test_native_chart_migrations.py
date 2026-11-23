@@ -229,7 +229,7 @@ class NativeChartMigrations(unittest.TestCase):
         self.assertEqual(values['alertmanager']['podDisruptionBudget'], {
             'enabled': True, 'minAvailable': 1, 'unhealthyPodEvictionPolicy': 'IfHealthyBudget'})
         pdbs = kind(render(monitoring), 'PodDisruptionBudget')
-        self.assertEqual(len(pdbs), 2, 'Alertmanager budget plus the existing Grafana budget')
+        self.assertEqual(len(pdbs), 1, 'Only Alertmanager retains a native budget')
         pdb, = [d for d in pdbs if d['metadata']['name'].endswith('-alertmanager')]
         self.assertEqual(pdb['spec']['minAvailable'], 1)
         self.assertEqual(pdb['spec']['unhealthyPodEvictionPolicy'], 'IfHealthyBudget')

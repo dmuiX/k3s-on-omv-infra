@@ -130,3 +130,57 @@ metadata:
     argocd.argoproj.io/sync-wave: '-2'
 spec:
   policyName: default-k3s-servicelb-requests
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingAdmissionPolicy
+metadata:
+  name: place-longhorn-csi-controllers-standard
+  annotations:
+    argocd.argoproj.io/sync-wave: '-3'
+spec:
+  failurePolicy: Fail
+  reinvocationPolicy: IfNeeded
+  matchConstraints:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: longhorn
+    objectSelector:
+      matchExpressions:
+      - key: app
+        operator: In
+        values:
+        - csi-attacher
+        - csi-provisioner
+        - csi-resizer
+        - csi-snapshotter
+    resourceRules:
+    - apiGroups: ['']
+      apiVersions: [v1]
+      operations: [CREATE]
+      resources: [pods]
+  matchConditions:
+  - name: expected-account-and-controller
+    expression: >-
+      object.spec.serviceAccountName == 'longhorn-csi-service-account' &&
+      has(object.metadata.ownerReferences) &&
+      object.metadata.ownerReferences.exists(r,
+        r.apiVersion == 'apps/v1' && r.kind == 'ReplicaSet' &&
+        r.name.startsWith('csi-') && r.uid != '' &&
+        has(r.controller) && r.controller)
+  - name: missing-compute-class-selector
+    expression: >-
+      !has(object.spec.nodeSelector) || !('compute-class' in object.spec.nodeSelector)
+  mutations:
+  - patchType: ApplyConfiguration
+    applyConfiguration:
+      expression: >-
+        Object{spec: Object.spec{nodeSelector: {'compute-class': 'standard'}}}
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingAdmissionPolicyBinding
+metadata:
+  name: place-longhorn-csi-controllers-standard
+  annotations:
+    argocd.argoproj.io/sync-wave: '-2'
+spec:
+  policyName: place-longhorn-csi-controllers-standard
