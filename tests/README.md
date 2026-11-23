@@ -141,21 +141,6 @@ owned or changed by this CI. Metrics Server's new GitOps chart is covered here;
 the existing-cluster ownership handoff remains separate production acceptance. Generated Pods/controllers are checked at
 the owning CR/chart/overlay seam; rendering a CR does not prove reconciliation.
 
-## Current detected source defect (not waived)
-
-The public OpenBao server network-policy values contain a ports-only TCP 6443
-egress rule. The pinned chart emits it without destination constraints. This
-contradicts the documented exact-target API-policy ownership; Kubernetes allow
-policies are additive, so namespace default-deny does not narrow this grant.
-The security gate must remain red until a separately reviewed policy correction.
-It is **not** an expected failure, skip, missing private prerequisite or reason to
-remove the test. This CI-only PR does not alter productive network rules.
-
-Three source/render assertions expose that one underlying defect. Stale version,
-metrics-ingress and comment-only hash expectations were corrected independently;
-the original network-restriction invariant is preserved. No connectivity exploit
-or production change is included.
-
 ## Private workspace integration (retained, not run publicly)
 
 `tests/run-offline-tests.sh` remains the broader **cross-repository integration**
