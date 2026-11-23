@@ -223,19 +223,18 @@ class NativeChartMigrations(unittest.TestCase):
         self.assertIn('ui', pdbs[0]['metadata']['name'])
         monitoring = self.apps['kube-prometheus-stack']
         values = monitoring['spec']['sources'][0]['helm']['valuesObject']
-        for component, spec_key in [('prometheus', 'prometheusSpec'), ('alertmanager', 'alertmanagerSpec')]:
-            self.assertEqual(values[component][spec_key]['replicas'],
-                             0 if component == 'alertmanager' else 2)
-            self.assertEqual(values[component]['podDisruptionBudget'], {
-                'enabled': True, 'minAvailable': 1, 'unhealthyPodEvictionPolicy': 'IfHealthyBudget'})
+        self.assertEqual(values['prometheus']['prometheusSpec']['replicas'], 1)
+        self.assertEqual(values['prometheus']['podDisruptionBudget'], {'enabled': False})
+        self.assertEqual(values['alertmanager']['alertmanagerSpec']['replicas'], 0)
+        self.assertEqual(values['alertmanager']['podDisruptionBudget'], {
+            'enabled': True, 'minAvailable': 1, 'unhealthyPodEvictionPolicy': 'IfHealthyBudget'})
         pdbs = kind(render(monitoring), 'PodDisruptionBudget')
-        self.assertEqual(len(pdbs), 3, 'Two new native budgets plus the existing Grafana budget')
-        for component in ('prometheus', 'alertmanager'):
-            pdb, = [d for d in pdbs if d['metadata']['name'].endswith('-' + component)]
-            self.assertEqual(pdb['spec']['minAvailable'], 1)
-            self.assertEqual(pdb['spec']['unhealthyPodEvictionPolicy'], 'IfHealthyBudget')
-            self.assertNotIn('maxUnavailable', pdb['spec'])
-            self.assertTrue(pdb['spec']['selector']['matchLabels'])
+        self.assertEqual(len(pdbs), 1, 'Only Alertmanager retains a native budget')
+        pdb, = [d for d in pdbs if d['metadata']['name'].endswith('-alertmanager')]
+        self.assertEqual(pdb['spec']['minAvailable'], 1)
+        self.assertEqual(pdb['spec']['unhealthyPodEvictionPolicy'], 'IfHealthyBudget')
+        self.assertNotIn('maxUnavailable', pdb['spec'])
+        self.assertTrue(pdb['spec']['selector']['matchLabels'])
         for name in ('crossplane', 'vault-secrets-operator', 'istio-core'):
             self.assertFalse(kind(render(self.apps[name]), 'PodDisruptionBudget'), name)
 

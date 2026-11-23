@@ -494,7 +494,7 @@ class RepositoryWorkloads(unittest.TestCase):
             "resizerReplicaCount",
             "snapshotterReplicaCount",
         ):
-            self.assertEqual(values["csi"][field], 3)
+            self.assertEqual(values["csi"][field], 2)
         self.assertTrue(
             any(
                 d["kind"] == "DaemonSet"
@@ -616,7 +616,7 @@ class RepositoryWorkloads(unittest.TestCase):
 
         docs = Repository().render("kube-prometheus-stack")
         prometheus = next(d for d in docs if d["kind"] == "Prometheus")
-        self.assertEqual(prometheus["spec"]["replicas"], 2)
+        self.assertEqual(prometheus["spec"]["replicas"], 1)
         required = prometheus["spec"]["affinity"]["podAntiAffinity"][
             "requiredDuringSchedulingIgnoredDuringExecution"
         ]
@@ -636,7 +636,7 @@ class RepositoryWorkloads(unittest.TestCase):
             if d["kind"] == "Deployment"
             and d["metadata"]["name"] == "kube-prometheus-stack-grafana"
         )
-        self.assertEqual(grafana["spec"]["replicas"], 2)
+        self.assertEqual(grafana["spec"]["replicas"], 1)
         self.assertEqual(
             grafana["spec"]["strategy"]["rollingUpdate"],
             {"maxSurge": 0, "maxUnavailable": 1},

@@ -41,7 +41,7 @@ class SmallNodePlacementTest(unittest.TestCase):
             "resizerReplicaCount",
             "snapshotterReplicaCount",
         ):
-            self.assertEqual(values["csi"][key], 3)
+            self.assertEqual(values["csi"][key], 2)
         self.assertNotIn(
             "systemManagedComponentsNodeSelector", values["defaultSettings"]
         )

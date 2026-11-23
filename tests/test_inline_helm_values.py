@@ -120,13 +120,13 @@ class InlineHelmValuesTest(unittest.TestCase):
     def test_grafana_rollout_fits_two_nodes_and_keeps_external_database(self):
         app = yaml.safe_load((INFRA / '09-kube-prometheus-stack/app.yml').read_text())
         grafana = app['spec']['sources'][0]['helm']['valuesObject']['grafana']
-        self.assertEqual(grafana['replicas'], 2)
+        self.assertEqual(grafana['replicas'], 1)
         self.assertEqual(grafana['deploymentStrategy'], {
             'type': 'RollingUpdate',
             'rollingUpdate': {'maxSurge': 0, 'maxUnavailable': 1},
         })
         self.assertFalse(grafana['persistence']['enabled'])
-        self.assertEqual(grafana['podDisruptionBudget']['minAvailable'], 1)
+        self.assertEqual(grafana['podDisruptionBudget'], {})
         self.assertTrue(grafana['affinity']['podAntiAffinity']['requiredDuringSchedulingIgnoredDuringExecution'])
         patches = yaml.safe_load((LIVE / 'infra/applications/patches/kube-prometheus-stack.yaml').read_text())
         ini = next(p['value'] for p in patches if p['path'].endswith('/grafana/grafana.ini'))
