@@ -195,6 +195,27 @@ class RetentionTest(unittest.TestCase):
                     self.assertEqual(backup.archival_protected, keep != "nokeep")
                 self.assertEqual(cli.call_args.args[0], ["barman-cloud-backup-keep", "--status", "target", "db", record["backup_id"]])
 
+    def test_catalog_falls_back_to_r2_object_sizes_when_barman_size_is_null(self):
+        record = {"backup_id": "20261124T020706", "status": "DONE", "size": None,
+                  "cluster_size": 3953959566, "end_time_iso": self.now.isoformat()}
+        catalog = json.dumps({"backups_list": [record]})
+        with (patch.object(MODULE, "_barman_base_args", return_value=["target", "db"]),
+              patch.object(MODULE, "_base_backup_bytes", return_value={"20261124T020706": 456789}),
+              patch.object(MODULE, "_run", side_effect=[catalog, "Keep: nokeep\n"])):
+            backup, = MODULE._catalog()
+            self.assertEqual(backup.base_bytes, 456789)
+            self.assertFalse(backup.archival_protected)
+
+    def test_catalog_blocks_when_barman_size_is_null_and_r2_size_missing(self):
+        record = {"backup_id": "20261124T020706", "status": "DONE", "size": None,
+                  "end_time_iso": self.now.isoformat()}
+        catalog = json.dumps({"backups_list": [record]})
+        with (patch.object(MODULE, "_barman_base_args", return_value=["target", "db"]),
+              patch.object(MODULE, "_base_backup_bytes", return_value={}),
+              patch.object(MODULE, "_run", return_value=catalog)):
+            with self.assertRaisesRegex(RuntimeError, "incomplete or invalid Barman catalog entry"):
+                MODULE._catalog()
+
     def test_missing_restore_evidence_blocks_even_catalog_access(self):
         with (patch.dict(MODULE.os.environ, BASE_BACKUP_BUDGET_BYTES=str(MODULE.BUDGET)),
               patch.object(MODULE, "_lease", side_effect=RuntimeError("missing restore evidence")),
