@@ -218,6 +218,7 @@ class RepositoryWorkloads(unittest.TestCase):
             "tekton-dashboard",
             "openbao-backups",
             "openbao-config",
+            "shutdown-pod-preview",
             "k3s-postgres",
             "backup-validation",
             "kube-prometheus-stack",
