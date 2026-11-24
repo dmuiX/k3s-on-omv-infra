@@ -50,11 +50,18 @@ jobs:
                  tests/test_shutdown_pod_preview.py 06-platform/shutdown-pod-preview/preview.py
                  07-k3s-postgres/tools/render_rotation_grants.py
                  07-k3s-postgres/tools/rotation_grant_hook.py tests/rotation_grants_restore.py)
+                 tests/test_shutdown_pod_preview.py tests/test_tekton_pilot.py
+                 tests/test_tekton_dashboard.py
+                 06-platform/shutdown-pod-preview/preview.py)
           python -m black --check "${files[@]}"
           python -m ruff check "${files[@]}"
           python -m mypy --strict --follow-imports=skip "${files[@]}"
       - name: Run isolated repository workload tests (no private inputs)
         run: python tests/repo_suite.py
+      - name: Render and verify all four locked ambient mesh charts offline
+        run: |
+          test -d "${PLATFORM_CHART_AUDIT:?missing verified chart directory}"
+          ruby -EUTF-8 tests/verify-mesh-renders.rb
       - name: Execute native Argo application-health contracts offline
         if: ${{ !cancelled() && steps.dependencies.conclusion == 'success' }}
         run: ruby -EUTF-8 tests/test_application_health.rb
@@ -63,7 +70,6 @@ jobs:
         run: |
           sh -n tests/run-offline-tests.sh
           ruby -EUTF-8 -c tests/verify-contracts.rb
-          ruby -EUTF-8 -c tests/verify-mesh-renders.rb
       - name: Record validation boundary
         if: ${{ !cancelled() }}
         run: |
@@ -128,4 +134,4 @@ jobs:
           TIMEZONE_TEST_CONTAINER="$test_id" python -m unittest discover -s tests -p test_timezone_defaults.py -v
           TIMEZONE_TEST_CONTAINER="$test_id" python -m unittest discover -s tests -p test_resource_admission.py -v
           PYTHONPATH=tests TIMEZONE_TEST_CONTAINER="$test_id" python -m unittest test_memory_limits.NativeMemoryLimitApiTest -v
-          echo 'Native timezone, scoped resource admission, and RAM cap/init merge API tests passed in a network-isolated disposable API; no production access or actual Prometheus Operator execution.' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Native timezone, resource and RAM cap admission tests passed in a network-isolated disposable API. No production access or Prometheus Operator execution.' >> "$GITHUB_STEP_SUMMARY"

@@ -17,6 +17,7 @@ EXPECTED_INFRA = {
   "metrics-server" => -6,
   "prometheus-operator-crds" => 1,
   "timezone-defaults" => 1,
+  "resource-defaults" => 1,
   "cert-manager" => -5,
   "letsencrypt-dns01-issuer" => -4,
   "csi-driver-smb" => 2,
@@ -26,6 +27,7 @@ EXPECTED_INFRA = {
   "vault-secrets-operator" => 2,
   "cloudnative-pg" => 2,
   "barman-cloud" => 2,
+  "tekton-pipelines" => 2,
   "istio-core" => -3,
   "istio-ambient" => -2,
   "provider-vault" => 3,
@@ -33,6 +35,7 @@ EXPECTED_INFRA = {
   "provider-vault-connection" => 5,
   "openbao-config" => 6,
   "longhorn-config" => 6,
+  "tekton-dashboard" => 7,
   "platform-credentials" => 6,
   "openbao-backups" => 6,
   "letsencrypt-dns01-credentials" => 6,
@@ -156,12 +159,31 @@ class RepositoryContractTest < Minitest::Test
     assert (LIVE / "apps/radar/values.yml").file?
   end
 
-  def test_argo_automation_self_heals_without_pruning
+  PRUNE_ALLOWLIST = %w[
+    letsencrypt-dns01-credentials
+    longhorn-config
+    metrics-server
+    openbao-backups
+    platform-credentials
+    resource-defaults
+    tekton-dashboard
+    timezone-defaults
+  ].freeze
+
+  def test_argo_automation_self_heals_with_scoped_pruning
     (application_files(INFRA) + application_files(APPS) + [INFRA / "infra.yml", APPS / "apps.yml"]).each do |path|
-      automated = application(path).dig("spec", "syncPolicy", "automated")
+      app = application(path)
+      policy = app.dig("spec", "syncPolicy")
+      automated = policy.fetch("automated")
       assert_equal true, automated["selfHeal"], path.to_s
-      assert_equal false, automated["prune"], path.to_s
       assert_equal false, automated["allowEmpty"], path.to_s
+      if path.to_s.start_with?(INFRA.to_s) && path != INFRA / "infra.yml" &&
+          PRUNE_ALLOWLIST.include?(app.dig("metadata", "name"))
+        assert_equal true, automated["prune"], path.to_s
+        assert_includes Array(policy["syncOptions"]), "PruneLast=true", path.to_s
+      else
+        assert_equal false, automated["prune"], path.to_s
+      end
     end
   end
 
@@ -553,7 +575,7 @@ class PlatformContractTest < Minitest::Test
     assert_equal %w[base istiod cni ztunnel], charts.map { |source| source["chart"] }
     charts.each do |source|
       assert_equal "https://blob.istio.io/istio-release/charts", source["repoURL"]
-      assert_equal "1.31.2", source["targetRevision"]
+      assert_equal "1.32.0", source["targetRevision"]
     end
     assert_equal "ambient", charts[1].dig("helm", "valuesObject", "profile")
     refute charts.any? { |source| source.dig("helm", "valueFiles") }

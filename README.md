@@ -49,6 +49,7 @@ Istio is the sole Ambient/Gateway controller; packaged Traefik is disabled. Its 
 | Networking | [Istio](01-bootstrap/istio/app.yml), [Gateway configuration](01-bootstrap/istio-gateway/app.yml) | Ambient mesh and native Gateway API deployment; private listeners/routes come from Live |
 | Certificates | [cert-manager](02-controllers/cert-manager/app.yml), [issuers](00-letsencrypt-dns01-issuer/app.yml), [DNS credentials](06-platform/letsencrypt-dns01-credentials/app.yml) | ACME DNS-01 certificate integration with Cloudflare |
 | Secrets and identity | [OpenBao](04-openbao/app.yml), [Crossplane](02-controllers/crossplane/app.yml), [provider-vault](03-provider-vault/app.yml), [VSO](02-controllers/vault-secrets-operator/app.yml) | Declarative KV/auth/database/OIDC configuration and scoped secret delivery; no OpenBao PKI |
+| CI and build visibility | [Tekton Pipelines](02-controllers/tekton-pipelines/app.yml), [Tekton Dashboard](docs/tekton-dashboard.md) | Read-only CI dashboard with OpenBao OIDC for `ci-builds` |
 | Block storage | [Longhorn](02-controllers/longhorn/app.yml), [late configuration](06-platform/longhorn-config/app.yml) | Encrypted storage classes and consumer-owned UI/OIDC integration; proxy compatibility remains gated |
 | Databases | [CloudNativePG](02-controllers/cloudnative-pg/app.yml), [Barman Cloud](02-controllers/barman-cloud/app.yml), [database cluster](07-k3s-postgres/app.yml) | PostgreSQL reconciliation, replication, object-store backups and bounded retention support |
 | Backup and restore | [K8up](02-controllers/k8up/app.yml), [SMB CSI](02-controllers/csi-driver-smb/app.yml), [OpenBao snapshots](06-platform/openbao-backups/app.yml), [validation](08-backup-validation/app.yml) | Separate backup transports and restore-validation contracts; actual recovery requires runtime evidence |
@@ -81,7 +82,7 @@ tests/                            Public fixtures, render and workload contracts
 docs/                             Architecture decisions, migrations and runbooks
 ```
 
-Numbered directories make the phases readable; Application `sync-wave` annotations remain authoritative. Automatic pruning is disabled, so removing a manifest from Git is **not** a resource-retirement procedure.
+Numbered directories make the phases readable; Application `sync-wave` annotations remain authoritative. Automatic pruning stays disabled on the root, CRD, controller and stateful Applications (removing a manifest from Git is **not** a stateful resource-retirement procedure); only allowlisted stateless/platform Applications enable `prune: true` with `PruneLast=true`.
 
 ## 🧪 Validation
 

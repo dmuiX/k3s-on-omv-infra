@@ -1,5 +1,15 @@
 name: longhorn-oidc-proxy
 namespace: longhorn
+upstream: http://longhorn-frontend.longhorn.svc:80
+scope: openid longhorn
+allowedGroup: radar:admin
+# Preserve the legacy header behavior unless the upstream uses its own API identity.
+passBasicAuth: true
+ambient: false
+podSecurityContext: {}
+# Optional OpenBao provider base URL on the mesh for token exchange and JWKS.
+# The browser still uses the public issuer. Leave empty for standard discovery.
+openbaoBackchannelURL: ""
 # Required deployment-specific URLs, supplied by the Live repository.
 issuerURL: ""
 redirectURL: ""

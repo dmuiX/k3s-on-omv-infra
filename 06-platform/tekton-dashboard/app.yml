@@ -1,0 +1,96 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: tekton-dashboard
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: '7'
+spec:
+  project: default
+  destination:
+    name: in-cluster
+    namespace: tekton-pipelines
+  sources:
+    - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
+      targetRevision: main
+      path: 06-platform/tekton-dashboard/resources
+    - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
+      targetRevision: main
+      path: adapters/credential-custody
+    - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
+      targetRevision: main
+      path: charts/openbao-oidc
+      helm:
+        releaseName: tekton-dashboard-oidc
+        valueFiles:
+          - $live/infra/tekton-dashboard/oidc-values.yml
+        valuesObject:
+          openbaoOIDC:
+            providerConfigName: openbao
+            deletionPolicy: Orphan
+            assignments:
+              - name: tekton-dashboard-admin
+                groupRefs: [radar-admin]
+            key:
+              name: tekton-dashboard
+              syncWave: '-1'
+              algorithm: RS256
+              allowedClientIds: ['*']
+              rotationPeriod: 86400
+              verificationTtl: 172800
+            scopes:
+              - name: tekton-dashboard
+                syncWave: '-1'
+                template: '{"username":{{identity.entity.name}},"groups":{{identity.entity.groups.names}}}'
+            client:
+              name: tekton-dashboard
+              key: tekton-dashboard
+              assignments: [tekton-dashboard-admin]
+              idTokenTtl: 3600
+              accessTokenTtl: 3600
+            provider:
+              name: tekton-dashboard
+              clientRefs: [tekton-dashboard]
+              scopeRefs: [tekton-dashboard]
+    - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
+      targetRevision: main
+      path: charts/oidc-proxy
+      helm:
+        releaseName: tekton-dashboard-oidc-proxy
+        valueFiles:
+          - $live/infra/tekton-dashboard/proxy-values.yml
+        valuesObject:
+          name: tekton-dashboard-oidc-proxy
+          namespace: tekton-pipelines
+          upstream: http://tekton-dashboard.tekton-pipelines.svc:9097
+          scope: openid tekton-dashboard
+          allowedGroup: radar:admin
+          passBasicAuth: false
+          ambient: true
+          podSecurityContext:
+            seccompProfile:
+              type: RuntimeDefault
+          openbaoBackchannelURL: http://openbao-active.openbao.svc.cluster.local:8200/v1/identity/oidc/provider/tekton-dashboard
+    - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
+      targetRevision: main
+      path: charts/service-route
+      helm:
+        releaseName: tekton-dashboard-route
+        valueFiles:
+          - $live/infra/tekton-dashboard/route-values.yml
+    - repoURL: https://github.com/dmuiX/k3s-on-omv-live.git
+      targetRevision: main
+      ref: live
+      path: infra/tekton-dashboard
+      directory:
+        include: network-peers.yaml
+  syncPolicy:
+    automated:
+      enabled: true
+      prune: true
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - ServerSideApply=true
+      - SkipDryRunOnMissingResource=true
+      - PruneLast=true

@@ -121,8 +121,9 @@ class TimezoneContractTest(unittest.TestCase):
         self.assertEqual(app["spec"]["sources"][0]["targetRevision"], "main")
         self.assertEqual(
             app["spec"]["syncPolicy"]["automated"],
-            {"enabled": True, "prune": False, "selfHeal": True, "allowEmpty": False},
+            {"enabled": True, "prune": True, "selfHeal": True, "allowEmpty": False},
         )
+        self.assertIn("PruneLast=true", app["spec"]["syncPolicy"]["syncOptions"])
         self.assertIn(
             "01-bootstrap/timezone-defaults/app.yml",
             yaml.safe_load((ROOT / "kustomization.yaml").read_text())["resources"],
@@ -202,7 +203,7 @@ class NativeTimezoneAdmissionTest(unittest.TestCase):
         return result
 
     @classmethod
-    def setUpClass(cls) -> None:
+    def require_isolated_api(cls) -> None:
         # Guard every API write: never use the host context or a mounted kubeconfig.
         result = subprocess.run(
             [
@@ -223,6 +224,10 @@ class NativeTimezoneAdmissionTest(unittest.TestCase):
             raise AssertionError(
                 "Native tests require the owned, network-isolated test container"
             )
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.require_isolated_api()
         cls.kubectl("apply", "-f", "-", text=POLICY_FILE.read_text())
         cls.kubectl(
             "apply",
@@ -471,7 +476,7 @@ class NativeTimezoneAdmissionTest(unittest.TestCase):
             found,
             {
                 ("backup-validation", "postgresql-restore-validation"),
-                ("cloudnative-pg", "postgresql-size-retention"),
+                ("cloudnative-pg", "postgresql-r2-backup-budget-preview"),
                 ("openbao", "openbao-snapshot"),
                 ("shutdown-pod-preview", "shutdown-pod-preview"),
             },

@@ -282,6 +282,48 @@ class BootstrapOrderTest(unittest.TestCase):
         self.assertTrue(any(len(p.relative_to(ROOT).parts) == 3 for p in paths))
         self.assertEqual(sorted(root['resources']), sorted(str(path.relative_to(ROOT)) for path in paths))
 
+    def test_automatic_pruning_is_restricted_to_stateless_allowlist(self):
+        allowlist = {
+            'letsencrypt-dns01-credentials',
+            'longhorn-config',
+            'metrics-server',
+            'openbao-backups',
+            'platform-credentials',
+            'resource-defaults',
+            'tekton-dashboard',
+            'timezone-defaults',
+        }
+        root_app = yaml.safe_load((ROOT / 'infra.yml').read_text())
+        self.assertIs(root_app['spec']['syncPolicy']['automated']['prune'], False)
+        apps = applications()
+        self.assertEqual(allowlist - set(apps), set())
+        protected_kinds = {'Namespace', 'PersistentVolume', 'PersistentVolumeClaim', 'StatefulSet', 'Cluster'}
+        for name, app in apps.items():
+            with self.subTest(app=name):
+                policy = app['spec']['syncPolicy']
+                automated = policy['automated']
+                self.assertIs(automated['selfHeal'], True)
+                self.assertIs(automated['allowEmpty'], False)
+                if name in allowlist:
+                    self.assertIs(automated['prune'], True)
+                    self.assertIn('PruneLast=true', policy.get('syncOptions', []))
+                    for source in app['spec'].get('sources', []):
+                        if source.get('repoURL') != INFRA or not source.get('path'):
+                            continue
+                        for path in (ROOT / source['path']).glob('*.yaml'):
+                            for doc in yaml.safe_load_all(path.read_text()):
+                                if not isinstance(doc, dict):
+                                    continue
+                                kind = doc.get('kind')
+                                self.assertNotIn(kind, protected_kinds, f'{name}: {path}')
+                                if kind == 'CustomResourceDefinition':
+                                    sync_opts = doc.get('metadata', {}).get('annotations', {}).get(
+                                        'argocd.argoproj.io/sync-options', ''
+                                    )
+                                    self.assertIn('Prune=false', sync_opts.split(','), f'{name}: {path}')
+                else:
+                    self.assertIs(automated['prune'], False)
+
     def test_application_schema_options_and_infra_paths(self):
         for name, app in applications().items():
             with self.subTest(app=name):

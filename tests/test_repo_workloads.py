@@ -98,7 +98,12 @@ class RepositoryWorkloads(unittest.TestCase):
             data: dict[str, str]
 
         repo = Repository()
-        for app in ("k3s-postgres", "longhorn-config", "kube-prometheus-stack"):
+        for app in (
+            "k3s-postgres",
+            "longhorn-config",
+            "kube-prometheus-stack",
+            "tekton-dashboard",
+        ):
             with self.subTest(application=app):
                 docs = repo.render(app)
                 helper = types.ModuleType("credential_helpers")
@@ -115,7 +120,8 @@ class RepositoryWorkloads(unittest.TestCase):
                 def request(
                     _base: str, path: str, _token: str, data: CustodyWrite | None = None
                 ) -> dict[str, object]:
-                    if path == "identity/oidc/client/longhorn":
+                    oidc_client = "longhorn" if app == "longhorn-config" else app
+                    if path == f"identity/oidc/client/{oidc_client}":
                         return {
                             "data": {
                                 "client_id": "fixture-client",
@@ -201,6 +207,7 @@ class RepositoryWorkloads(unittest.TestCase):
             "csi-driver-smb",
             "k8up",
             "longhorn",
+            "tekton-pipelines",
             "vault-secrets-operator",
             "provider-vault",
             "openbao",
@@ -208,6 +215,7 @@ class RepositoryWorkloads(unittest.TestCase):
             "platform-credentials",
             "letsencrypt-dns01-credentials",
             "longhorn-config",
+            "tekton-dashboard",
             "openbao-backups",
             "openbao-config",
             "k3s-postgres",
@@ -486,7 +494,7 @@ class RepositoryWorkloads(unittest.TestCase):
             "resizerReplicaCount",
             "snapshotterReplicaCount",
         ):
-            self.assertEqual(values["csi"][field], 3)
+            self.assertEqual(values["csi"][field], 2)
         self.assertTrue(
             any(
                 d["kind"] == "DaemonSet"
@@ -670,16 +678,16 @@ class RepositoryWorkloads(unittest.TestCase):
             {d["metadata"]["name"] for d in jobs},
             {
                 "openbao-snapshot",
-                "postgresql-size-retention",
+                "postgresql-r2-backup-budget-preview",
                 "postgresql-restore-validation",
-                "k8up-restore-test",
+                "k8up-backup-validation",
             },
         )
         for job in jobs:
             with self.subTest(job=job["metadata"]["name"]):
                 self.assertEqual(job["spec"]["concurrencyPolicy"], "Forbid")
                 pod = job["spec"]["jobTemplate"]["spec"]["template"]["spec"]
-                if job["metadata"]["name"] == "k8up-restore-test":
+                if job["metadata"]["name"] == "k8up-backup-validation":
                     self.assertIs(pod["automountServiceAccountToken"], False)
                 else:
                     self.assertNotEqual(pod["serviceAccountName"], "default")

@@ -13,7 +13,7 @@ spec:
   sources:
   - repoURL: https://blob.istio.io/istio-release/charts
     chart: base
-    targetRevision: 1.31.2
+    targetRevision: 1.32.0
     helm:
       releaseName: istio-base
       valuesObject:
@@ -21,11 +21,14 @@ spec:
           validationFailurePolicy: Fail
   - repoURL: https://blob.istio.io/istio-release/charts
     chart: istiod
-    targetRevision: 1.31.2
+    targetRevision: 1.32.0
     helm:
       releaseName: istio-istiod
       valuesObject:
+        image: docker.io/istio/pilot@sha256:219ab7efcf1fd1f883086ad4a4a649c0e70bee3200423d6eef9f435103a79423 # 1.32.0-distroless
         profile: ambient
+        meshConfig:
+          accessLogFile: /dev/stdout
         base:
           validationFailurePolicy: Fail
         resources:
@@ -38,6 +41,7 @@ spec:
         global:
           platform: k3s
           proxy:
+            image: docker.io/istio/proxyv2@sha256:9cd1f1cc261f3fe250ab483543e7256c39d5871eae5f1817c0809eff09e365d4 # 1.32.0-distroless
             resources:
               requests:
                 cpu: 50m
@@ -47,10 +51,11 @@ spec:
                 memory: 256Mi
   - repoURL: https://blob.istio.io/istio-release/charts
     chart: cni
-    targetRevision: 1.31.2
+    targetRevision: 1.32.0
     helm:
       releaseName: istio-cni
       valuesObject:
+        image: docker.io/istio/install-cni@sha256:bf8fa30fe56fc7209941af23999f1463071b9885c22ec81f5998645718698787 # 1.32.0-distroless
         profile: ambient
         global:
           platform: k3s
@@ -63,10 +68,11 @@ spec:
             memory: 256Mi
   - repoURL: https://blob.istio.io/istio-release/charts
     chart: ztunnel
-    targetRevision: 1.31.2
+    targetRevision: 1.32.0
     helm:
       releaseName: ztunnel
       valuesObject:
+        image: docker.io/istio/ztunnel@sha256:9d7bdca90124e3680317c29b1e19a94335a15dba3ca51b8676c027b333869f69 # 1.32.0
         resources:
           requests:
             cpu: 150m

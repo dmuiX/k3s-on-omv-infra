@@ -20,7 +20,8 @@ def documents(path):
 class SharedConnectionTests(unittest.TestCase):
     def test_infra_consumers_keep_isolated_identities(self):
         expected = {
-            'cert-manager-dns01', 'longhorn-oidc-proxy', 'openbao-snapshot',
+            'cert-manager-dns01', 'longhorn-oidc-proxy', 'tekton-dashboard-oidc-proxy',
+            'openbao-snapshot',
             'smb-vso', 'platform-r2-vso', 'postgresql-vso', 'k8up-validation-vso',
             'grafana-vso', 'alertmanager-vso', 'prometheus-k8up-vso',
         }
@@ -49,7 +50,8 @@ class SharedConnectionTests(unittest.TestCase):
                 'alertmanager-vso': 'kube-prometheus-stack-alertmanager',
             }
             identity = {'role': role, 'serviceAccount': native_accounts.get(role, role)}
-            if role in {'longhorn-oidc-proxy', 'smb-vso', 'platform-r2-vso',
+            if role in {'longhorn-oidc-proxy', 'tekton-dashboard-oidc-proxy',
+                        'smb-vso', 'platform-r2-vso',
                         'postgresql-vso', 'alertmanager-vso', 'prometheus-k8up-vso'}:
                 identity['tokenExpirationSeconds'] = 600
             if role == 'cert-manager-dns01':

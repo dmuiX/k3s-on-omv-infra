@@ -77,10 +77,10 @@ spec:
           jobEnabled: false
         csi:
           podAntiAffinityPreset: hard
-          attacherReplicaCount: 3
-          provisionerReplicaCount: 3
-          resizerReplicaCount: 3
-          snapshotterReplicaCount: 3
+          attacherReplicaCount: 2
+          provisionerReplicaCount: 2
+          resizerReplicaCount: 2
+          snapshotterReplicaCount: 2
   # Keep after Helm: this directory overrides only Deployment/longhorn-ui.
   - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
     targetRevision: main

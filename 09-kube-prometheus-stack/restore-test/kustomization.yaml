@@ -5,3 +5,5 @@ resources:
   - ../../adapters/k8up-restore
 patches:
   - path: prometheus.patch
+    target: {kind: CronJob, name: k8up-backup-validation}
+    options: {allowNameChange: true}

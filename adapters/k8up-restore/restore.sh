@@ -1,6 +1,6 @@
 #!/bin/sh
 # Run via sh in ghcr.io/k8up-io/k8up:v2.16.0@sha256:29458113b8b676b5b48ebf25b21be5194ee9dccc887b92b8fa27f7d3dfca6f50
-# sh restore.sh canary|prometheus-stream MAX_AGE_SECONDS
+# sh restore.sh backup-validation|prometheus-stream MAX_AGE_SECONDS
 # Read-only local repository PVC, Secret via RESTIC_PASSWORD[_FILE], fresh private scratch.
 set -eu
 umask 077
@@ -8,7 +8,7 @@ trap '[ "$?" -eq 0 ] || echo "stage=restore result=FAIL" >&2' EXIT
 die() { echo "$1" >&2; exit 1; }
 [ "$#" = 2 ] || die 'expected source and maximum age in seconds'
 case $1 in
-    canary) host=backup-validation; path=/data/k8up-validation-canary ;;
+    backup-validation) host=backup-validation; path=/data/k8up-validation-canary ;;
     # K8up v2.16 backupAnnotatedPod + StdinBackup: /<namespace>-<container><fileExtension>.
     # The PreBackupPod specifies container snapshot and literal extension tar (no dot).
     prometheus-stream) host=kube-prometheus-stack; path=/kube-prometheus-stack-snapshottar ;;
@@ -61,7 +61,7 @@ rm .stage/list .stage/warnings
 repo restore --verify --include "$path" --target .stage/tree "$id" >/dev/null 2>&1 || die 'verified restore failed'
 target=.stage/tree$path
 case $1 in
-    canary) [ ! -L .stage/tree/data ] && [ ! -L "$target" ] || die 'invalid canary directory'
+    backup-validation) [ ! -L .stage/tree/data ] && [ ! -L "$target" ] || die 'invalid fixture directory'
         target=$target/marker.txt ;;
 esac
 [ ! -L "$target" ] && [ -f "$target" ] && [ -s "$target" ] || die 'empty or invalid restored source'

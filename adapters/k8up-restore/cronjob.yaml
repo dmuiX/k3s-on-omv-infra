@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: k8up-restore-test
+  name: k8up-backup-validation
 spec:
   schedule: '15 9 * * 2'
   timeZone: Europe/Berlin
@@ -37,7 +37,7 @@ spec:
               terminationMessagePolicy: FallbackToLogsOnError
               image: ghcr.io/k8up-io/k8up:v2.16.0@sha256:29458113b8b676b5b48ebf25b21be5194ee9dccc887b92b8fa27f7d3dfca6f50
               command: [/bin/sh, /tools/restore.sh]
-              args: [canary, '172800']
+              args: [backup-validation, '172800']
               env:
                 - {name: TMPDIR, value: /scratch}
                 - name: RESTIC_REPOSITORY
@@ -61,7 +61,7 @@ spec:
               terminationMessagePolicy: FallbackToLogsOnError
               image: python:3.13-slim-bookworm@sha256:a1165e272e578941b84abc79e4ab38a0305cd12803a5c4247979ac7655f4d641
               command: [/usr/local/bin/python, -IB, /tools/verify.py]
-              args: [canary]
+              args: [backup-validation]
               securityContext: *hardened
               resources:
                 requests: {cpu: 50m, memory: 64Mi}

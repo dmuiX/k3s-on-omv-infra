@@ -218,10 +218,22 @@ class InlineHelmValuesTest(unittest.TestCase):
                 name = doc['metadata']['name']
                 self.assertNotIn(name, explicit)
                 explicit[name] = doc
-        self.assertEqual(set(explicit), {'kube-system', 'node-exporter', 'shutdown-pod-preview'})
+        tekton_labels = {
+            **restricted,
+            'app.kubernetes.io/instance': 'default',
+            'app.kubernetes.io/part-of': 'tekton-pipelines',
+        }
+        expected_explicit = {
+            'kube-system': {**privileged, **warnings},
+            'node-exporter': {**privileged, **warnings},
+            'shutdown-pod-preview': restricted,
+            'ci-builds': restricted,
+            'tekton-pipelines': tekton_labels,
+            'tekton-pipelines-resolvers': {**tekton_labels, 'app.kubernetes.io/component': 'resolvers'},
+        }
+        self.assertEqual(set(explicit), set(expected_explicit))
         for name, doc in explicit.items():
-            labels = restricted if name == 'shutdown-pod-preview' else {**privileged, **warnings}
-            metadata = {'name': name, 'labels': labels}
+            metadata = {'name': name, 'labels': expected_explicit[name]}
             if name == 'node-exporter':
                 metadata['annotations'] = {'argocd.argoproj.io/sync-wave': '-20'}
             self.assertEqual(doc, {'apiVersion': 'v1', 'kind': 'Namespace', 'metadata': metadata})

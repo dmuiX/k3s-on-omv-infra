@@ -121,7 +121,7 @@ configuration. #75/#76 preserve those settings rather than bundling hardening.
 `openbao-manager-credentials` and `postgresql-r2-credentials`. The manager is
 consumed by the Cluster's managed `openbao_manager` role and provider-vault's
 `SecretBackendConnection/postgresql`; R2 is consumed by the Barman ObjectStore
-integration and `postgresql-size-retention` through envFrom. At the time of this
+integration and the `postgresql-r2-backup-budget-preview` CronJob through explicit Secret key references. At the time of this
 audit Bootstrap created the ObjectStore; see the later [Argo adoption contract](backup-contract.md#ordered-adoption-not-authorization).
 
 Exact chart 0.29.1 (CNPG 1.30.1) gives the controller cluster-wide Secret

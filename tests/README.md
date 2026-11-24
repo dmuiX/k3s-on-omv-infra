@@ -187,32 +187,19 @@ is used. Native merge/admission is NOT full operator/runtime acceptance.
 | `letsencrypt-dns01-credentials` | Public resources render; native cert-manager reader identity and waves | DNS provider credential and actual OpenBao policy |
 | `letsencrypt-dns01-issuer` | Public Application reference/wave only; no fabricated issuer is rendered | Actual issuer resources are private Live configuration |
 | `openbao` | Exact chart, three-server HA/PDB, rolling strategy, protected metrics listener/identity, named monitor port and network-policy invariants | Quorum, unseal, authentication, real metrics traffic and orphan retirement |
+| `tekton-pipelines` | Pinned controller manifests, CRD schema hygiene and restricted `ci-builds` namespace | Controller rollout and actual build execution |
+| `tekton-dashboard` | Read-only UI, scoped reader RBAC, synthetic OIDC/proxy/route agreement, private API policy source boundary, create-once credential custody | Gateway/TLS, allowed and denied OIDC sessions, NetworkPolicy and real log streaming |
 | `longhorn-config` | Public trim-only RecurringJob and encrypted-discard DaemonSet; actual ConfigMap program/process/lease fixture tests; synthetic OIDC/proxy render | Real block devices/discard, private OIDC and CSI/node-plugin lifecycle |
 | `openbao-backups` | Bounded exclusive CronJob/account and executable snapshot adapter transitions with fake endpoints | Real backup integrity, credentials, retention and recovery |
 | `openbao-config` | Public render, prerequisite waves and credential ownership | Mount/auth/identity operations and real policies |
 | `k3s-postgres` | Three-instance CNPG CR, required anti-affinity, supervised primary updates, encrypted local class, synchronous failover quorum, Barman plugin/ScheduledBackup; one complete raw ObjectStore with unchanged sizing and a required endpoint Secret reference; executable retention fixtures | [Opt-in pinned VSO parser](../docs/vso-required-values.md#focused-postgresql-endpoint-parser-rerun-no-sibling-repos), guarded Argo adoption, generated Pods, physical data health and backup/restore |
-| `backup-validation` | Manual-only canary seed Job and reconciled seed tool; suspended, tokenless K8up restore test and exact restored marker; bounded exclusive PostgreSQL restore-validation CronJob/account, stable generated ConfigMap wired to the CronJob; actual import-safe store builder preserves local R2 references through the bridge | Private application chart consumers, safe selective sync on a suspended CronJob and actual database/application restores; the scheduled validator uses an explicit endpoint, not the env-only path |
+| `backup-validation` | Manual-only fixture seed Job and reconciled seed tool; suspended, tokenless `k8up-backup-validation` and exact restored marker; bounded exclusive PostgreSQL restore-validation CronJob/account, stable generated ConfigMap wired to the CronJob; actual import-safe store builder preserves local R2 references through the bridge | Private application chart consumers, safe selective sync on a suspended CronJob and actual database/application restores; the scheduled validator uses an explicit endpoint, not the env-only path |
 | `kube-prometheus-stack` | Suspended TSDB restore test on monitoring nodes, verified archive and historical sample read; real chart, two-replica Prometheus with hard host anti-affinity, native alert rules, two-replica Grafana with secret refs and bounded rollout, disabled Alertmanager, independently staged Grafana policy source | Private policy tuples, gateway login, datasource queries and sidecar refresh on both replicas; real scrape delivery |
 
 K3s-owned DNS/service-LB, private Apps and Bootstrap host ceremonies are not
 owned or changed by this CI. Metrics Server's new GitOps chart is covered here;
 the existing-cluster ownership handoff remains separate production acceptance. Generated Pods/controllers are checked at
 the owning CR/chart/overlay seam; rendering a CR does not prove reconciliation.
-
-## Current detected source defect (not waived)
-
-The public OpenBao server network-policy values contain a ports-only TCP 6443
-egress rule. The pinned chart emits it without destination constraints. This
-contradicts the documented exact-target API-policy ownership; Kubernetes allow
-policies are additive, so namespace default-deny does not narrow this grant.
-The security gate must remain red until a separately reviewed policy correction.
-It is **not** an expected failure, skip, missing private prerequisite or reason to
-remove the test. This CI-only PR does not alter productive network rules.
-
-Three source/render assertions expose that one underlying defect. Stale version,
-metrics-ingress and comment-only hash expectations were corrected independently;
-the original network-restriction invariant is preserved. No connectivity exploit
-or production change is included.
 
 ## Private workspace integration (retained, not run publicly)
 

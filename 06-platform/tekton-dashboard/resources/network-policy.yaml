@@ -1,0 +1,117 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: tekton-dashboard
+  namespace: tekton-pipelines
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: tekton-dashboard
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: tekton-dashboard-oidc-proxy
+      ports:
+        - {protocol: TCP, port: 9097}
+  # Separate exact API service/control-plane peers come from Live.
+  egress: []
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: tekton-dashboard-oidc-proxy
+  namespace: tekton-pipelines
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: tekton-dashboard-oidc-proxy
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: istio-gateway
+          podSelector:
+            matchLabels:
+              gateway.networking.k8s.io/gateway-name: istio-gateway
+      ports:
+        - {protocol: TCP, port: 4180}
+        - {protocol: TCP, port: 15008}
+    # Istio Ambient SNATs the kubelet's HTTP probes to this link-local address.
+    - from:
+        - ipBlock:
+            cidr: 169.254.7.127/32
+      ports:
+        - {protocol: TCP, port: 4180}
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: tekton-dashboard
+      ports:
+        - {protocol: TCP, port: 9097}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: tekton-dashboard-openbao-clients
+  namespace: tekton-pipelines
+spec:
+  podSelector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values: [tekton-dashboard-oidc-proxy, tekton-dashboard-provisioner]
+  policyTypes: [Ingress, Egress]
+  ingress: []
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - {protocol: TCP, port: 53}
+        - {protocol: UDP, port: 53}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: openbao
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: openbao
+              app.kubernetes.io/instance: openbao
+              component: server
+      ports:
+        - {protocol: TCP, port: 8200}
+        - {protocol: TCP, port: 15008}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-tekton-dashboard-openbao-clients
+  namespace: openbao
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: openbao
+      app.kubernetes.io/instance: openbao
+      component: server
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: tekton-pipelines
+          podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values: [tekton-dashboard-oidc-proxy, tekton-dashboard-provisioner]
+      ports:
+        - {protocol: TCP, port: 8200}
+        - {protocol: TCP, port: 15008}

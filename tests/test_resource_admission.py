@@ -64,16 +64,44 @@ def fixture(family: str, node: str = "omv") -> dict[str, Any]:
     return resource
 
 
+def csi_fixture(component: str = "csi-provisioner") -> dict[str, Any]:
+    """Build a tokenless Longhorn CSI controller pod fixture."""
+    resource: dict[str, Any] = timezone.pod()
+    resource["metadata"] = {
+        "name": f"{component}-probe",
+        "namespace": "longhorn",
+        "labels": {"app": component},
+        "ownerReferences": [
+            {
+                "apiVersion": "apps/v1",
+                "kind": "ReplicaSet",
+                "name": f"{component}-864bddd65f",
+                "uid": "00000000-0000-4000-8000-000000000002",
+                "controller": True,
+            }
+        ],
+    }
+    resource["spec"]["serviceAccountName"] = "longhorn-csi-service-account"
+    resource["spec"]["containers"] = [
+        {
+            "name": component,
+            "image": "registry.k8s.io/pause:3.10",
+            "resources": {"requests": {"cpu": "10m", "memory": "80Mi"}},
+        }
+    ]
+    return resource
+
+
 class ResourceAdmissionContractTest(unittest.TestCase):
-    def test_only_two_namespaced_create_policies_and_their_bindings(self) -> None:
+    def test_only_three_namespaced_create_policies_and_their_bindings(self) -> None:
         self.assertTrue(
             POLICY.is_file(), "Scoped resource defaults are not implemented"
         )
         docs = documents()
-        self.assertEqual(len(docs), 4)
+        self.assertEqual(len(docs), 6)
         policies = [d for d in docs if d["kind"] == "MutatingAdmissionPolicy"]
         bindings = [d for d in docs if d["kind"] == "MutatingAdmissionPolicyBinding"]
-        self.assertEqual(len(policies), 2)
+        self.assertEqual(len(policies), 3)
         self.assertEqual(
             {b["spec"]["policyName"] for b in bindings},
             {p["metadata"]["name"] for p in policies},
@@ -142,7 +170,12 @@ class NativeResourceAdmissionTest(unittest.TestCase):
                 timezone.NativeTimezoneAdmissionTest.kubectl(
                     "create", "namespace", namespace
                 )
-            for name in ("longhorn-service-account", "svclb", "unrelated"):
+            for name in (
+                "longhorn-service-account",
+                "longhorn-csi-service-account",
+                "svclb",
+                "unrelated",
+            ):
                 timezone.NativeTimezoneAdmissionTest.kubectl(
                     "create",
                     "-f",
@@ -166,14 +199,19 @@ class NativeResourceAdmissionTest(unittest.TestCase):
         while True:
             witness = cls.admit(fixture("longhorn"))
             loadbalancer = cls.admit(fixture("servicelb"))
-            if witness["spec"]["containers"][0]["resources"].get("requests", {}).get(
-                "memory"
-            ) == "640Mi" and loadbalancer["spec"]["containers"][0]["resources"].get(
-                "requests"
-            ) == {
-                "cpu": "5m",
-                "memory": "4Mi",
-            }:
+            csi = cls.admit(csi_fixture())
+            if (
+                witness["spec"]["containers"][0]["resources"]
+                .get("requests", {})
+                .get("memory")
+                == "640Mi"
+                and loadbalancer["spec"]["containers"][0]["resources"].get("requests")
+                == {
+                    "cpu": "5m",
+                    "memory": "4Mi",
+                }
+                and csi["spec"].get("nodeSelector") == {"compute-class": "standard"}
+            ):
                 break
             if time.monotonic() >= deadline:
                 raise AssertionError(
@@ -389,6 +427,28 @@ class NativeResourceAdmissionTest(unittest.TestCase):
                 "apply", "-f", "-", text=yaml.safe_dump_all(bindings)
             )
             self.wait_active()
+
+    def test_longhorn_csi_controllers_are_pinned_to_standard_nodes(self) -> None:
+        for component in (
+            "csi-attacher",
+            "csi-provisioner",
+            "csi-resizer",
+            "csi-snapshotter",
+        ):
+            with self.subTest(component=component):
+                actual = self.admit(csi_fixture(component))
+                self.assertEqual(
+                    actual["spec"].get("nodeSelector"), {"compute-class": "standard"}
+                )
+        explicit = csi_fixture()
+        explicit["spec"]["nodeSelector"] = {"compute-class": "small"}
+        self.assertEqual(
+            self.admit(explicit)["spec"].get("nodeSelector"),
+            {"compute-class": "small"},
+        )
+        wrong_account = csi_fixture()
+        wrong_account["spec"]["serviceAccountName"] = "unrelated"
+        self.assertNotIn("nodeSelector", self.admit(wrong_account)["spec"])
 
     def test_init_containers_are_not_accidentally_defaulted(self) -> None:
         for family in ("longhorn", "servicelb"):

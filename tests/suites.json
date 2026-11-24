@@ -15,11 +15,14 @@
     "test_native_request_profile",
     "test_native_reader_accounts",
     "test_openbao_network",
+    "test_postgresql_restore_startup",
     "test_retention",
     "test_shutdown_pod_preview",
     "test_snapshot",
     "test_small_node_placement",
     "test_smb_vso_account",
+    "test_tekton_dashboard",
+    "test_tekton_pilot",
     "test_repo_suite",
     "test_repo_workloads",
     "test_request_rightsizing",
@@ -38,7 +41,7 @@
       "RemainingAPINetwork.test_rendered_restore_instance_paths"
     ],
     "test_resource_admission": [
-      "ResourceAdmissionContractTest.test_only_two_namespaced_create_policies_and_their_bindings",
+      "ResourceAdmissionContractTest.test_only_three_namespaced_create_policies_and_their_bindings",
       "ResourceAdmissionContractTest.test_application_is_registered_and_does_not_own_workload_pods"
     ],
     "test_backup_validation_templates": [
@@ -56,6 +59,7 @@
       "BootstrapOrderTest.test_certificate_phase_has_no_openbao_or_istio_resource_dependency",
       "BootstrapOrderTest.test_gateway_namespace_has_one_early_metadata_steward",
       "BootstrapOrderTest.test_root_selects_every_application_once_at_both_directory_depths",
+      "BootstrapOrderTest.test_automatic_pruning_is_restricted_to_stateless_allowlist",
       "BootstrapOrderTest.test_application_schema_options_and_infra_paths"
     ],
     "test_infra_root_values": [

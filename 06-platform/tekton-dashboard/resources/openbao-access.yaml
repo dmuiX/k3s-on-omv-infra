@@ -1,0 +1,63 @@
+apiVersion: vault.vault.upbound.io/v1alpha1
+kind: Policy
+metadata:
+  name: tekton-dashboard-oidc-proxy-read
+spec:
+  deletionPolicy: Orphan
+  forProvider:
+    name: tekton-dashboard-oidc-proxy-read
+    policy: |
+      path "auth/token/renew-self" { capabilities = ["update"] }
+      path "kv/data/tekton-dashboard/oidc-proxy" { capabilities = ["read"] }
+      path "kv/metadata/tekton-dashboard/oidc-proxy" { capabilities = ["read"] }
+  providerConfigRef:
+    name: openbao
+---
+apiVersion: kubernetes.vault.upbound.io/v1alpha1
+kind: AuthBackendRole
+metadata:
+  name: tekton-dashboard-oidc-proxy
+spec:
+  deletionPolicy: Orphan
+  forProvider:
+    backend: kubernetes
+    roleName: tekton-dashboard-oidc-proxy
+    boundServiceAccountNames: [tekton-dashboard-oidc-proxy]
+    boundServiceAccountNamespaces: [tekton-pipelines]
+    tokenPolicies: [tekton-dashboard-oidc-proxy-read]
+    tokenTtl: 3600
+  providerConfigRef:
+    name: openbao
+---
+apiVersion: vault.vault.upbound.io/v1alpha1
+kind: Policy
+metadata:
+  name: tekton-dashboard-provisioner
+spec:
+  deletionPolicy: Orphan
+  forProvider:
+    name: tekton-dashboard-provisioner
+    policy: |
+      path "kv/data/tekton-dashboard/oidc-proxy" { capabilities = ["read", "create"] }
+      path "kv/metadata/tekton-dashboard/oidc-proxy" { capabilities = ["read"] }
+      path "identity/oidc/client/tekton-dashboard" { capabilities = ["read"] }
+  providerConfigRef:
+    name: openbao
+---
+apiVersion: kubernetes.vault.upbound.io/v1alpha1
+kind: AuthBackendRole
+metadata:
+  name: tekton-dashboard-provisioner
+spec:
+  deletionPolicy: Orphan
+  forProvider:
+    backend: kubernetes
+    roleName: tekton-dashboard-provisioner
+    boundServiceAccountNames: [tekton-dashboard-provisioner]
+    boundServiceAccountNamespaces: [tekton-pipelines]
+    audience: vault://tekton-dashboard-provisioner
+    tokenPolicies: [tekton-dashboard-provisioner]
+    tokenTtl: 900
+    tokenMaxTtl: 900
+  providerConfigRef:
+    name: openbao

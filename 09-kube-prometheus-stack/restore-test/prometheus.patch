@@ -1,7 +1,7 @@
 apiVersion: batch/v1
 kind: CronJob
 metadata:
-  name: k8up-restore-test
+  name: prometheus-restore-test
 spec:
   schedule: '15 12 * * 2'
   jobTemplate:
