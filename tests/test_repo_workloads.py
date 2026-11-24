@@ -22,25 +22,25 @@ class RepositoryWorkloads(unittest.TestCase):
                 "openbao-backups",
                 "openbao-snapshot",
                 "CronJob",
-                "16fbb2d2d3bfa560ad61fa474ffa13185ab74110bef2eb68493fde485ac6b142",
+                "4128f566fda4221fbb3aea2546b62011c34d3e84aa563aa1d913e3b419963a95",
             ),
             (
                 "k3s-postgres",
                 "k3s-postgres-manager-provisioner",
                 "Job",
-                "1766471924335d1c3fe85f0794320d3df5ea6d31707e7007b0801abc24a4dbd5",
+                "938fe8a35dd7623e64fee1364fd70f4e0a115028b33e919ab036e4a738c33d6a",
             ),
             (
                 "longhorn-config",
                 "longhorn-proxy-provisioner",
                 "Job",
-                "5f81c185c941619867900e214e96812eb0e978c7452bd66df99004f33448a0b3",
+                "60f47b07cabd51d2443e306006973c433abe034acf4b68df1bedc87609ae49db",
             ),
             (
                 "kube-prometheus-stack",
                 "grafana-admin-provisioner",
                 "Job",
-                "74cd024b8b115a9b9cb97b28be6d2575402444b5e179b3c07f5a14d0514164e8",
+                "343516fa4cf3fe969ade56f3b1fddebebdf81cb0e7b0ad907751ac44fe36f4de",
             ),
         )
         repo = Repository()

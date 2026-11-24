@@ -8,7 +8,7 @@ spec:
   # Stop waiting for existing sessions early, then use CNPG's clean fast shutdown.
   # Keep the overall WAL/replication shutdown and switchover limits unchanged.
   smartShutdownTimeout: 15
-  imageName: ghcr.io/cloudnative-pg/postgresql:18.6-system-bookworm@sha256:b4bec141fa5ca2bab490b197c814fb1342147c8405be1fb0673951fa6db7f699
+  imageName: ghcr.io/cloudnative-pg/postgresql:18.7-system-bookworm@sha256:17b1b2d8b41398e4a5aa5466b49c866cb500dcaf08e9a4923ca443f2cd13c25a
   enableSuperuserAccess: false
   managed:
     roles:

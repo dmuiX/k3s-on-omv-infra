@@ -127,7 +127,7 @@ Locally, `test_timezone_defaults.py` has four offline guards and fourteen opt-in
 For a disposable test API, use the same pinned K3s version as the platform. Docker owns the process/health state; the server has a 900-second lifetime, no network access, no host mounts and no privileges. Its automatically created anonymous data volumes belong only to this test. Run from the Infra checkout in a dedicated shell:
 
 ```sh
-image='rancher/k3s:v1.37.1-k3s1@sha256:ca7f37d993d82ef0dcdcfecb2e0e2618ea541dbaffc620c8cedebe01a82acd0d'
+image='rancher/k3s:v1.37.2-k3s1@sha256:21ea6e0fac4e3930c2ce8aa40ddd41a8b18cb3e9a0222c030dc005e7e88c4332'
 test_id=$(docker run -d --name "timezone-policy-test-$$" \
   --label purpose=timezone-policy-test --label owner=timezone-tests \
   --network none --cap-drop ALL --security-opt no-new-privileges \
