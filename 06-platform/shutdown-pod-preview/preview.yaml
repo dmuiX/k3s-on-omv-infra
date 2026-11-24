@@ -51,7 +51,7 @@ metadata:
 spec:
   schedule: '*/30 * * * *'
   timeZone: Europe/Berlin
-  suspend: true
+  suspend: false
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 120
   successfulJobsHistoryLimit: 1

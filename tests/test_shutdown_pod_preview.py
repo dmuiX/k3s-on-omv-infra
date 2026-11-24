@@ -184,11 +184,11 @@ class ShutdownPodPreviewTest(unittest.TestCase):
         )
         self.assertEqual(deleted, [(NAMESPACE, "fixture-old-pod", "old-pod-uid")])
 
-    def test_rendered_bundle_is_suspended_unregistered_and_strictly_scoped(
+    def test_rendered_bundle_is_registered_enabled_and_strictly_scoped(
         self,
     ) -> None:
         resources = render_kustomization(ROOT, BUNDLE)
-        self.assertFalse((BUNDLE / "app.yml").exists())
+        self.assertTrue((BUNDLE / "app.yml").exists())
         self.assertFalse(any(d["kind"] == "ClusterRoleBinding" for d in resources))
         (role,) = [d for d in resources if d["kind"] == "ClusterRole"]
         self.assertEqual(
@@ -224,7 +224,7 @@ class ShutdownPodPreviewTest(unittest.TestCase):
                 ],
             )
         (cron,) = [d["spec"] for d in resources if d["kind"] == "CronJob"]
-        self.assertIs(cron["suspend"], True)
+        self.assertIs(cron["suspend"], False)
         self.assertEqual(cron["concurrencyPolicy"], "Forbid")
         pod = cron["jobTemplate"]["spec"]["template"]["spec"]
         self.assertEqual(pod["serviceAccountName"], "shutdown-pod-preview")
