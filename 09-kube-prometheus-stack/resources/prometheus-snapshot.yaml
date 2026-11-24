@@ -4,7 +4,7 @@ metadata:
   name: prometheus-snapshot-contract
   namespace: kube-prometheus-stack
   annotations:
-    platform.k3s-on-omv.io/tool-image: python:3.13-slim-bookworm@sha256:a1165e272e578941b84abc79e4ab38a0305cd12803a5c4247979ac7655f4d641
+    platform.k3s-on-omv.io/tool-image: python:3.13.18-slim-bookworm@sha256:f0fa218d5b06f9b9235024fa061cde2cb141f726de52134471053d2d9b5324a3
 immutable: true
 data:
   source: prometheus-kube-prometheus-stack-prometheus-0 only
@@ -72,7 +72,7 @@ spec:
               topologyKey: kubernetes.io/hostname
       containers:
         - name: snapshot
-          image: python:3.13-slim-bookworm@sha256:a1165e272e578941b84abc79e4ab38a0305cd12803a5c4247979ac7655f4d641
+          image: python:3.13.18-slim-bookworm@sha256:f0fa218d5b06f9b9235024fa061cde2cb141f726de52134471053d2d9b5324a3
           command:
             - /usr/local/bin/python
             - -c
