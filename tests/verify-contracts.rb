@@ -721,7 +721,7 @@ class PlatformContractTest < Minitest::Test
     source = application(INFRA / "02-controllers/csi-driver-smb/app.yml").dig("spec", "sources", 0)
     assert_equal "https://raw.githubusercontent.com/kubernetes-csi/csi-driver-smb/master/charts", source["repoURL"]
     assert_equal "csi-driver-smb", source["chart"]
-    assert_equal "1.20.3", source["targetRevision"]
+    assert_equal "1.20.4", source["targetRevision"]
     assert_includes application(INFRA / "02-controllers/csi-driver-smb/app.yml").dig("spec", "syncPolicy", "syncOptions"), "SkipDryRunOnMissingResource=true"
     assert_equal false, chart_values("02-controllers/csi-driver-smb/app.yml").dig("windows", "enabled")
 
