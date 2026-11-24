@@ -159,17 +159,46 @@ class ShutdownPodPreviewTest(unittest.TestCase):
         self.dep["metadata"]["name"] = "not-allowlisted"
         self.assertEqual(self.candidates(), [])
 
-    def test_rendered_bundle_is_suspended_unregistered_and_has_no_write_access(
+    def test_cleanup_deletes_only_verified_candidates_by_uid(self) -> None:
+        responses = {
+            CORE + "/pods?fieldSelector=status.phase%3DFailed": [self.pod],
+            APPS + "/replicasets": [self.rs],
+            APPS + "/deployments": [self.dep],
+        }
+
+        def read(path: str) -> dict[str, object]:
+            if path in responses:
+                return {"items": responses[path]}
+            return {"items": []}
+
+        deleted: list[tuple[str, str, str]] = []
+        # Preview mode (delete=None) must never delete.
+        PREVIEW["cleanup"](read, now=NOW, delete=None)
+        self.assertEqual(deleted, [])
+
+        # Delete mode passes exact (namespace, pod, uid).
+        PREVIEW["cleanup"](
+            read,
+            now=NOW,
+            delete=lambda ns, pod, uid: deleted.append((ns, pod, uid)),
+        )
+        self.assertEqual(deleted, [(NAMESPACE, "fixture-old-pod", "old-pod-uid")])
+
+    def test_rendered_bundle_is_registered_enabled_and_strictly_scoped(
         self,
     ) -> None:
         resources = render_kustomization(ROOT, BUNDLE)
-        self.assertFalse((BUNDLE / "app.yml").exists())
+        self.assertTrue((BUNDLE / "app.yml").exists())
         self.assertFalse(any(d["kind"] == "ClusterRoleBinding" for d in resources))
         (role,) = [d for d in resources if d["kind"] == "ClusterRole"]
         self.assertEqual(
             role["rules"],
             [
-                {"apiGroups": [""], "resources": ["pods"], "verbs": ["list"]},
+                {
+                    "apiGroups": [""],
+                    "resources": ["pods"],
+                    "verbs": ["list", "delete"],
+                },
                 {
                     "apiGroups": ["apps"],
                     "resources": ["deployments", "replicasets"],
@@ -195,10 +224,14 @@ class ShutdownPodPreviewTest(unittest.TestCase):
                 ],
             )
         (cron,) = [d["spec"] for d in resources if d["kind"] == "CronJob"]
-        self.assertIs(cron["suspend"], True)
+        self.assertIs(cron["suspend"], False)
         self.assertEqual(cron["concurrencyPolicy"], "Forbid")
         pod = cron["jobTemplate"]["spec"]["template"]["spec"]
         self.assertEqual(pod["serviceAccountName"], "shutdown-pod-preview")
+        self.assertEqual(
+            pod["containers"][0]["command"],
+            ["python3", "-B", "/preview/preview.py", "--delete"],
+        )
         (config,) = [d for d in resources if d["kind"] == "ConfigMap"]
         self.assertEqual(
             pod["volumes"][0]["configMap"]["name"], config["metadata"]["name"]
@@ -206,10 +239,16 @@ class ShutdownPodPreviewTest(unittest.TestCase):
         self.assertEqual(
             config["data"]["preview.py"], (BUNDLE / "preview.py").read_text()
         )
-        (policy,) = [d["spec"] for d in resources if d["kind"] == "NetworkPolicy"]
+        policies = {
+            d["metadata"]["name"]: d["spec"]
+            for d in resources
+            if d["kind"] == "NetworkPolicy"
+        }
         self.assertEqual(
-            policy, {"podSelector": {}, "policyTypes": ["Ingress", "Egress"]}
+            policies["default-deny"],
+            {"podSelector": {}, "policyTypes": ["Ingress", "Egress"]},
         )
+        self.assertIn("allow-shutdown-pod-preview-dns", policies)
 
 
 if __name__ == "__main__":

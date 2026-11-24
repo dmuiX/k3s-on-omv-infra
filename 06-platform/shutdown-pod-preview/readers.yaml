@@ -1,5 +1,5 @@
-# Only namespace RoleBindings use this shared list permission. Never bind it
-# cluster-wide or extend it with write verbs to move beyond the preview.
+# Only namespace RoleBindings use this shared permission. Never bind it
+# cluster-wide; delete is strictly scoped to pods in the allowlisted namespaces.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:
@@ -7,7 +7,7 @@ metadata:
 rules:
   - apiGroups: ['']
     resources: [pods]
-    verbs: [list]
+    verbs: [list, delete]
   - apiGroups: [apps]
     resources: [deployments, replicasets]
     verbs: [list]
@@ -44,6 +44,20 @@ apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding
 metadata:
   name: shutdown-pod-preview
+  namespace: kube-prometheus-stack
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: shutdown-pod-preview
+subjects:
+  - kind: ServiceAccount
+    name: shutdown-pod-preview
+    namespace: shutdown-pod-preview
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: shutdown-pod-preview
   namespace: kube-system
 roleRef:
   apiGroup: rbac.authorization.k8s.io
@@ -59,6 +73,34 @@ kind: RoleBinding
 metadata:
   name: shutdown-pod-preview
   namespace: longhorn
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: shutdown-pod-preview
+subjects:
+  - kind: ServiceAccount
+    name: shutdown-pod-preview
+    namespace: shutdown-pod-preview
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: shutdown-pod-preview
+  namespace: openbao
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: shutdown-pod-preview
+subjects:
+  - kind: ServiceAccount
+    name: shutdown-pod-preview
+    namespace: shutdown-pod-preview
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: shutdown-pod-preview
+  namespace: tekton-pipelines
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole

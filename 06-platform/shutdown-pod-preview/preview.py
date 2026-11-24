@@ -13,11 +13,15 @@ from typing import Any
 
 Document = dict[str, Any]
 Read = Callable[[str], Document]
+Delete = Callable[[str, str, str], None]
 TARGETS = {
     "argocd": {"argocd-dex-server"},
     "audiobookshelf": {"audiobookshelf"},
+    "kube-prometheus-stack": {"kube-prometheus-stack-kube-state-metrics"},
     "kube-system": {"csi-smb-controller"},
     "longhorn": {"csi-attacher", "csi-provisioner", "csi-resizer", "csi-snapshotter"},
+    "openbao": {"openbao-agent-injector"},
+    "tekton-pipelines": {"tekton-dashboard", "tekton-pipelines-webhook"},
 }
 SHUTDOWN = "Pod was terminated in response to imminent node shutdown."
 
@@ -160,13 +164,67 @@ def cluster_read(path: str) -> Document:
         connection.close()
 
 
+def cluster_delete(namespace: str, pod: str, uid: str) -> None:
+    """Delete one verified candidate pod in-cluster guarded by its exact UID."""
+    mount = Path("/var/run/secrets/kubernetes.io/serviceaccount")
+    tls = ssl.create_default_context(cafile=str(mount / "ca.crt"))
+    auth = "Bearer " + (mount / "token").read_text(encoding="utf-8").strip()
+    path = f"/api/v1/namespaces/{namespace}/pods/{pod}"
+    body = json.dumps(
+        {
+            "apiVersion": "v1",
+            "kind": "DeleteOptions",
+            "preconditions": {"uid": uid},
+        }
+    ).encode("utf-8")
+    connection = HTTPSConnection("kubernetes.default.svc", context=tls, timeout=10)
+    try:
+        connection.request(
+            "DELETE",
+            path,
+            body=body,
+            headers={
+                "Authorization": auth,
+                "Content-Type": "application/json",
+            },
+        )
+        with connection.getresponse() as response:
+            if response.status not in (200, 202, 404):
+                raise HTTPException(f"unexpected API delete status {response.status}")
+            response.read()
+    finally:
+        connection.close()
+
+
+def cleanup(
+    read: Read,
+    *,
+    now: datetime,
+    delete: Delete | None = None,
+) -> list[dict[str, str]]:
+    """Select verified shutdown candidates and optionally delete them by UID."""
+    candidates = preview(read, now=now)
+    if delete is not None:
+        for candidate in candidates:
+            delete(candidate["namespace"], candidate["pod"], candidate["uid"])
+    return candidates
+
+
 def main() -> int:
-    """Print a preview without executing or supporting any write operation."""
+    """Report or delete verified node-shutdown pod leftovers."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--context", help="Explicit context for local kubectl preview")
-    context = parser.parse_args().context
+    parser.add_argument("--context", help="Explicit context for local kubectl run")
+    parser.add_argument(
+        "--delete",
+        action="store_true",
+        help="Delete verified candidates (guarded by UID precondition in-cluster)",
+    )
+    args = parser.parse_args()
+    context: str | None = args.context
+    do_delete: bool = args.delete
 
     def local_read(path: str) -> Document:
+        assert context is not None
         result = subprocess.run(
             [
                 "kubectl",
@@ -183,9 +241,36 @@ def main() -> int:
         )
         return decode(result.stdout)
 
+    def local_delete(namespace: str, pod: str, _uid: str) -> None:
+        assert context is not None
+        subprocess.run(
+            [
+                "kubectl",
+                "--context",
+                context,
+                "--request-timeout=10s",
+                "delete",
+                "pod",
+                "-n",
+                namespace,
+                pod,
+                "--ignore-not-found=true",
+                "--wait=false",
+            ],
+            capture_output=True,
+            check=True,
+            timeout=15,
+        )
+
+    delete_fn: Delete | None = None
+    if do_delete:
+        delete_fn = local_delete if context else cluster_delete
+
     try:
-        candidates = preview(
-            local_read if context else cluster_read, now=datetime.now(timezone.utc)
+        candidates = cleanup(
+            local_read if context else cluster_read,
+            now=datetime.now(timezone.utc),
+            delete=delete_fn,
         )
     except (
         OSError,
@@ -196,13 +281,16 @@ def main() -> int:
         subprocess.SubprocessError,
     ) as error:
         print(
-            f"Preview failed ({type(error).__name__}); no candidate set emitted",
+            f"Cleanup failed ({type(error).__name__}); aborting",
             file=sys.stderr,
         )
         return 1
     for candidate in candidates:
         print(json.dumps(candidate, sort_keys=True))
-    print(f"Preview: {len(candidates)} candidate(s); nothing deleted")
+    if do_delete:
+        print(f"Cleanup: deleted {len(candidates)} candidate(s)")
+    else:
+        print(f"Preview: {len(candidates)} candidate(s); nothing deleted")
     return 0
 
 

@@ -20,6 +20,29 @@ spec:
   podSelector: {}
   policyTypes: [Ingress, Egress]
 ---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-shutdown-pod-preview-dns
+  namespace: shutdown-pod-preview
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: shutdown-pod-preview
+  policyTypes: [Egress]
+  egress:
+    # Exact Kubernetes API service/control-plane egress peers come from Live.
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+---
 apiVersion: batch/v1
 kind: CronJob
 metadata:
@@ -28,7 +51,7 @@ metadata:
 spec:
   schedule: '*/30 * * * *'
   timeZone: Europe/Berlin
-  suspend: true
+  suspend: false
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 120
   successfulJobsHistoryLimit: 1
@@ -54,7 +77,7 @@ spec:
           containers:
             - name: preview
               image: python:3.13-slim-bookworm@sha256:a1165e272e578941b84abc79e4ab38a0305cd12803a5c4247979ac7655f4d641
-              command: [python3, -B, /preview/preview.py]
+              command: [python3, -B, /preview/preview.py, --delete]
               resources:
                 requests:
                   cpu: 25m
