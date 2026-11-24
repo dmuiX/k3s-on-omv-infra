@@ -22,12 +22,12 @@ class NativeAlertRules(unittest.TestCase):
         cls.values = cls.source['helm']['valuesObject']
         cls.old = yaml.safe_load(
             (ROOT / 'tests/fixtures/platform-required-prometheusrule.yaml').read_text())
-        cls.chart = CHARTS / 'kube-prometheus-stack-92.10.1/kube-prometheus-stack'
+        cls.chart = CHARTS / 'kube-prometheus-stack-93.10.0/kube-prometheus-stack'
         if not cls.chart.is_dir():
             raise AssertionError(f'Exact chart not available: {cls.chart}')
         metadata = yaml.safe_load((cls.chart / 'Chart.yaml').read_text())
-        if metadata['version'] != '92.10.1':
-            raise AssertionError('Cached chart must be version 92.10.1')
+        if metadata['version'] != '93.10.0':
+            raise AssertionError('Cached chart must be version 93.10.0')
 
     def test_existing_rule_identity_and_complete_spec_remain_desired(self):
         rule = yaml.safe_load(
@@ -40,7 +40,7 @@ class NativeAlertRules(unittest.TestCase):
 
     def test_chart_does_not_create_a_duplicate_platform_rule(self):
         self.assertEqual(self.source['chart'], 'kube-prometheus-stack')
-        self.assertEqual(self.source['targetRevision'], '92.10.1')
+        self.assertEqual(self.source['targetRevision'], '93.10.0')
         self.assertNotIn('platform-required', self.values.get('additionalPrometheusRulesMap', {}))
         command = ['helm', 'template', self.app['metadata']['name'], str(self.chart),
                    '--namespace', self.app['spec']['destination']['namespace'],

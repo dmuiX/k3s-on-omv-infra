@@ -21,7 +21,7 @@ class GrafanaAdmin(unittest.TestCase):
         # Exercise both sidecars, even if site values disable one of them.
         values['grafana']['sidecar'] = {
             'dashboards': {'enabled': True}, 'datasources': {'enabled': True}}
-        chart = CHARTS / 'kube-prometheus-stack-92.10.1/kube-prometheus-stack'
+        chart = CHARTS / 'kube-prometheus-stack-93.10.0/kube-prometheus-stack'
         self.assertTrue(chart.is_dir(), 'Exact cached chart is required')
         result = subprocess.run(['helm', 'template', 'kube-prometheus-stack', str(chart),
                                  '--namespace', 'kube-prometheus-stack', '-f', '-'],
