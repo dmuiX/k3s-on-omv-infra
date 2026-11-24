@@ -12,7 +12,7 @@ class CloudNativePGReaderAccount(unittest.TestCase):
         rendered = render(app)
         account = 'cloudnative-pg'
         namespace = 'cloudnative-pg'
-        self.assertEqual(app['spec']['sources'][0]['targetRevision'], '0.29.1')
+        self.assertEqual(app['spec']['sources'][0]['targetRevision'], '0.29.2')
         self.assertTrue(any(d['metadata']['name'] == account for d in kind(rendered, 'ServiceAccount')))
         deployment, = kind(rendered, 'Deployment')
         self.assertEqual(deployment['spec']['template']['spec']['serviceAccountName'], account)
