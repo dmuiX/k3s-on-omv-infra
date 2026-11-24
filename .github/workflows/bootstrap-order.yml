@@ -47,12 +47,11 @@ jobs:
                  tests/test_repo_workloads.py tests/test_workload_contracts.py
                  tests/test_native_request_profile.py tests/test_request_rightsizing.py
                  tests/test_small_node_placement.py tests/test_memory_limits.py
-                 tests/test_shutdown_pod_preview.py 06-platform/shutdown-pod-preview/preview.py
-                 07-k3s-postgres/tools/render_rotation_grants.py
-                 07-k3s-postgres/tools/rotation_grant_hook.py tests/rotation_grants_restore.py)
                  tests/test_shutdown_pod_preview.py tests/test_tekton_pilot.py
                  tests/test_tekton_dashboard.py
-                 06-platform/shutdown-pod-preview/preview.py)
+                 06-platform/shutdown-pod-preview/preview.py
+                 07-k3s-postgres/tools/render_rotation_grants.py
+                 07-k3s-postgres/tools/rotation_grant_hook.py tests/rotation_grants_restore.py)
           python -m black --check "${files[@]}"
           python -m ruff check "${files[@]}"
           python -m mypy --strict --follow-imports=skip "${files[@]}"
