@@ -102,7 +102,20 @@
       "PostgresConsumerTests.test_disabled_default_has_no_resources",
       "PostgresConsumerTests.test_invalid_values_fail_closed",
       "PostgresConsumerTests.test_templates_remain_vso_templates",
-      "PostgresConsumerTests.test_grafana_source_and_remaining_auth"
+      "PostgresConsumerTests.test_grafana_source_and_remaining_auth",
+      "RotationGrantTests.test_argo_hook_is_scoped_and_ordered_before_rotation",
+      "RotationGrantTests.test_argo_hook_refuses_changed_primary_or_cnpg_ownership",
+      "RotationGrantTests.test_argo_hook_requires_valid_identity_and_opted_in_login",
+      "RotationGrantTests.test_rendered_consumers_opt_in_without_a_second_list",
+      "RotationGrantTests.test_renamed_app_and_login_are_taken_from_the_same_values",
+      "RotationGrantTests.test_invalid_or_conflicting_request_emits_no_migration",
+      "RotationGrantTests.test_duplicate_identity_rejected_before_scope_filtering",
+      "RotationGrantTests.test_wrong_cluster_or_openbao_provider_does_not_get_grants",
+      "RotationGrantTests.test_nonrotated_database_cannot_share_an_opted_in_login",
+      "RotationGrantTests.test_malformed_resource_emits_no_migration",
+      "RotationGrantTests.test_foreign_namespace_static_role_cannot_pair_with_ordinary_database",
+      "RotationGrantTests.test_list_wrapper_cannot_hide_an_overlapping_database",
+      "RotationGrantTests.test_keyword_login_is_quoted_in_rotation_and_migration"
     ],
     "test_service_route": [
       "ServiceRoute.test_native_openbao_route_disabled",

@@ -1,5 +1,7 @@
 {{- $p := .Values.postgresConsumer -}}
 {{- if $p.enabled }}
+{{- /* Escape SQL identifier quotes for the JSON-encoded rotation statement. */}}
+{{- $sqlLogin := printf "\\\"%s\\\"" $p.username }}
 apiVersion: postgresql.cnpg.io/v1
 kind: Database
 metadata:
@@ -29,12 +31,12 @@ spec:
     rotationStatements:
       - >-
         ["DO $role$ BEGIN
-        IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = '{{ $p.username }}' AND (rolsuper OR rolreplication OR rolbypassrls)) THEN
+        IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = '{{ $p.username }}' AND (NOT rolcanlogin OR rolsuper OR rolreplication OR rolbypassrls OR rolcreatedb OR rolcreaterole)) THEN
         RAISE EXCEPTION 'Refusing privileged {{ $p.roleDisplayName }} role'; END IF;
         IF EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = '{{ $p.username }}') THEN
-        ALTER ROLE {{ $p.username }} WITH LOGIN NOCREATEDB NOCREATEROLE INHERIT CONNECTION LIMIT {{ $p.connectionLimit }} PASSWORD '{{`{{password}}`}}';
+        ALTER ROLE {{ $sqlLogin }} WITH CONNECTION LIMIT {{ $p.connectionLimit }} PASSWORD '{{`{{password}}`}}';
         ELSE
-        CREATE ROLE {{ $p.username }} WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION INHERIT CONNECTION LIMIT {{ $p.connectionLimit }} PASSWORD '{{`{{password}}`}}';
+        CREATE ROLE {{ $sqlLogin }} WITH LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION INHERIT CONNECTION LIMIT {{ $p.connectionLimit }} PASSWORD '{{`{{password}}`}}';
         END IF;
         END $role$;"]
   providerConfigRef:
