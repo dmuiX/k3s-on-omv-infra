@@ -27,6 +27,8 @@ spec:
       valuesObject:
         image: docker.io/istio/pilot@sha256:219ab7efcf1fd1f883086ad4a4a649c0e70bee3200423d6eef9f435103a79423 # 1.32.0-distroless
         profile: ambient
+        meshConfig:
+          accessLogFile: /dev/stdout
         base:
           validationFailurePolicy: Fail
         resources:
