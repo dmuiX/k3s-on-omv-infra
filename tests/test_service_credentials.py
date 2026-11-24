@@ -189,7 +189,7 @@ class ServiceCredentialContracts(unittest.TestCase):
             self.assertEqual(rendered.returncode, 0, rendered.stderr)
             encoded = yaml.safe_load(rendered.stdout)['data']['cookie']
             self.assertRegex(encoded, r'^[A-Za-z0-9_-]+={0,2}$',
-                             'oauth2-proxy v7.15.5 uses RawURLEncoding, not standard Base64')
+                             'oauth2-proxy v7.15.6 uses RawURLEncoding, not standard Base64')
             self.assertEqual(base64.urlsafe_b64decode(encoded), key,
                              'Encoding correction must not rotate or change the persisted cookie key')
 
