@@ -242,7 +242,7 @@ class InlineHelmValuesTest(unittest.TestCase):
     def test_vso_native_monitor_preserves_authentication_and_mesh_transport(self):
         app = yaml.safe_load((INFRA / '02-controllers/vault-secrets-operator/app.yml').read_text())
         source = app['spec']['sources'][0]
-        self.assertEqual(source['targetRevision'], '1.6.0')
+        self.assertEqual(source['targetRevision'], '2.0.0')
         values = source['helm']['valuesObject']
         self.assertEqual(values['telemetry']['serviceMonitor'], {'enabled': True})
         self.assertTrue(values['defaultVaultConnection']['enabled'])

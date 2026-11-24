@@ -93,7 +93,7 @@ def main() -> int:
         os.environ.pop(key, None)
     cache = os.environ.get("PLATFORM_CHART_AUDIT")
     if cache:
-        vso = str(Path(cache) / "vault-secrets-operator-1.6.0/vault-secrets-operator")
+        vso = str(Path(cache) / "vault-secrets-operator-2.0.0/vault-secrets-operator")
         os.environ["VSO_CHART_SOURCE"] = vso
         os.environ["VSO_CHART_DIR"] = vso
     try:

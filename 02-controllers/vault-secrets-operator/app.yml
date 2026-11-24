@@ -13,7 +13,7 @@ spec:
   sources:
   - repoURL: https://helm.releases.hashicorp.com
     chart: vault-secrets-operator
-    targetRevision: 1.6.0
+    targetRevision: 2.0.0
     helm:
       valuesObject:
         controller:
@@ -36,7 +36,7 @@ spec:
                 cpu: 300m
                 memory: 256Mi
         # The native monitor authenticates with the Prometheus ServiceAccount token.
-        # VSO 1.6.0 hardcodes skipped HTTPS certificate verification; Ambient mTLS
+        # The chart skips HTTPS certificate verification; Ambient mTLS
         # protects transport between the enrolled monitoring and VSO namespaces.
         telemetry:
           serviceMonitor:
