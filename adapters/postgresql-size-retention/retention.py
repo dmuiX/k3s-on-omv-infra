@@ -136,15 +136,43 @@ def _barman_base_args() -> list[str]:
     return ["--endpoint-url", endpoint, f"s3://{bucket}", server]
 
 
+def _base_backup_bytes() -> dict[str, int]:
+    import boto3
+
+    client = boto3.client("s3", endpoint_url=os.environ["S3_ENDPOINT"], region_name=os.environ.get("AWS_REGION", "auto"))
+    bucket = os.environ["S3_BUCKET"]
+    server = os.environ["BARMAN_SERVER_NAME"]
+    prefix = f"{server}/base/"
+    sizes: dict[str, int] = {}
+    for page in client.get_paginator("list_objects_v2").paginate(Bucket=bucket, Prefix=prefix):
+        for item in page.get("Contents", []):
+            key = item.get("Key", "")
+            if not key.startswith(prefix):
+                continue
+            rel = key[len(prefix):]
+            if "/" not in rel:
+                continue
+            backup_id = rel.split("/", 1)[0]
+            obj_size = item.get("Size")
+            if type(obj_size) is not int or obj_size < 0:
+                raise RuntimeError("incomplete or invalid R2 object size")
+            sizes[backup_id] = sizes.get(backup_id, 0) + obj_size
+    return sizes
+
+
 def _catalog() -> list[Backup]:
     payload = json.loads(_run(["barman-cloud-backup-list", "--format", "json", *_barman_base_args()]))
     records = payload.get("backups_list")
     if not isinstance(records, list):
         raise RuntimeError("Barman returned an unknown catalog")
+    storage_sizes = _base_backup_bytes() if any(record.get("size") is None for record in records) else {}
     backups = []
     for record in records:
         backup_id = record.get("backup_id")
         size = record.get("size")
+        if size is None and isinstance(backup_id, str):
+            # Barman Cloud list JSON leaves `size` null; measure actual R2 base-backup objects.
+            size = storage_sizes.get(backup_id)
         if (not isinstance(backup_id, str) or not re.fullmatch(r"[0-9]{8}T[0-9]{6}", backup_id)
                 or record.get("status") != "DONE" or type(size) is not int or size < 0):
             raise RuntimeError("incomplete or invalid Barman catalog entry")
