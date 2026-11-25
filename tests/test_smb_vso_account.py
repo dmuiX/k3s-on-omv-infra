@@ -12,7 +12,7 @@ class SMBReaderAccount(unittest.TestCase):
         rendered = render(app)
         account = 'csi-smb-controller-sa'
         namespace = 'kube-system'
-        self.assertEqual(app['spec']['sources'][0]['targetRevision'], '1.20.3')
+        self.assertEqual(app['spec']['sources'][0]['targetRevision'], '1.20.4')
         self.assertTrue(any(d['metadata']['name'] == account for d in kind(rendered, 'ServiceAccount')))
         deployment, = kind(rendered, 'Deployment')
         self.assertEqual(deployment['spec']['template']['spec']['serviceAccountName'], account)

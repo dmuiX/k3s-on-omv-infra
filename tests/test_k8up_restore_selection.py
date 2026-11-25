@@ -145,7 +145,7 @@ esac
 
     def init_real_repo(self):
         self.env['PATH'] = os.environ['PATH']  # No stub. Never use caller repo or credentials.
-        self.assertEqual(self.restic('version').split()[:2], [b'restic', b'0.19.0'])
+        self.assertEqual(self.restic('version').split()[:2], [b'restic', b'0.19.1'])
         self.restic('init')
 
     def test_actual_verified_fixture_directory(self):

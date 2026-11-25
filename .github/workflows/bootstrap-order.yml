@@ -100,7 +100,7 @@ jobs:
           python -m black --check tests/test_resource_admission.py tests/test_memory_limits.py
           python -m ruff check tests/test_resource_admission.py tests/test_memory_limits.py
           python -m mypy --strict --follow-imports=skip tests/test_resource_admission.py tests/test_memory_limits.py
-          image='rancher/k3s:v1.37.1-k3s1@sha256:ca7f37d993d82ef0dcdcfecb2e0e2618ea541dbaffc620c8cedebe01a82acd0d'
+          image='rancher/k3s:v1.37.2-k3s1@sha256:21ea6e0fac4e3930c2ce8aa40ddd41a8b18cb3e9a0222c030dc005e7e88c4332'
           test_id=$(docker run -d --name "timezone-policy-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" \
             --label purpose=timezone-policy-test --label "owner=ci-${GITHUB_RUN_ID}" \
             --network none --cap-drop ALL --security-opt no-new-privileges \
