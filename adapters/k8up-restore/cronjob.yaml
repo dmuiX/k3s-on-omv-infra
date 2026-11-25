@@ -35,7 +35,7 @@ spec:
           initContainers:
             - name: restore
               terminationMessagePolicy: FallbackToLogsOnError
-              image: ghcr.io/k8up-io/k8up:v2.16.0@sha256:29458113b8b676b5b48ebf25b21be5194ee9dccc887b92b8fa27f7d3dfca6f50
+              image: ghcr.io/k8up-io/k8up:v2.16.1@sha256:f59bfa37c51511d5ad67e53816fb55c62d0e6411890e59bb6b965923129f30b5
               command: [/bin/sh, /tools/restore.sh]
               args: [backup-validation, '172800']
               env:
@@ -59,7 +59,7 @@ spec:
           containers:
             - name: verify
               terminationMessagePolicy: FallbackToLogsOnError
-              image: python:3.13-slim-bookworm@sha256:a1165e272e578941b84abc79e4ab38a0305cd12803a5c4247979ac7655f4d641
+              image: python:3.15.2-slim-trixie@sha256:63bb298d2b7b88f176f51b5189f54ce6535c997682ea70885d2132f5d473a8a5
               command: [/usr/local/bin/python, -IB, /tools/verify.py]
               args: [backup-validation]
               securityContext: *hardened

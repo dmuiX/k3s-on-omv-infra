@@ -634,7 +634,7 @@ class PlatformContractTest < Minitest::Test
         %w[Deployment ConfigMap].include?(doc['kind'])
     end.map(&:last)
     proxy = YAML.dump_stream(*proxy_resources)
-    assert_includes proxy, "quay.io/oauth2-proxy/oauth2-proxy:v7.15.5@sha256:8498b0d0ef0a7b29686414000a08aee467f02d0299c9ed1e006a8f33fc017916"
+    assert_includes proxy, "quay.io/oauth2-proxy/oauth2-proxy:v7.15.6@sha256:c3415e8660af553f5e18f5d90db050614c02493c0ac6260ac59442f6d9b12048"
     assert_includes proxy, "upstream=http://longhorn-frontend.longhorn.svc:80"
     assert_includes (INFRA / "06-platform/longhorn-config/resources/oidc-proxy.yaml").read, "rolloutRestartTargets"
     refute_includes (INFRA / "02-controllers/longhorn/app.yml").read, "path: infra/longhorn"
@@ -721,7 +721,7 @@ class PlatformContractTest < Minitest::Test
     source = application(INFRA / "02-controllers/csi-driver-smb/app.yml").dig("spec", "sources", 0)
     assert_equal "https://raw.githubusercontent.com/kubernetes-csi/csi-driver-smb/master/charts", source["repoURL"]
     assert_equal "csi-driver-smb", source["chart"]
-    assert_equal "1.20.3", source["targetRevision"]
+    assert_equal "1.20.4", source["targetRevision"]
     assert_includes application(INFRA / "02-controllers/csi-driver-smb/app.yml").dig("spec", "syncPolicy", "syncOptions"), "SkipDryRunOnMissingResource=true"
     assert_equal false, chart_values("02-controllers/csi-driver-smb/app.yml").dig("windows", "enabled")
 
