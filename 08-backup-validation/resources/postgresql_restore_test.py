@@ -132,11 +132,18 @@ def restore_storage_size(cluster_bytes: int | None) -> str:
 
 def latest_backup_bytes() -> int | None:
     """Read the latest completed backup's uncompressed cluster_size from Barman."""
-    endpoint, bucket, server = os.environ["S3_ENDPOINT"], os.environ["S3_BUCKET"], os.environ["BARMAN_SERVER_NAME"]
-    output = subprocess.run(
-        ["barman-cloud-backup-list", "--format", "json", "--endpoint-url", endpoint, f"s3://{bucket}", server],
-        check=True, capture_output=True, text=True, timeout=300,
-    ).stdout
+    endpoint = os.environ.get("S3_ENDPOINT")
+    bucket = os.environ.get("S3_BUCKET")
+    server = os.environ.get("BARMAN_SERVER_NAME")
+    if not (endpoint and bucket and server):
+        return None
+    try:
+        output = subprocess.run(
+            ["barman-cloud-backup-list", "--format", "json", "--endpoint-url", endpoint, f"s3://{bucket}", server],
+            check=True, capture_output=True, text=True, timeout=300,
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
     done = [item for item in json.loads(output).get("backups_list", []) if item.get("status") == "DONE"]
     if not done:
         return None
