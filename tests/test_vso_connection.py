@@ -74,18 +74,18 @@ class SharedConnectionTests(unittest.TestCase):
         self.assertIn('role: audiobookshelf-vso\n    serviceAccount: audiobookshelf-vso', text)
 
     @unittest.skipUnless(os.environ.get('VSO_CHART_DIR'),
-                         'Set VSO_CHART_DIR to the cached upstream 1.6.0 chart')
+                         'Set VSO_CHART_DIR to the cached upstream 2.0.0 chart')
     def test_pinned_chart_renders_single_connection_and_no_default_auth(self):
         app = yaml.safe_load((ROOT / '02-controllers/vault-secrets-operator/app.yml').read_text())
         self.assertEqual(app['metadata']['annotations']['argocd.argoproj.io/sync-wave'], '2')
         source = app['spec']['sources'][0]
-        self.assertEqual(source['targetRevision'], '1.6.0')
+        self.assertEqual(source['targetRevision'], '2.0.0')
         values = source['helm']['valuesObject']
         self.assertEqual(values['defaultVaultConnection'], {'enabled': True, 'address': ADDRESS})
         self.assertEqual(values['defaultAuthMethod'], {'enabled': False})
         with tempfile.TemporaryDirectory(prefix='vso-connection-test-') as tmp:
             chart = os.environ['VSO_CHART_DIR']
-            self.assertEqual(str(yaml.safe_load((Path(chart) / 'Chart.yaml').read_text())['version']), '1.6.0')
+            self.assertEqual(str(yaml.safe_load((Path(chart) / 'Chart.yaml').read_text())['version']), '2.0.0')
             config = Path(tmp) / 'values.yaml'
             config.write_text(yaml.safe_dump(values))
             result = subprocess.run(['helm', 'template', 'vault-secrets-operator', chart,

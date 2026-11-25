@@ -114,7 +114,7 @@ class RequiredValueContracts(unittest.TestCase):
         self.assertEqual(app['metadata']['annotations']['argocd.argoproj.io/sync-wave'], '2')
 
     @unittest.skipUnless(VSO_CHART_SOURCE and shutil.which('helm'),
-                         'Set VSO_CHART_SOURCE to the cached upstream 1.6.0 chart')
+                         'Set VSO_CHART_SOURCE to the cached upstream 2.0.0 chart')
     def test_operator_chart_grants_global_transformation_lookup(self):
         app = yaml.safe_load((ROOT / '02-controllers/vault-secrets-operator/app.yml').read_text())
         with tempfile.TemporaryDirectory() as directory:
@@ -136,10 +136,10 @@ class RequiredValueContracts(unittest.TestCase):
                        'name': deployment['spec']['template']['spec']['serviceAccountName'],
                        'namespace': 'vault-secrets-operator'}, binding['subjects'])
 
-    @unittest.skipUnless(VSO_CHART_SOURCE, 'Set VSO_CHART_SOURCE to the cached upstream 1.6.0 chart')
+    @unittest.skipUnless(VSO_CHART_SOURCE, 'Set VSO_CHART_SOURCE to the cached upstream 2.0.0 chart')
     def test_helper_reference_fields_match_native_vso_schema(self):
         chart = Path(VSO_CHART_SOURCE)
-        self.assertEqual(str(yaml.safe_load((chart / 'Chart.yaml').read_text())['version']), '1.6.0')
+        self.assertEqual(str(yaml.safe_load((chart / 'Chart.yaml').read_text())['version']), '2.0.0')
         crd = yaml.safe_load((chart / 'crds/secrets.hashicorp.com_vaultstaticsecrets.yaml').read_text())
         version, = [v for v in crd['spec']['versions'] if v['name'] == 'v1beta1']
         fields = version['schema']['openAPIV3Schema']['properties']['spec']['properties'][
