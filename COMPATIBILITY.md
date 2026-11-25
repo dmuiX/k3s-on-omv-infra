@@ -1,6 +1,6 @@
 # Compatibility gate
 
-Pinned in the reviewed manifests: cert-manager `v1.21.2`, K8up `4.10.0`, csi-driver-smb `1.20.3`, Longhorn `1.13.0`, Crossplane chart `2.4.2`, provider-vault `4.1.0`, OpenBao chart `0.30.4`, VSO `1.6.0`, CNPG `0.29.1`, Barman plugin `0.8.1`, prometheus-operator-crds `32.0.1`, kube-prometheus-stack `92.10.1`, Istio `1.32.0`, and Radar `1.17.0`.
+The Application manifests and image references define the desired versions. The [CI dependency lock](tests/ci-dependencies.json) records the verified chart and test-tool pins.
 
 Runtime evidence collected automatically during and after deployment:
 

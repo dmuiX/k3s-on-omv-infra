@@ -1,4 +1,5 @@
 #!/bin/sh
+# POSIX sh: runs inside the minimal k8up image (restic/jq/sh, no Python).
 # Run via sh in ghcr.io/k8up-io/k8up:v2.16.0@sha256:29458113b8b676b5b48ebf25b21be5194ee9dccc887b92b8fa27f7d3dfca6f50
 # sh restore.sh backup-validation|prometheus-stream MAX_AGE_SECONDS
 # Read-only local repository PVC, Secret via RESTIC_PASSWORD[_FILE], fresh private scratch.

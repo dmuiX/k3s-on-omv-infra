@@ -22,7 +22,7 @@ class RepositoryWorkloads(unittest.TestCase):
                 "openbao-backups",
                 "openbao-snapshot",
                 "CronJob",
-                "16fbb2d2d3bfa560ad61fa474ffa13185ab74110bef2eb68493fde485ac6b142",
+                "4128f566fda4221fbb3aea2546b62011c34d3e84aa563aa1d913e3b419963a95",
             ),
             (
                 "k3s-postgres",
@@ -513,7 +513,7 @@ class RepositoryWorkloads(unittest.TestCase):
         cluster = next(d for d in docs if d["kind"] == "Cluster")
         spec = cluster["spec"]
         self.assertEqual(spec["instances"], 3)
-        self.assertEqual(spec["primaryUpdateStrategy"], "supervised")
+        self.assertEqual(spec["primaryUpdateStrategy"], "unsupervised")
         self.assertFalse(spec["enableSuperuserAccess"])
         self.assertTrue(spec["enablePDB"])
         self.assertEqual(

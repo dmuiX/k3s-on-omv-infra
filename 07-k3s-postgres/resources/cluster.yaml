@@ -25,7 +25,7 @@ spec:
         passwordSecret:
           name: openbao-manager-credentials
   enablePDB: true
-  primaryUpdateStrategy: supervised
+  primaryUpdateStrategy: unsupervised
   primaryUpdateMethod: switchover
   storage:
     storageClass: longhorn-single-node-retain

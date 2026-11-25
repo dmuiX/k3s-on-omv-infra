@@ -40,7 +40,7 @@ class K3sComponentMetricsTests(unittest.TestCase):
 
     def test_nine_upstream_scheduler_quantiles_use_only_apiserver(self):
         self.assertEqual(
-            self.prometheus["metadata"]["labels"]["chart"], f"{STACK}-92.10.1"
+            self.prometheus["metadata"]["labels"]["chart"], f"{STACK}-93.10.0"
         )
         (group,) = (g for g in self.groups if g["name"] == SCHEDULER_GROUP)
         expected = []

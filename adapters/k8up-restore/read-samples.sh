@@ -1,4 +1,5 @@
 #!/bin/sh
+# POSIX sh: runs inside the minimal Prometheus image (promtool/sh, no Python).
 # Only run after validate-archive on the private scratch PVC. Never source scratch.
 set -eu
 trap '[ "$?" -eq 0 ] || echo "stage=read-samples result=FAIL" >&2' EXIT
