@@ -28,19 +28,19 @@ class RepositoryWorkloads(unittest.TestCase):
                 "k3s-postgres",
                 "k3s-postgres-manager-provisioner",
                 "Job",
-                "1766471924335d1c3fe85f0794320d3df5ea6d31707e7007b0801abc24a4dbd5",
+                "f17d181854c296a62c613ba8b7045586d8429552dee98b6ffefee89751dbc713",
             ),
             (
                 "longhorn-config",
                 "longhorn-proxy-provisioner",
                 "Job",
-                "5f81c185c941619867900e214e96812eb0e978c7452bd66df99004f33448a0b3",
+                "43ace5516cd2fbdfc5c6db315915aec3f51212c42a648a1c27ec41b107e79354",
             ),
             (
                 "kube-prometheus-stack",
                 "grafana-admin-provisioner",
                 "Job",
-                "74cd024b8b115a9b9cb97b28be6d2575402444b5e179b3c07f5a14d0514164e8",
+                "d9a30a7b491fe19e1047cc357105e4b715bed454fe8dd9c04cf30602d33421ab",
             ),
         )
         repo = Repository()

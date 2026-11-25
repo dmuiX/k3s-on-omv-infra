@@ -4,7 +4,7 @@ This workflow backs up only a native Prometheus TSDB snapshot. It must never poi
 
 ## Preconditions
 
-1. Verify that the pinned multi-architecture `python:3.13-slim-bookworm@sha256:a1165e272e578941b84abc79e4ab38a0305cd12803a5c4247979ac7655f4d641` index still resolves to Linux amd64 and arm64 manifests. The snapshot implementation uses only Python's standard library.
+1. Verify that the pinned multi-architecture `python:3.15.2-slim-trixie@sha256:63bb298d2b7b88f176f51b5189f54ce6535c997682ea70885d2132f5d473a8a5` index still resolves to Linux amd64 and arm64 manifests. The snapshot implementation uses only Python's standard library.
 2. Verify the rendered replica-0 PVC name used by `prometheus-tsdb-snapshot`, same-node RWO attachment, admin API reachability, SMB mount permissions, repository locking, and independent custody of the Restic password.
 3. Verify `prometheus-k8up-repository` is bound through StorageClass `smb` and maps to retained subdirectory `kube-prometheus-stack/prometheus-k8up-repository` beneath `//192.168.1.5/k3s-cluster` on the mounted backup disk.
 4. Use a new UTC run ID for every object below. Never apply these examples with the literal `RUN_ID`.
@@ -92,7 +92,7 @@ spec:
               topologyKey: kubernetes.io/hostname
       containers:
         - name: cleanup
-          image: python:3.13-slim-bookworm@sha256:a1165e272e578941b84abc79e4ab38a0305cd12803a5c4247979ac7655f4d641
+          image: python:3.15.2-slim-trixie@sha256:63bb298d2b7b88f176f51b5189f54ce6535c997682ea70885d2132f5d473a8a5
           command: [/usr/local/bin/python, -c]
           args:
             - |
