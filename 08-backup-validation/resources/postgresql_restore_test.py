@@ -12,9 +12,8 @@ API = "https://kubernetes.default.svc"
 SOURCE_NS, VALIDATION_NS = "cloudnative-pg", "backup-validation"
 SOURCE, RESTORE, STORE = "k3s-postgres", "postgresql-pitr-validation", "postgresql-pitr-validation"
 RUN_ANNOTATION = "k3s-on-omv.io/restore-run-id"
+IMAGE = "ghcr.io/cloudnative-pg/postgresql:18.7-system-bookworm@sha256:17b1b2d8b41398e4a5aa5466b49c866cb500dcaf08e9a4923ca443f2cd13c25a"
 MIN_RESTORE_GIB, MAX_RESTORE_GIB = 5, 40
-IMAGE = "ghcr.io/cloudnative-pg/postgresql:18.6-system-bookworm@sha256:b4bec141fa5ca2bab490b197c814fb1342147c8405be1fb0673951fa6db7f699"
-
 
 @cache
 def api_settings() -> tuple[dict[str, str], ssl.SSLContext]:

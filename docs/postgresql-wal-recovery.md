@@ -4,7 +4,7 @@ Incident: 15–16 November 2026 (UTC). This is an incident record and a gated re
 
 ## Symptoms and verified causes
 
-The cluster uses CNPG 1.30.1, PostgreSQL 18.6, plugin-barman-cloud 0.15.1 and one encrypted strict-local Longhorn replica per PostgreSQL PVC. PostgreSQL provides database-level replication; a local Longhorn volume is not itself redundant.
+At the time of the incident, the cluster used CNPG 1.30.1, PostgreSQL 18.6, plugin-barman-cloud 0.15.1 and one encrypted strict-local Longhorn replica per PostgreSQL PVC. PostgreSQL provides database-level replication; a local Longhorn volume is not itself redundant.
 
 Three distinct conditions occurred:
 
