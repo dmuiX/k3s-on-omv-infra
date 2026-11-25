@@ -513,7 +513,7 @@ class RepositoryWorkloads(unittest.TestCase):
         cluster = next(d for d in docs if d["kind"] == "Cluster")
         spec = cluster["spec"]
         self.assertEqual(spec["instances"], 3)
-        self.assertEqual(spec["primaryUpdateStrategy"], "supervised")
+        self.assertEqual(spec["primaryUpdateStrategy"], "unsupervised")
         self.assertFalse(spec["enableSuperuserAccess"])
         self.assertTrue(spec["enablePDB"])
         self.assertEqual(
