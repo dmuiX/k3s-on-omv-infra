@@ -1,7 +1,7 @@
 {
   "tools": {
     "restic": {"version": "0.19.0", "url": "https://github.com/restic/restic/releases/download/v0.19.0/restic_0.19.0_linux_amd64.bz2", "sha256": "13176fe6d89d4357947a2cd107218ab2873a5f9d8e1ac2d4cd1c8e07e6839c21"},
-    "promtool": {"version": "v3.15.0", "url": "https://github.com/prometheus/prometheus/releases/download/v3.15.0/prometheus-3.15.0.linux-amd64.tar.gz", "sha256": "2a542df32eac02ee17b9d844fb2aa1de00dafa5476579ba8a3ba862e9d572ea0", "member": "prometheus-3.15.0.linux-amd64/promtool"},
+    "promtool": {"version": "v3.16.0", "url": "https://github.com/prometheus/prometheus/releases/download/v3.16.0/prometheus-3.16.0.linux-amd64.tar.gz", "sha256": "68727009472a2c02e1ff7f062fd5b3e637285bffc8fc2d340c76fb449d6e0f34", "member": "prometheus-3.16.0.linux-amd64/promtool"},
     "helm": {"version": "v3.19.0", "url": "https://get.helm.sh/helm-v3.19.0-linux-amd64.tar.gz", "sha256": "a7f81ce08007091b86d8bd696eb4d86b8d0f2e1b9f6c714be62f82f96a594496", "member": "linux-amd64/helm"},
     "argocd": {"version": "v3.6.3", "url": "https://github.com/argoproj/argo-cd/releases/download/v3.6.3/argocd-linux-amd64", "sha256": "3750cd7ed2a2ef05c640344b86f29aa99c9783e847c8f326c81e3900ad39412b"},
     "kustomize": {"version": "v5.7.1", "url": "https://github.com/kubernetes-sigs/kustomize/releases/download/kustomize/v5.7.1/kustomize_v5.7.1_linux_amd64.tar.gz", "sha256": "ea375e7372f9aa029129d4b2d16c66b7750b7f1213c4f66f910d981c895818d8", "member": "kustomize"}
@@ -22,7 +22,7 @@
     {"chart":"longhorn","version":"1.13.0","repository":"https://charts.longhorn.io","url":"https://github.com/longhorn/charts/releases/download/longhorn-1.13.0/longhorn-1.13.0.tgz","sha256":"e57f010d2a8bcf0da5b8b03ffecf49c5bc35ddc2663588ce8f22b7567b6133ed"},
     {"chart":"vault-secrets-operator","version":"1.6.0","repository":"https://helm.releases.hashicorp.com","url":"https://helm.releases.hashicorp.com/vault-secrets-operator-1.6.0.tgz","sha256":"de3e0a520918fc7281b94fa060fe8d1858c5db5b8fb6b1463024268e7c4541c0"},
     {"chart":"openbao","version":"0.30.8","repository":"https://openbao.github.io/openbao-helm","url":"https://github.com/openbao/openbao-helm/releases/download/openbao-0.30.8/openbao-0.30.8.tgz","sha256":"a1a202d6300de36b3be9d924d52ba7dd24c6a1c7cd5b660b9bbda975f725f02b"},
-    {"chart":"kube-prometheus-stack","version":"92.10.1","repository":"https://prometheus-community.github.io/helm-charts","url":"https://github.com/prometheus-community/helm-charts/releases/download/kube-prometheus-stack-92.10.1/kube-prometheus-stack-92.10.1.tgz","sha256":"0d16c44e941372400ee8bcdc232ebee957eefcc910f8833767d8b94145f20094"},
-    {"chart":"prometheus-operator-crds","version":"32.0.1","repository":"https://prometheus-community.github.io/helm-charts","url":"https://github.com/prometheus-community/helm-charts/releases/download/prometheus-operator-crds-32.0.1/prometheus-operator-crds-32.0.1.tgz","sha256":"c9bf364eb4e5fc25d314e3e6e93acfe54a637bd4e149e82bb6bd2c962cea46c7"}
+    {"chart":"kube-prometheus-stack","version":"93.10.0","repository":"https://prometheus-community.github.io/helm-charts","url":"https://github.com/prometheus-community/helm-charts/releases/download/kube-prometheus-stack-93.10.0/kube-prometheus-stack-93.10.0.tgz","sha256":"055c56aea7d94603bd8fee3522f2e01ce5a71acf24a82378519e5abfc16ff557"},
+    {"chart":"prometheus-operator-crds","version":"33.0.2","repository":"https://prometheus-community.github.io/helm-charts","url":"https://github.com/prometheus-community/helm-charts/releases/download/prometheus-operator-crds-33.0.2/prometheus-operator-crds-33.0.2.tgz","sha256":"deb80119aa72342845776db1ed004714ce87cbc807d9eecaa72f4837ee5f79f5"}
   ]
 }

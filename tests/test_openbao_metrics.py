@@ -131,7 +131,7 @@ class OpenBaoMetricsTests(unittest.TestCase):
 
     def test_prometheus_identity_from_exact_monitoring_chart_with_live_inputs(self):
         app = native.load(ROOT / '09-kube-prometheus-stack/app.yml')
-        self.assertEqual(app['spec']['sources'][0]['targetRevision'], '92.10.1')
+        self.assertEqual(app['spec']['sources'][0]['targetRevision'], '93.10.0')
         docs = native.render(app)
         prometheus, = native.kind(docs, 'Prometheus')
         sa = prometheus['spec']['serviceAccountName']

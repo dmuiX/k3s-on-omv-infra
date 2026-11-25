@@ -194,7 +194,7 @@ class RestoreTest(unittest.TestCase):
             self.assertEqual((result.stdout, result.stderr), (b"", b"stage=read-samples result=FAIL\n"))
 
     def test_application_reads_actual_samples_not_just_metadata(self) -> None:
-        # No server, Docker, repository or network. CI provisions promtool v3.15.0.
+        # No server, Docker, repository or network. CI provisions promtool v3.16.0.
         promtool = shutil.which("promtool")
         self.assertIsNotNone(promtool, "offline fixture requires the CI-pinned promtool in PATH")
         assert promtool is not None

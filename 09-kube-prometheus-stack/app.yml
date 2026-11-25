@@ -13,7 +13,7 @@ spec:
   sources:
   - repoURL: https://prometheus-community.github.io/helm-charts
     chart: kube-prometheus-stack
-    targetRevision: 92.10.1
+    targetRevision: 93.10.0
     helm:
       valueFiles:
       - $live/infra/kube-prometheus-stack/values.yml
@@ -99,7 +99,7 @@ spec:
         grafana:
           sidecar:
             dashboards:
-              # 92.10.1 uses tpl here for both ConfigMap labels and the sidecar
+              # The chart uses tpl here for both ConfigMap labels and the sidecar
               # selector. Keep the selector at 1; unselect just these dashboards
               # in place (prune=false). Scheduler's process panels are K3s-wide.
               labelValue: '{{ ternary "0" "1" (has (base .Template.Name) (list "scheduler.yaml" "controller-manager.yaml" "proxy.yaml")) }}'
