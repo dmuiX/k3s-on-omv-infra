@@ -1,6 +1,6 @@
 #!/venv/bin/python3
 """Run an isolated CNPG point-in-time recovery and publish bounded evidence."""
-import base64, copy, json, os, re, ssl, subprocess, sys, time, uuid
+import base64, copy, json, math, os, re, ssl, subprocess, sys, time, uuid
 from datetime import datetime, timezone
 from functools import cache
 from http.client import HTTPException
@@ -12,6 +12,7 @@ API = "https://kubernetes.default.svc"
 SOURCE_NS, VALIDATION_NS = "cloudnative-pg", "backup-validation"
 SOURCE, RESTORE, STORE = "k3s-postgres", "postgresql-pitr-validation", "postgresql-pitr-validation"
 RUN_ANNOTATION = "k3s-on-omv.io/restore-run-id"
+MIN_RESTORE_GIB, MAX_RESTORE_GIB = 5, 40
 IMAGE = "ghcr.io/cloudnative-pg/postgresql:18.6-system-bookworm@sha256:b4bec141fa5ca2bab490b197c814fb1342147c8405be1fb0673951fa6db7f699"
 
 
@@ -121,14 +122,44 @@ def validation_store(source: dict, endpoint: str) -> dict:
     }
 
 
-def validation_cluster(target: str) -> dict:
+def restore_storage_size(cluster_bytes: int | None) -> str:
+    """Compute a disposable PVC size from the measured backup cluster_size."""
+    if type(cluster_bytes) is not int or cluster_bytes <= 0:
+        return f"{MIN_RESTORE_GIB}Gi"
+    gib = math.ceil((cluster_bytes * 1.5) / (1024**3)) + 2
+    return f"{max(MIN_RESTORE_GIB, min(MAX_RESTORE_GIB, gib))}Gi"
+
+
+def latest_backup_bytes() -> int | None:
+    """Read the latest completed backup's uncompressed cluster_size from Barman."""
+    endpoint = os.environ.get("S3_ENDPOINT")
+    bucket = os.environ.get("S3_BUCKET")
+    server = os.environ.get("BARMAN_SERVER_NAME")
+    if not (endpoint and bucket and server):
+        return None
+    try:
+        output = subprocess.run(
+            ["barman-cloud-backup-list", "--format", "json", "--endpoint-url", endpoint, f"s3://{bucket}", server],
+            check=True, capture_output=True, text=True, timeout=300,
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
+    done = [item for item in json.loads(output).get("backups_list", []) if item.get("status") == "DONE"]
+    if not done:
+        return None
+    latest = max(done, key=lambda item: str(item.get("backup_id", "")))
+    size = latest.get("cluster_size")
+    return size if type(size) is int and size > 0 else None
+
+
+def validation_cluster(target: str, storage_size: str = "5Gi") -> dict:
     """Build the disposable restore cluster, not a production storage profile."""
     return {
         "apiVersion": "postgresql.cnpg.io/v1", "kind": "Cluster",
         "metadata": {"name": RESTORE, "namespace": VALIDATION_NS},
         "spec": {
             "instances": 1, "imageName": IMAGE,
-            "storage": {"storageClass": "longhorn-single-node-delete", "size": "5Gi"},
+            "storage": {"storageClass": "longhorn-single-node-delete", "size": storage_size},
             "inheritedMetadata": {"annotations": {"k8up.io/backup": "false"}},
             "bootstrap": {"recovery": {"source": "origin", "recoveryTarget": {"targetTime": target}}},
             "externalClusters": [{"name": "origin", "plugin": {
@@ -213,8 +244,10 @@ def main():
         create_restore_resource(
             f"/apis/barmancloud.cnpg.io/v1/namespaces/{VALIDATION_NS}/objectstores", store, run, resources
         )
+        storage_size = restore_storage_size(latest_backup_bytes())
         create_restore_resource(
-            f"/apis/postgresql.cnpg.io/v1/namespaces/{VALIDATION_NS}/clusters", validation_cluster(target), run, resources
+            f"/apis/postgresql.cnpg.io/v1/namespaces/{VALIDATION_NS}/clusters",
+            validation_cluster(target, storage_size), run, resources,
         )
         wait_ready()
         restored = secret(VALIDATION_NS, f"{RESTORE}-app")

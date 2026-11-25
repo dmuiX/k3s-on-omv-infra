@@ -55,6 +55,10 @@ class RetentionManifestTest(unittest.TestCase):
             if doc["kind"] == "Cluster" and doc["metadata"]["name"] == "k3s-postgres")
         self.assertEqual(classes[production["spec"]["storage"]["storageClass"]]["reclaimPolicy"], "Retain")
         self.assertEqual(classes[restore["spec"]["storage"]["storageClass"]]["reclaimPolicy"], "Delete")
+        self.assertEqual(adapter.restore_storage_size(None), "5Gi")
+        self.assertEqual(adapter.restore_storage_size(5 * 1024**3), "10Gi")
+        self.assertEqual(adapter.restore_storage_size(100 * 1024**3), "40Gi")
+        self.assertEqual(adapter.validation_cluster(target, "10Gi")["spec"]["storage"]["size"], "10Gi")
 
     def test_restore_validator_pod_uses_runtime_default_seccomp(self):
         path = PATH.parents[2] / "08-backup-validation/resources/validation.yaml"
