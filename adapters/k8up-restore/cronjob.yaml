@@ -3,9 +3,9 @@ kind: CronJob
 metadata:
   name: k8up-backup-validation
 spec:
-  schedule: '15 9 * * 2'
+  schedule: '15 5 * * *'
   timeZone: Europe/Berlin
-  suspend: true
+  suspend: false
   concurrencyPolicy: Forbid
   startingDeadlineSeconds: 600
   successfulJobsHistoryLimit: 1

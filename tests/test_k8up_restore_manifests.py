@@ -42,11 +42,11 @@ class RestoreTestManifests(unittest.TestCase):
                 metadata = docs['CronJob', CRON_NAME[ns]]['metadata']
                 self.assertEqual(metadata['namespace'], ns)
                 cron = docs['CronJob', CRON_NAME[ns]]['spec']; job = cron['jobTemplate']['spec']
-                self.assertIs(cron['suspend'], True); self.assertEqual(cron['timeZone'], 'Europe/Berlin')
+                self.assertIs(cron['suspend'], ns != 'backup-validation'); self.assertEqual(cron['timeZone'], 'Europe/Berlin')
                 self.assertNotIn('argocd.argoproj.io/ignore-healthcheck',
                                  metadata.get('annotations', {}))
                 self.assertEqual(cron['concurrencyPolicy'], 'Forbid')
-                self.assertRegex(cron['schedule'], r'^\d+ \d+ \* \* [0-6]$')
+                self.assertRegex(cron['schedule'], r'^\d+ \d+ \* \* \*$')
                 schedules.add(cron['schedule'])
                 for key in ('successfulJobsHistoryLimit', 'failedJobsHistoryLimit', 'startingDeadlineSeconds'):
                     self.assertGreater(cron[key], 0)
