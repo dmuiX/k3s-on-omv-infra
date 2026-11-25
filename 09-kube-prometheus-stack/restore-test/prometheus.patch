@@ -3,7 +3,9 @@ kind: CronJob
 metadata:
   name: prometheus-restore-test
 spec:
-  schedule: '15 12 * * 2'
+  schedule: '45 5 * * *'
+  # Keep suspended until a scheduled Prometheus K8up backup exists.
+  suspend: true
   jobTemplate:
     spec:
       template:
