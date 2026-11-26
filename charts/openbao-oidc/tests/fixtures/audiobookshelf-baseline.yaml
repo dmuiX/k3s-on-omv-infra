@@ -10,7 +10,7 @@ spec:
   forProvider:
     name: audiobookshelf-users
     groupIdsRefs:
-    - name: radar-admin
+    - name: platform-admin
   providerConfigRef:
     name: openbao
 ---

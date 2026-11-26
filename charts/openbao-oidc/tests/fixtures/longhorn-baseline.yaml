@@ -8,7 +8,7 @@ spec:
   forProvider:
     name: longhorn-admin
     groupIdsRefs:
-    - name: radar-admin
+    - name: platform-admin
   providerConfigRef:
     name: openbao
 ---
