@@ -30,7 +30,7 @@ spec:
             deletionPolicy: Orphan
             assignments:
               - name: tekton-dashboard-admin
-                groupRefs: [radar-admin]
+                groupRefs: [platform-admin]
             key:
               name: tekton-dashboard
               syncWave: '-1'
@@ -64,7 +64,7 @@ spec:
           namespace: tekton-pipelines
           upstream: http://tekton-dashboard.tekton-pipelines.svc:9097
           scope: openid tekton-dashboard
-          allowedGroup: radar:admin
+          allowedGroup: platform:admin
           passBasicAuth: false
           ambient: true
           podSecurityContext:

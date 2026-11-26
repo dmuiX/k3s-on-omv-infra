@@ -2,7 +2,7 @@ name: longhorn-oidc-proxy
 namespace: longhorn
 upstream: http://longhorn-frontend.longhorn.svc:80
 scope: openid longhorn
-allowedGroup: radar:admin
+allowedGroup: platform:admin
 # Preserve the legacy header behavior unless the upstream uses its own API identity.
 passBasicAuth: true
 ambient: false
