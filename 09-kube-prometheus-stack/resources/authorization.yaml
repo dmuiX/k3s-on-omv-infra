@@ -1,0 +1,47 @@
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: grafana-ports
+  namespace: kube-prometheus-stack
+  annotations:
+    argocd.argoproj.io/sync-wave: '-1'
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: grafana
+      app.kubernetes.io/instance: kube-prometheus-stack
+  action: DENY
+  rules:
+    - from:
+        - source:
+            notPrincipals:
+              - cluster.local/ns/istio-gateway/sa/istio-gateway-istio
+              - cluster.local/ns/kube-prometheus-stack/sa/kube-prometheus-stack-prometheus
+      to:
+        - operation:
+            ports: ['3000']
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: prometheus-ports
+  namespace: kube-prometheus-stack
+  annotations:
+    argocd.argoproj.io/sync-wave: '-1'
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: prometheus
+      operator.prometheus.io/name: kube-prometheus-stack-prometheus
+  action: DENY
+  rules:
+    - from:
+        - source:
+            notPrincipals:
+              - cluster.local/ns/kube-prometheus-stack/sa/kube-prometheus-stack-grafana
+              - cluster.local/ns/kube-prometheus-stack/sa/kube-prometheus-stack-prometheus
+              - cluster.local/ns/kube-prometheus-stack/sa/default
+              - cluster.local/ns/opencost/sa/opencost
+      to:
+        - operation:
+            ports: ['9090']
