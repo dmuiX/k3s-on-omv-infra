@@ -4,8 +4,7 @@ metadata:
   name: prometheus-restore-test
 spec:
   schedule: '45 5 * * *'
-  # Keep suspended until a scheduled Prometheus K8up backup exists.
-  suspend: true
+  suspend: false
   jobTemplate:
     spec:
       template:
