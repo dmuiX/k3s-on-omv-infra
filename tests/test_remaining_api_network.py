@@ -89,7 +89,7 @@ class RemainingAPINetwork(unittest.TestCase):
         deployment, = (d for d in render(app) if d['kind'] == 'Deployment')
         operator = {**namespace(app['spec']['destination']['namespace']),
                     'podSelector': deployment['spec']['selector']}
-        restore = {'matchLabels': {'cnpg.io/cluster': 'postgresql-pitr-validation',
+        restore = {'matchLabels': {'cnpg.io/cluster': 'postgresql-restore-test',
                                    'cnpg.io/podRole': 'instance'}}
         validator = {'matchLabels': {'app.kubernetes.io/name': 'postgresql-restore-validation'}}
 

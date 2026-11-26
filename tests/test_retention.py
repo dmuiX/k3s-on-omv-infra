@@ -1,15 +1,24 @@
 import copy
+import io
 import json
+import subprocess
 import sys
+import traceback
 import unittest
 from datetime import datetime, timedelta, timezone
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, call, patch
+from urllib.error import HTTPError
+from urllib.request import Request
+from uuid import UUID
 
 import yaml
 
 PATH = Path(__file__).parents[1] / "adapters/postgresql-size-retention/retention.py"
+VALIDATOR = PATH.parents[2] / "08-backup-validation/resources/postgresql_restore_test.py"
+LEASE_PATH = "/apis/coordination.k8s.io/v1/namespaces/backup-validation/leases"
+LEASE_NAME = "postgresql-restore-status"
 SPEC = spec_from_file_location("retention", PATH)
 MODULE = module_from_spec(SPEC)
 sys.modules[SPEC.name] = MODULE
@@ -42,7 +51,7 @@ class RetentionManifestTest(unittest.TestCase):
         spec.loader.exec_module(adapter)
         target = "2026-11-20T03:06:00Z"
         restore = adapter.validation_cluster(target)
-        self.assertEqual(restore["metadata"], {"namespace": "backup-validation", "name": "postgresql-pitr-validation"})
+        self.assertEqual(restore["metadata"], {"namespace": "backup-validation", "name": "postgresql-restore-test"})
         self.assertEqual(restore["spec"]["storage"], {"size": "5Gi", "storageClass": "longhorn-single-node-delete"})
         self.assertEqual(restore["spec"]["inheritedMetadata"]["annotations"]["k8up.io/backup"], "false")
         self.assertEqual(restore["spec"]["bootstrap"]["recovery"]["recoveryTarget"], {"targetTime": target})
@@ -60,12 +69,90 @@ class RetentionManifestTest(unittest.TestCase):
         self.assertEqual(adapter.restore_storage_size(100 * 1024**3), "40Gi")
         self.assertEqual(adapter.validation_cluster(target, "10Gi")["spec"]["storage"]["size"], "10Gi")
 
+    def test_restore_test_and_retention_agree_on_evidence(self):
+        spec = spec_from_file_location("postgresql_restore_test", VALIDATOR)
+        adapter = module_from_spec(spec)
+        spec.loader.exec_module(adapter)
+        legacy = {
+            "metadata": {
+                "name": LEASE_NAME, "namespace": "backup-validation", "resourceVersion": "1234",
+                "annotations": {
+                    "k3s-on-omv.io/result": "success", "k3s-on-omv.io/pitr-verified": "true",
+                    "k3s-on-omv.io/omv-mirror-verified": "true",
+                },
+            },
+            "spec": {"holderIdentity": "postgresql-pitr-validation", "renewTime": "2000-01-01T00:00:00Z"},
+        }
+        for current, result, flags, expected in (
+            (None, "failed", {}, "false"),
+            (legacy, "success", {"restore_target_verified": True, "mirror_verified": True}, "true"),
+        ):
+            with self.subTest(result=result), patch.object(adapter, "api", side_effect=[current, {}]) as api:
+                started = datetime.now(timezone.utc)
+                adapter.put_lease(result, **flags)
+                body = api.call_args.args[2]
+                named_path = f"{LEASE_PATH}/{LEASE_NAME}"
+                self.assertEqual(api.call_args_list, [
+                    call(named_path, allowed=(404,)),
+                    (call(named_path, "PUT", body) if current else call(LEASE_PATH, "POST", body)),
+                ])
+                self.assertEqual(body["metadata"]["name"], LEASE_NAME)
+                self.assertEqual(body["metadata"]["namespace"], "backup-validation")
+                self.assertEqual(body["metadata"].get("resourceVersion"), "1234" if current else None)
+                self.assertEqual(body["metadata"]["annotations"], {
+                    "k3s-on-omv.io/result": result,
+                    "k3s-on-omv.io/restore-target-verified": expected,
+                    "k3s-on-omv.io/omv-mirror-verified": expected,
+                })
+                self.assertEqual(body["spec"]["holderIdentity"], "postgresql-restore-test")
+                renewed = MODULE._parse_time(body["spec"]["renewTime"])
+                self.assertGreaterEqual(renewed, started)
+                with (patch.dict(MODULE.os.environ, RESTORE_LEASE_NAMESPACE="backup-validation",
+                                 RESTORE_LEASE_NAME=LEASE_NAME,
+                                 BASE_BACKUP_BUDGET_BYTES=str(MODULE.BUDGET)),
+                      patch.object(MODULE.Path, "read_text", return_value="mock-token"),
+                      patch.object(MODULE.ssl, "create_default_context"),
+                      patch.object(MODULE.urllib.request, "urlopen") as read_lease):
+                    if result == "success":
+                        read_lease.return_value = io.StringIO(json.dumps(body))
+                        self.assertEqual(MODULE._lease(), (result, renewed))
+                        self.assertEqual(read_lease.call_args.args[0].selector, named_path)
+                        missing_mirror = copy.deepcopy(body)
+                        del missing_mirror["metadata"]["annotations"]["k3s-on-omv.io/omv-mirror-verified"]
+                        for invalid in (legacy, missing_mirror):
+                            read_lease.return_value = io.StringIO(json.dumps(invalid))
+                            with patch.object(MODULE, "_catalog") as catalog:
+                                with self.assertRaisesRegex(RuntimeError, "does not verify the recovery target time"):
+                                    MODULE.run(preview=True)
+                                catalog.assert_not_called()
+                    else:
+                        read_lease.return_value = io.StringIO(json.dumps(body))
+                        with self.assertRaisesRegex(RuntimeError, "does not verify the recovery target time"):
+                            MODULE._lease()
+
     def test_restore_validator_pod_uses_runtime_default_seccomp(self):
         path = PATH.parents[2] / "08-backup-validation/resources/validation.yaml"
         job, = (doc for doc in yaml.safe_load_all(path.read_text())
                 if doc["kind"] == "CronJob" and doc["metadata"]["name"] == "postgresql-restore-validation")
         pod = job["spec"]["jobTemplate"]["spec"]["template"]["spec"]
         self.assertEqual(pod.get("securityContext", {}).get("seccompProfile"), {"type": "RuntimeDefault"})
+
+    def test_restore_validator_role_limits_existing_resources_to_its_own_name(self) -> None:
+        documents = yaml.safe_load_all((VALIDATOR.parent / "validation.yaml").read_text())
+        role, = (doc for doc in documents if doc["kind"] == "Role"
+                 and doc["metadata"]["namespace"] == "backup-validation"
+                 and doc["metadata"]["name"] == "restore-validation")
+        for resource, api_group, named_verbs in (
+            ("clusters", "postgresql.cnpg.io", {"get", "delete"}),
+            ("objectstores", "barmancloud.cnpg.io", {"delete"}),
+        ):
+            with self.subTest(resource=resource):
+                rules = [rule for rule in role["rules"] if resource in rule["resources"] or "*" in rule["resources"]]
+                self.assertCountEqual([{**rule, "verbs": set(rule["verbs"])} for rule in rules], [
+                    {"apiGroups": [api_group], "resources": [resource], "verbs": {"create"}},
+                    {"apiGroups": [api_group], "resources": [resource], "verbs": named_verbs,
+                     "resourceNames": ["postgresql-restore-test"]},
+                ])
 
     def test_validation_uses_explicit_r2_secret_references(self):
         root = PATH.parents[2] / "08-backup-validation/resources"
@@ -116,7 +203,7 @@ class RetentionManifestTest(unittest.TestCase):
                 clone = adapter.validation_store(source, local_url)
                 self.assertEqual(source, baseline)
                 self.assertEqual(clone["metadata"], {
-                    "name": "postgresql-pitr-validation", "namespace": "backup-validation",
+                    "name": "postgresql-restore-test", "namespace": "backup-validation",
                 })
                 self.assertEqual(clone["spec"]["instanceSidecarConfiguration"], {
                     **sidecar, "env": [extra_env],

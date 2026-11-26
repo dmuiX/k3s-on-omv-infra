@@ -30,23 +30,36 @@ rules:
     resources:
       - clusters
     verbs:
-      - get
       - create
+  - apiGroups:
+      - postgresql.cnpg.io
+    resources:
+      - clusters
+    resourceNames:
+      - postgresql-restore-test
+    verbs:
+      - get
       - delete
   - apiGroups:
       - barmancloud.cnpg.io
     resources:
       - objectstores
     verbs:
-      - get
       - create
+  - apiGroups:
+      - barmancloud.cnpg.io
+    resources:
+      - objectstores
+    resourceNames:
+      - postgresql-restore-test
+    verbs:
       - delete
   - apiGroups:
       - ''
     resources:
       - secrets
     resourceNames:
-      - postgresql-pitr-validation-app
+      - postgresql-restore-test-app
     verbs:
       - get
 ---
@@ -223,7 +236,7 @@ spec:
           volumes:
             - name: validator
               configMap:
-                name: postgresql-pitr-validator
+                name: postgresql-restore-test-script
                 defaultMode: 0444
             - name: omv
               persistentVolumeClaim:

@@ -27,7 +27,7 @@ patches:
 generatorOptions:
   disableNameSuffixHash: true
 configMapGenerator:
-  - name: postgresql-pitr-validator
+  - name: postgresql-restore-test-script
     namespace: backup-validation
     files:
       - postgresql_restore_test.py

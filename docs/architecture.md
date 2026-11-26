@@ -144,7 +144,7 @@ The checked-in [StorageClasses](../02-controllers/longhorn/resources/storageclas
 
 **Longhorn replication is not backup.** Each data system uses its supported recovery format:
 
-- PostgreSQL: Barman base backups and continuous WAL archives for recovery/PITR.
+- PostgreSQL: Barman base backups and continuous WAL archives for point-in-time recovery.
 - OpenBao: native Raft snapshots and verified external seal/recovery custody.
 - etcd: native K3s snapshots and a recovery path that does not depend on OpenBao already running.
 - Suitable application PVCs: K8up/Restic through retained SMB CSI repository PVCs, on OMV only. Reconstructible data is classified separately rather than backed up generically.
