@@ -1,0 +1,362 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: prometheus-backup-pipeline
+  namespace: kube-prometheus-stack
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: prometheus-backup-pipeline
+  namespace: kube-prometheus-stack
+rules:
+  - apiGroups: ['k8up.io']
+    resources: ['backups', 'checks', 'prunes']
+    verbs: ['create', 'get', 'list']
+  - apiGroups: ['k8up.io']
+    resources: ['snapshots']
+    verbs: ['list']
+  - apiGroups: ['batch']
+    resources: ['jobs']
+    verbs: ['create', 'get', 'list']
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: prometheus-backup-pipeline
+  namespace: kube-prometheus-stack
+subjects:
+  - kind: ServiceAccount
+    name: prometheus-backup-pipeline
+    namespace: kube-prometheus-stack
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: prometheus-backup-pipeline
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: prometheus-backup-pipeline-script
+  namespace: kube-prometheus-stack
+data:
+  pipeline.py: |
+    """Orchestrate fail-closed Prometheus TSDB Backup -> Check -> Cleanup -> Prune."""
+    from datetime import datetime, timezone
+    from functools import cache
+    import json
+    import os
+    from pathlib import Path
+    import ssl
+    import sys
+    import time
+    from urllib.error import HTTPError
+    from urllib.request import Request, urlopen
+
+    NAMESPACE = "kube-prometheus-stack"
+    TOOL_IMAGE = "python:3.15.2-slim-trixie@sha256:63bb298d2b7b88f176f51b5189f54ce6535c997682ea70885d2132f5d473a8a5"
+    BACKEND = {
+        "repoPasswordSecretRef": {"name": "prometheus-k8up-repository", "key": "password"},
+        "local": {"mountPath": "/repository"},
+        "volumeMounts": [{"name": "repository", "mountPath": "/repository"}],
+    }
+    POD_CONFIG_REF = {"name": "prometheus-k8up-omv"}
+    POLL_SECONDS = 15
+
+    CLEANUP_SCRIPT = "\n".join([
+        "from pathlib import Path",
+        "import re",
+        "import shutil",
+        'root = Path("/prometheus/snapshots")',
+        'marker = root / ".k8up-pending"',
+        "name = marker.read_text().strip()",
+        'if not re.fullmatch(r"[0-9]{8}T[0-9]{6}Z-[A-Za-z0-9]+", name):',
+        '    raise SystemExit("invalid pending snapshot name")',
+        "target = root / name",
+        "if target.parent != root or not target.is_dir() or target.is_symlink():",
+        '    raise SystemExit("pending snapshot target is not a safe directory")',
+        "shutil.rmtree(target)",
+        "marker.unlink()",
+    ])
+
+
+    @cache
+    def api_settings() -> tuple[str, dict[str, str], ssl.SSLContext]:
+        """Connect directly via Kubernetes Service IP so no DNS egress is required."""
+        host = os.environ["KUBERNETES_SERVICE_HOST"]
+        port = os.environ.get("KUBERNETES_SERVICE_PORT_HTTPS", "443")
+        sa = Path("/var/run/secrets/kubernetes.io/serviceaccount")
+        token = (sa / "token").read_text().strip()
+        tls = ssl.create_default_context(cafile=str(sa / "ca.crt"))
+        return f"https://{host}:{port}", {
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+        }, tls
+
+
+    def api(path: str, method: str = "GET", body: dict | None = None, *, timeout: float = 30) -> dict:
+        base, headers, tls = api_settings()
+        data = None if body is None else json.dumps(body).encode()
+        try:
+            with urlopen(Request(base + path, data=data, method=method, headers=headers), context=tls, timeout=timeout) as resp:
+                raw = resp.read()
+                return json.loads(raw) if raw else {}
+        except HTTPError as exc:
+            detail = exc.read().decode(errors="replace")
+            exc.close()
+            raise RuntimeError(f"Kubernetes API {method} {path} failed with HTTP {exc.code}: {detail}") from exc
+
+
+    def snapshot_ids() -> set[str]:
+        items = api(f"/apis/k8up.io/v1/namespaces/{NAMESPACE}/snapshots").get("items", [])
+        return {
+            item["spec"]["id"]
+            for item in items
+            if item.get("spec", {}).get("repository") == "/repository" and item.get("spec", {}).get("id")
+        }
+
+
+    def wait_k8up(plural: str, name: str, timeout: int = 3600) -> None:
+        deadline = time.monotonic() + timeout
+        path = f"/apis/k8up.io/v1/namespaces/{NAMESPACE}/{plural}/{name}"
+        while time.monotonic() < deadline:
+            conditions = api(path).get("status", {}).get("conditions", [])
+            for cond in conditions:
+                ctype, status, reason = cond.get("type"), cond.get("status"), cond.get("reason", "")
+                if ctype == "Completed" and status == "True":
+                    if reason == "Succeeded":
+                        return
+                    raise RuntimeError(f"{plural}/{name} completed with reason={reason!r}")
+                if ctype == "Failed" and status == "True":
+                    raise RuntimeError(f"{plural}/{name} failed with reason={reason!r}")
+            time.sleep(POLL_SECONDS)
+        raise RuntimeError(f"Timed out waiting for {plural}/{name}")
+
+
+    def wait_job(name: str, timeout: int = 660) -> None:
+        deadline = time.monotonic() + timeout
+        path = f"/apis/batch/v1/namespaces/{NAMESPACE}/jobs/{name}"
+        while time.monotonic() < deadline:
+            conditions = api(path).get("status", {}).get("conditions", [])
+            for cond in conditions:
+                if cond.get("type") == "Complete" and cond.get("status") == "True":
+                    return
+                if cond.get("type") == "Failed" and cond.get("status") == "True":
+                    raise RuntimeError(f"jobs/{name} failed: {cond.get('message', '')}")
+            time.sleep(POLL_SECONDS)
+        raise RuntimeError(f"Timed out waiting for jobs/{name}")
+
+
+    def build_backup(run_id: str) -> dict:
+        return {
+            "apiVersion": "k8up.io/v1",
+            "kind": "Backup",
+            "metadata": {"name": f"prometheus-tsdb-{run_id}", "namespace": NAMESPACE},
+            "spec": {
+                "backend": BACKEND,
+                "podConfigRef": POD_CONFIG_REF,
+                "labelSelectors": [{"matchLabels": {"platform.k3s-on-omv.io/backup-set": "prometheus-tsdb"}}],
+                "tags": ["prometheus-tsdb", "prometheus-replica-0"],
+                "activeDeadlineSeconds": 7200,
+                "failedJobsHistoryLimit": 3,
+                "successfulJobsHistoryLimit": 3,
+            },
+        }
+
+
+    def build_check(run_id: str) -> dict:
+        return {
+            "apiVersion": "k8up.io/v1",
+            "kind": "Check",
+            "metadata": {"name": f"prometheus-tsdb-check-{run_id}", "namespace": NAMESPACE},
+            "spec": {
+                "backend": BACKEND,
+                "podConfigRef": POD_CONFIG_REF,
+                "activeDeadlineSeconds": 7200,
+                "failedJobsHistoryLimit": 3,
+                "successfulJobsHistoryLimit": 3,
+            },
+        }
+
+
+    def build_cleanup_job(run_id: str) -> dict:
+        return {
+            "apiVersion": "batch/v1",
+            "kind": "Job",
+            "metadata": {"name": f"prometheus-tsdb-cleanup-{run_id}", "namespace": NAMESPACE},
+            "spec": {
+                "backoffLimit": 0,
+                "activeDeadlineSeconds": 600,
+                "ttlSecondsAfterFinished": 3600,
+                "template": {
+                    "metadata": {
+                        "labels": {
+                            "app.kubernetes.io/name": "prometheus-tsdb-cleanup",
+                            "istio.io/dataplane-mode": "none",
+                        }
+                    },
+                    "spec": {
+                        "restartPolicy": "Never",
+                        "automountServiceAccountToken": False,
+                        "securityContext": {
+                            "runAsNonRoot": True,
+                            "runAsUser": 1000,
+                            "runAsGroup": 2000,
+                            "fsGroup": 2000,
+                            "seccompProfile": {"type": "RuntimeDefault"},
+                        },
+                        "affinity": {
+                            "podAffinity": {
+                                "requiredDuringSchedulingIgnoredDuringExecution": [{
+                                    "labelSelector": {
+                                        "matchLabels": {
+                                            "statefulset.kubernetes.io/pod-name": "prometheus-kube-prometheus-stack-prometheus-0"
+                                        }
+                                    },
+                                    "topologyKey": "kubernetes.io/hostname",
+                                }]
+                            }
+                        },
+                        "containers": [{
+                            "name": "cleanup",
+                            "image": TOOL_IMAGE,
+                            "command": ["/usr/local/bin/python", "-c"],
+                            "args": [CLEANUP_SCRIPT],
+                            "resources": {
+                                "requests": {"cpu": "25m", "memory": "32Mi"},
+                                "limits": {"cpu": "250m", "memory": "128Mi"},
+                            },
+                            "securityContext": {
+                                "allowPrivilegeEscalation": False,
+                                "readOnlyRootFilesystem": True,
+                                "capabilities": {"drop": ["ALL"]},
+                            },
+                            "volumeMounts": [{"name": "prometheus-data", "mountPath": "/prometheus"}],
+                        }],
+                        "volumes": [{
+                            "name": "prometheus-data",
+                            "persistentVolumeClaim": {
+                                "claimName": "prometheus-kube-prometheus-stack-prometheus-db-prometheus-kube-prometheus-stack-prometheus-0"
+                            },
+                        }],
+                    },
+                },
+            },
+        }
+
+
+    def build_prune(run_id: str) -> dict:
+        return {
+            "apiVersion": "k8up.io/v1",
+            "kind": "Prune",
+            "metadata": {"name": f"prometheus-tsdb-prune-{run_id}", "namespace": NAMESPACE},
+            "spec": {
+                "backend": BACKEND,
+                "podConfigRef": POD_CONFIG_REF,
+                "retention": {"keepDaily": 7, "keepWeekly": 4, "tags": ["prometheus-tsdb"]},
+                "activeDeadlineSeconds": 7200,
+                "failedJobsHistoryLimit": 3,
+                "successfulJobsHistoryLimit": 3,
+            },
+        }
+
+
+    def run(run_id: str | None = None) -> None:
+        run_id = run_id or datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
+        before = snapshot_ids()
+
+        backup = build_backup(run_id)
+        backup_name = backup["metadata"]["name"]
+        print(f"stage=backup status=starting name={backup_name}", flush=True)
+        api(f"/apis/k8up.io/v1/namespaces/{NAMESPACE}/backups", "POST", backup)
+        wait_k8up("backups", backup_name)
+        after = snapshot_ids()
+        new_snapshots = sorted(after - before)
+        if not new_snapshots:
+            raise RuntimeError(f"backups/{backup_name} succeeded but no new /repository Snapshot appeared")
+        print(f"stage=backup status=PASS new_snapshots={','.join(new_snapshots)}", flush=True)
+
+        check = build_check(run_id)
+        check_name = check["metadata"]["name"]
+        print(f"stage=check status=starting name={check_name}", flush=True)
+        api(f"/apis/k8up.io/v1/namespaces/{NAMESPACE}/checks", "POST", check)
+        wait_k8up("checks", check_name)
+        print(f"stage=check status=PASS name={check_name}", flush=True)
+
+        cleanup = build_cleanup_job(run_id)
+        cleanup_name = cleanup["metadata"]["name"]
+        print(f"stage=cleanup status=starting name={cleanup_name}", flush=True)
+        api(f"/apis/batch/v1/namespaces/{NAMESPACE}/jobs", "POST", cleanup)
+        wait_job(cleanup_name)
+        print(f"stage=cleanup status=PASS name={cleanup_name}", flush=True)
+
+        prune = build_prune(run_id)
+        prune_name = prune["metadata"]["name"]
+        print(f"stage=prune status=starting name={prune_name}", flush=True)
+        api(f"/apis/k8up.io/v1/namespaces/{NAMESPACE}/prunes", "POST", prune)
+        wait_k8up("prunes", prune_name)
+        print(f"stage=prune status=PASS name={prune_name}", flush=True)
+
+
+    if __name__ == "__main__":
+        run()
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: prometheus-backup-pipeline
+  namespace: kube-prometheus-stack
+spec:
+  suspend: false
+  schedule: '0 3 * * *'
+  timeZone: Europe/Berlin
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 600
+  successfulJobsHistoryLimit: 1
+  failedJobsHistoryLimit: 1
+  jobTemplate:
+    spec:
+      backoffLimit: 0
+      activeDeadlineSeconds: 7200
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: prometheus-backup-pipeline
+            istio.io/dataplane-mode: none
+        spec:
+          serviceAccountName: prometheus-backup-pipeline
+          restartPolicy: Never
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+            runAsGroup: 1000
+            fsGroup: 1000
+            seccompProfile:
+              type: RuntimeDefault
+          containers:
+            - name: pipeline
+              image: python:3.15.2-slim-trixie@sha256:63bb298d2b7b88f176f51b5189f54ce6535c997682ea70885d2132f5d473a8a5
+              command: [/usr/local/bin/python, -IB, /tools/pipeline.py]
+              resources:
+                requests:
+                  cpu: 25m
+                  memory: 32Mi
+                limits:
+                  cpu: 250m
+                  memory: 128Mi
+              securityContext:
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities:
+                  drop: [ALL]
+              volumeMounts:
+                - name: tools
+                  mountPath: /tools
+                  readOnly: true
+          volumes:
+            - name: tools
+              configMap:
+                name: prometheus-backup-pipeline-script
+                defaultMode: 0444
