@@ -584,6 +584,14 @@ class RepositoryWorkloads(unittest.TestCase):
         from workload_contracts import Repository
 
         docs = Repository().render("vault-secrets-operator")
+        deployment = next(d for d in docs if d["kind"] == "Deployment")
+        self.assertEqual(deployment["spec"]["replicas"], 2)
+        args = [
+            a
+            for c in deployment["spec"]["template"]["spec"]["containers"]
+            for a in c.get("args", [])
+        ]
+        self.assertIn("--leader-elect", args)
         connections = [d for d in docs if d["kind"] == "VaultConnection"]
         self.assertEqual(len(connections), 1)
         self.assertEqual(connections[0]["metadata"]["name"], "default")
