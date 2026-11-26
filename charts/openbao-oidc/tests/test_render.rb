@@ -163,7 +163,7 @@ class OpenbaoOIDCTest < Minitest::Test
     actual = indexed(access)
     indexed(expected).each { |id, doc| assert_equal doc, actual.fetch(id), id.inspect }
     indexed(workload + rendered.fetch('audiobookshelf'))
-    assert_equal false, YAML.load_file(applications.fetch('audiobookshelf')).dig('spec', 'syncPolicy', 'automated', 'enabled')
+    assert_equal true, YAML.load_file(applications.fetch('audiobookshelf')).dig('spec', 'syncPolicy', 'automated', 'enabled')
     assert_equal YAML.load_file(File.join(LIVE, 'apps/audiobookshelf/values.yml')).dig('oidc', 'issuerURL'),
                  YAML.load_file(File.join(LIVE, 'apps/audiobookshelf/values.yml')).dig('openbaoOIDC', 'provider', 'issuerURL')
 
