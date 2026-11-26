@@ -17,7 +17,7 @@ spec:
     helm:
       valuesObject:
         controller:
-          replicas: 1
+          replicas: 2
           podSecurityContext:
             runAsNonRoot: true
             seccompProfile:
