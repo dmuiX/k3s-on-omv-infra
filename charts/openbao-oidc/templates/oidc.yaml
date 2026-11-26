@@ -1,6 +1,12 @@
 {{- $v := .Values.openbaoOIDC -}}
-{{- $issuer := urlParse $v.provider.issuerURL -}}
-{{- if or (ne $issuer.scheme "https") (empty $issuer.host) (not (empty $issuer.userinfo)) (not (empty $issuer.query)) (not (empty $issuer.fragment)) (ne $issuer.path (printf "/v1/identity/oidc/provider/%s" $v.provider.name)) -}}
+{{- $clientName := $v.client.name -}}
+{{- $key := merge (deepCopy ($v.key | default dict)) (dict "name" $clientName) -}}
+{{- $clientKey := default $key.name $v.client.key -}}
+{{- $provider := merge (deepCopy ($v.provider | default dict)) (dict "name" $clientName "clientRefs" (list $clientName) "scopeRefs" (list $clientName)) -}}
+{{- $defaultScopeTemplate := "{\"username\":{{identity.entity.name}},\"groups\":{{identity.entity.groups.names}}}" -}}
+{{- $scopes := $v.scopes | default (list (dict "name" $clientName "template" $defaultScopeTemplate)) -}}
+{{- $issuer := urlParse $provider.issuerURL -}}
+{{- if or (ne $issuer.scheme "https") (empty $issuer.host) (not (empty $issuer.userinfo)) (not (empty $issuer.query)) (not (empty $issuer.fragment)) (ne $issuer.path (printf "/v1/identity/oidc/provider/%s" $provider.name)) -}}
 {{- fail "openbaoOIDC.provider.issuerURL must be the dedicated provider HTTPS URL" -}}
 {{- end -}}
 {{- range $v.client.redirectUris -}}
@@ -9,10 +15,14 @@
 {{- fail "openbaoOIDC.client.redirectUris must be confirmed HTTPS URLs" -}}
 {{- end -}}
 {{- end -}}
-{{- if or (ne $v.client.key $v.key.name) (not (has $v.client.name $v.provider.clientRefs)) -}}
+{{- if or (ne $clientKey $key.name) (not (has $clientName $provider.clientRefs)) -}}
 {{- fail "client must reference this key and be explicitly allowed by this provider" -}}
 {{- end -}}
 {{- range $v.groups }}
+{{- $extMembers := true }}
+{{- if hasKey . "externalMemberEntityIds" }}
+{{- $extMembers = .externalMemberEntityIds }}
+{{- end }}
 ---
 apiVersion: identity.vault.upbound.io/v1alpha1
 kind: Group
@@ -22,8 +32,8 @@ spec:
   {{- include "openbao-oidc.common" $v | nindent 2 }}
   forProvider:
     name: {{ .externalName | quote }}
-    type: {{ .type | quote }}
-    externalMemberEntityIds: {{ .externalMemberEntityIds }}
+    type: {{ default "internal" .type | quote }}
+    externalMemberEntityIds: {{ $extMembers }}
 {{- end }}
 {{- range $v.assignments }}
 ---
@@ -36,7 +46,7 @@ spec:
   forProvider:
     name: {{ .name | quote }}
     groupIdsRefs:
-      {{- range .groupRefs }}
+      {{- range (default (list "platform-admin") .groupRefs) }}
       - name: {{ . | quote }}
       {{- end }}
 {{- end }}
@@ -44,17 +54,17 @@ spec:
 apiVersion: identity.vault.upbound.io/v1alpha1
 kind: OidcKey
 metadata:
-  {{- include "openbao-oidc.metadata" $v.key | nindent 2 }}
+  {{- include "openbao-oidc.metadata" $key | nindent 2 }}
 spec:
   {{- include "openbao-oidc.common" $v | nindent 2 }}
   forProvider:
-    name: {{ $v.key.name | quote }}
-    algorithm: {{ $v.key.algorithm | quote }}
+    name: {{ $key.name | quote }}
+    algorithm: {{ $key.algorithm | quote }}
     allowedClientIds:
-      {{- toYaml $v.key.allowedClientIds | nindent 6 }}
-    rotationPeriod: {{ $v.key.rotationPeriod }}
-    verificationTtl: {{ $v.key.verificationTtl }}
-{{- range $v.scopes }}
+      {{- toYaml $key.allowedClientIds | nindent 6 }}
+    rotationPeriod: {{ $key.rotationPeriod }}
+    verificationTtl: {{ $key.verificationTtl }}
+{{- range $scopes }}
 ---
 apiVersion: identity.vault.upbound.io/v1alpha1
 kind: OidcScope
@@ -64,7 +74,7 @@ spec:
   {{- include "openbao-oidc.common" $v | nindent 2 }}
   forProvider:
     name: {{ .name | quote }}
-    template: {{ .template | quote }}
+    template: {{ default $defaultScopeTemplate .template | quote }}
 {{- end }}
 ---
 apiVersion: identity.vault.upbound.io/v1alpha1
@@ -74,9 +84,9 @@ metadata:
 spec:
   {{- include "openbao-oidc.common" $v | nindent 2 }}
   forProvider:
-    name: {{ $v.client.name | quote }}
+    name: {{ $clientName | quote }}
     clientType: confidential
-    key: {{ $v.client.key | quote }}
+    key: {{ $clientKey | quote }}
     assignments:
       {{- toYaml $v.client.assignments | nindent 6 }}
     redirectUris:
@@ -92,18 +102,18 @@ spec:
 apiVersion: identity.vault.upbound.io/v1alpha1
 kind: OidcProvider
 metadata:
-  {{- include "openbao-oidc.metadata" $v.provider | nindent 2 }}
+  {{- include "openbao-oidc.metadata" $provider | nindent 2 }}
 spec:
   {{- include "openbao-oidc.common" $v | nindent 2 }}
   forProvider:
-    name: {{ $v.provider.name | quote }}
+    name: {{ $provider.name | quote }}
     issuerHost: {{ $issuer.host | quote }}
     httpsEnabled: true
     allowedClientIdsRefs:
-      {{- range $v.provider.clientRefs }}
+      {{- range $provider.clientRefs }}
       - name: {{ . | quote }}
       {{- end }}
     scopesSupportedRefs:
-      {{- range $v.provider.scopeRefs }}
+      {{- range $provider.scopeRefs }}
       - name: {{ . | quote }}
       {{- end }}

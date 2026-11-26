@@ -51,9 +51,7 @@
             },
             "required": [
               "name",
-              "externalName",
-              "type",
-              "externalMemberEntityIds"
+              "externalName"
             ]
           }
         },
@@ -84,8 +82,7 @@
               }
             },
             "required": [
-              "name",
-              "groupRefs"
+              "name"
             ]
           }
         },
@@ -123,14 +120,7 @@
               "type": "integer",
               "minimum": 1
             }
-          },
-          "required": [
-            "name",
-            "algorithm",
-            "allowedClientIds",
-            "rotationPeriod",
-            "verificationTtl"
-          ]
+          }
         },
         "scopes": {
           "type": "array",
@@ -154,8 +144,7 @@
               }
             },
             "required": [
-              "name",
-              "template"
+              "name"
             ]
           }
         },
@@ -222,11 +211,8 @@
           },
           "required": [
             "name",
-            "key",
             "assignments",
-            "redirectUris",
-            "idTokenTtl",
-            "accessTokenTtl"
+            "redirectUris"
           ]
         },
         "provider": {
@@ -265,18 +251,11 @@
             }
           },
           "required": [
-            "name",
-            "issuerURL",
-            "clientRefs",
-            "scopeRefs"
+            "issuerURL"
           ]
         }
       },
       "required": [
-        "providerConfigName",
-        "deletionPolicy",
-        "key",
-        "scopes",
         "client",
         "provider"
       ]
