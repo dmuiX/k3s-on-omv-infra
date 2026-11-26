@@ -42,6 +42,7 @@ spec:
               - cluster.local/ns/kube-prometheus-stack/sa/kube-prometheus-stack-prometheus
               - cluster.local/ns/kube-prometheus-stack/sa/default
               - cluster.local/ns/opencost/sa/opencost
+              - cluster.local/ns/radar/sa/radar
       to:
         - operation:
             ports: ['9090']
