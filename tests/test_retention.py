@@ -159,6 +159,27 @@ class RetentionManifestTest(unittest.TestCase):
             }.items()
         })
 
+    def test_all_platform_cronjobs_set_history_limits_and_ttl(self):
+        root = PATH.parents[2]
+        cronjobs = []
+        for path in sorted(root.rglob("*.yaml")):
+            if any(part in path.relative_to(root).parts for part in (".git", "charts", "fixtures", "tests")):
+                continue
+            for doc in yaml.safe_load_all(path.read_text()):
+                if isinstance(doc, dict) and doc.get("kind") == "CronJob":
+                    cronjobs.append((path.relative_to(root), doc))
+        self.assertGreaterEqual(len(cronjobs), 5)
+        for rel, job in cronjobs:
+            with self.subTest(cronjob=str(rel)):
+                spec = job["spec"]
+                job_spec = spec["jobTemplate"]["spec"]
+                self.assertEqual(spec.get("successfulJobsHistoryLimit"), 1)
+                self.assertEqual(spec.get("failedJobsHistoryLimit"), 1)
+                self.assertIsInstance(job_spec.get("ttlSecondsAfterFinished"), int)
+                self.assertGreater(job_spec["ttlSecondsAfterFinished"], 0)
+                self.assertIsInstance(job_spec.get("backoffLimit"), int)
+                self.assertGreaterEqual(job_spec["backoffLimit"], 0)
+
 
 class RetentionTest(unittest.TestCase):
     def setUp(self):
