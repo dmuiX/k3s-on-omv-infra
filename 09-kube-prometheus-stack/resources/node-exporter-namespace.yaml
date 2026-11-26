@@ -4,6 +4,7 @@ metadata:
   name: node-exporter
   annotations:
     argocd.argoproj.io/sync-wave: '-20'
+    radarhq.io/ignore-checks: hostPID,hostNetwork,sensitiveHostPath
   labels:
     # Host namespaces and read-only hostPath mounts are essential to node metrics.
     # The exporter still runs non-root with no capabilities or privilege escalation.
