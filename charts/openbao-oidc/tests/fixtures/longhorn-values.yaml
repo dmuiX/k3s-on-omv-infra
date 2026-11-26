@@ -5,7 +5,7 @@ openbaoOIDC:
   assignments:
   - name: longhorn-admin
     groupRefs:
-    - radar-admin
+    - platform-admin
   key:
     name: longhorn
     syncWave: "-1"

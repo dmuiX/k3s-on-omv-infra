@@ -3,9 +3,9 @@ openbaoOIDC:
   providerConfigName: openbao
   deletionPolicy: Orphan
   groups:
-  - name: radar-admin
+  - name: platform-admin
     syncWave: "-20"
-    externalName: radar:admin
+    externalName: platform:admin
     type: internal
     externalMemberEntityIds: true
   client:

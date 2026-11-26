@@ -6,7 +6,7 @@ openbaoOIDC:
   - name: audiobookshelf-users
     syncWave: "-30"
     groupRefs:
-    - radar-admin
+    - platform-admin
   client:
     name: audiobookshelf
     syncWave: "-20"

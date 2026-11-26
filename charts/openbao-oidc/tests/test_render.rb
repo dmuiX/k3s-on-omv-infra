@@ -34,10 +34,18 @@ class OpenbaoOIDCTest < Minitest::Test
     docs.to_h { |d| [identity(d), d] }
   end
 
-  def render(path, chart: CHART, name: 'test', namespace: 'default')
-    out, err, status = Open3.capture3('helm', 'template', name, chart, '-n', namespace, '-f', path)
-    assert status.success?, err
-    documents(out)
+  def render(path, chart: CHART, name: 'test', namespace: 'default', extra_values: nil)
+    Dir.mktmpdir('oidc-render-') do |dir|
+      args = ['helm', 'template', name, chart, '-n', namespace, '-f', path]
+      if extra_values
+        extra_path = File.join(dir, 'values-object.yaml')
+        File.write(extra_path, YAML.dump(extra_values))
+        args += ['-f', extra_path]
+      end
+      out, err, status = Open3.capture3(*args)
+      assert status.success?, err
+      documents(out)
+    end
   end
 
   def fixture(name, suffix)
@@ -126,6 +134,7 @@ class OpenbaoOIDCTest < Minitest::Test
       'audiobookshelf' => File.join(APPS, 'audiobookshelf/app.yml'),
       'longhorn' => File.join(INFRA, '06-platform/longhorn-config/app.yml')
     }
+    rendered = {}
     CONSUMERS.each do |name, value_path|
       app = YAML.load_file(applications.fetch(name))
       sources = app.fetch('spec').fetch('sources')
@@ -133,7 +142,9 @@ class OpenbaoOIDCTest < Minitest::Test
       assert_equal 1, shared.length
       assert_equal ["$live/#{value_path}"], shared.first.fetch('helm').fetch('valueFiles')
       assert_equal 1, sources.count { |s| s['ref'] == 'live' }
-      generated = render(File.join(LIVE, value_path))
+      extra = shared.first.fetch('helm')['valuesObject']
+      generated = render(File.join(LIVE, value_path), extra_values: extra)
+      rendered[name] = generated
       assert_equal indexed(documents(File.read(fixture(name, 'baseline')))),
                    indexed(documents(scrub(YAML.dump_stream(*generated), name, YAML.load_file(File.join(LIVE, value_path))))), name
       # Cluster-scoped Crossplane identities must NOT acquire a namespace from
@@ -151,7 +162,7 @@ class OpenbaoOIDCTest < Minitest::Test
     # previously OIDC-local resources by identity, without changing their specs.
     actual = indexed(access)
     indexed(expected).each { |id, doc| assert_equal doc, actual.fetch(id), id.inspect }
-    indexed(workload + render(File.join(LIVE, CONSUMERS.fetch('audiobookshelf'))))
+    indexed(workload + rendered.fetch('audiobookshelf'))
     assert_equal false, YAML.load_file(applications.fetch('audiobookshelf')).dig('spec', 'syncPolicy', 'automated', 'enabled')
     assert_equal YAML.load_file(File.join(LIVE, 'apps/audiobookshelf/values.yml')).dig('oidc', 'issuerURL'),
                  YAML.load_file(File.join(LIVE, 'apps/audiobookshelf/values.yml')).dig('openbaoOIDC', 'provider', 'issuerURL')
@@ -160,13 +171,13 @@ class OpenbaoOIDCTest < Minitest::Test
     # source, not a private Kustomize wrapper.
     radar = Dir.glob(File.join(APPS, 'radar/resources/*.yaml')).sort.flat_map { |path| documents(File.read(path)) }
     refute radar.any? { |d| oidc?(d) }
-    indexed(radar + render(File.join(LIVE, CONSUMERS.fetch('radar'))))
+    indexed(radar + rendered.fetch('radar'))
     longhorn = render(File.join(LIVE, 'infra/longhorn/proxy-values.yml'),
                       chart: File.join(INFRA, 'charts/oidc-proxy'),
                       name: 'longhorn-oidc-proxy', namespace: 'longhorn')
     assert_equal %w[ConfigMap Deployment Service], longhorn.map { |d| d['kind'] }.sort
     # The shared service-route chart now owns the unchanged Longhorn proxy route.
     refute longhorn.any? { |d| oidc?(d) }
-    indexed(longhorn + render(File.join(LIVE, CONSUMERS.fetch('longhorn'))))
+    indexed(longhorn + rendered.fetch('longhorn'))
   end
 end
