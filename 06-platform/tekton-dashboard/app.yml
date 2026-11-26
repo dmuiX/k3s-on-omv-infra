@@ -26,32 +26,16 @@ spec:
           - $live/infra/tekton-dashboard/oidc-values.yml
         valuesObject:
           openbaoOIDC:
-            providerConfigName: openbao
-            deletionPolicy: Orphan
             assignments:
               - name: tekton-dashboard-admin
-                groupRefs: [platform-admin]
             key:
-              name: tekton-dashboard
               syncWave: '-1'
-              algorithm: RS256
-              allowedClientIds: ['*']
-              rotationPeriod: 86400
-              verificationTtl: 172800
             scopes:
               - name: tekton-dashboard
                 syncWave: '-1'
-                template: '{"username":{{identity.entity.name}},"groups":{{identity.entity.groups.names}}}'
             client:
               name: tekton-dashboard
-              key: tekton-dashboard
               assignments: [tekton-dashboard-admin]
-              idTokenTtl: 3600
-              accessTokenTtl: 3600
-            provider:
-              name: tekton-dashboard
-              clientRefs: [tekton-dashboard]
-              scopeRefs: [tekton-dashboard]
     - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
       targetRevision: main
       path: charts/oidc-proxy

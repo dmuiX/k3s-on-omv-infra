@@ -1,3 +1,14 @@
-# No client, administrator group, assignment or claim is enabled by default.
-# Supply the complete openbaoOIDC integration explicitly (see tests/fixtures).
-openbaoOIDC: {}
+# Safe shared defaults; client.name, client.assignments, client.redirectUris,
+# and provider.issuerURL remain strictly required (fail closed when omitted).
+openbaoOIDC:
+  providerConfigName: openbao
+  deletionPolicy: Orphan
+  key:
+    algorithm: RS256
+    allowedClientIds:
+      - '*'
+    rotationPeriod: 86400
+    verificationTtl: 172800
+  client:
+    idTokenTtl: 3600
+    accessTokenTtl: 3600
