@@ -43,7 +43,7 @@ class RestoreTestManifests(unittest.TestCase):
                 metadata = docs['CronJob', CRON_NAME[ns]]['metadata']
                 self.assertEqual(metadata['namespace'], ns)
                 cron = docs['CronJob', CRON_NAME[ns]]['spec']; job = cron['jobTemplate']['spec']
-                self.assertIs(cron['suspend'], ns != 'backup-validation'); self.assertEqual(cron['timeZone'], 'Europe/Berlin')
+                self.assertIs(cron['suspend'], False); self.assertEqual(cron['timeZone'], 'Europe/Berlin')
                 self.assertNotIn('argocd.argoproj.io/ignore-healthcheck',
                                  metadata.get('annotations', {}))
                 self.assertEqual(cron['concurrencyPolicy'], 'Forbid')
