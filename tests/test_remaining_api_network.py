@@ -198,21 +198,23 @@ class RemainingAPINetwork(unittest.TestCase):
 
     def test_radar_chart_renders_exact_api_rules_and_preserves_https(self):
         app = load(APPS / 'radar/app.yml')
-        source, = [s for s in app['spec']['sources'] if s.get('path') == 'charts/network-policies']
-        self.assertEqual(source['helm']['valueFiles'], ['$live/apps/radar/network-values.yml'])
-        result = subprocess.run([
-            'helm', 'template', 'radar-network', str(INFRA / source['path']),
-            '-f', str(LIVE / 'apps/radar/network-values.yml')], capture_output=True, text=True)
-        self.assertEqual(result.returncode, 0, 'Network chart render failed')
-        policies = {d['metadata']['name']: d for d in yaml.safe_load_all(result.stdout) if d}
+        live, = [s for s in app['spec']['sources'] if s.get('ref') == 'live']
+        self.assertEqual(live['path'], 'apps/radar')
+        self.assertEqual(live['directory']['include'], 'network-peers.yaml')
+        policies = {d['metadata']['name']: d for path in (
+            APPS / 'radar/resources/network-policy.yaml',
+            LIVE / 'apps/radar/network-peers.yaml',
+        ) for d in yaml.safe_load_all(path.read_text()) if d}
         credentials = policies['allow-radar-auth-provisioner-api']
         self.assertEqual(credentials['metadata']['annotations'],
                          {'argocd.argoproj.io/sync-wave': '-2'})
         self.assertEqual(credentials['spec'], {
             'podSelector': {'matchLabels': {'app.kubernetes.io/name': 'radar-auth-provisioner'}},
             'policyTypes': ['Egress'], 'egress': api_rules()})
+        radar_api = policies['allow-radar-api']
+        self.assertEqual(radar_api['spec']['egress'], api_rules())
         radar = policies['allow-radar']
-        self.assertEqual(radar['spec']['egress'][-3:], api_rules() + [{'ports': tcp(443)}])
+        self.assertEqual(radar['spec']['egress'][-1:], [{'ports': tcp(443)}])
         for policy in policies.values():
             for rule in policy['spec'].get('egress', []):
                 if not rule.get('to'):
