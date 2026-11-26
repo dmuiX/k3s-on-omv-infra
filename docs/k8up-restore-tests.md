@@ -17,16 +17,120 @@ With `prune: false`, syncing the renamed CronJobs leaves the previously synced `
 
 This is a test name change, not a data migration. The fixture PVC, Restic path, marker bytes and source repository stay unchanged so existing backups remain verifiable without reseeding. The manual seed Job and immutable seed ConfigMap retain their versioned identities to avoid a second launch or adoption of an existing object. Restore and seed Pod labels remain unchanged; neither Infra nor private Live policy selectors need edits.
 
+In a dedicated shell, set `RESTORE_TEST_CONTEXT` to the reviewed kubeconfig
+context after confirming its API server is the approved target. For each restore
+run, set `RESTORE_TEST_NAMESPACE` to the reviewed source namespace from the
+table (`backup-validation` or `kube-prometheus-stack`) and `RESTORE_TEST_CRONJOB`
+to the matching CronJob (`k8up-backup-validation` or `prometheus-restore-test`).
+Keep these values unchanged through verification, launch, and evidence
+collection. Pass both context and namespace flags on every namespaced API call;
+do not use the current context or default namespace.
+
 1. On first installation, **sync the private Live policy companion first**, then both Infra Applications. For the rename, verify the existing policies remain in place. Confirm the general validation namespace policies exclude Pods labeled `app.kubernetes.io/name: k8up-restore-test` (both restore test and seed Pods), that the isolation policy selects the Pods, and that no injected sidecar or other additive policy changes their access. Check source PVC bindings, UID 1000 read access to the retained SMB repository, and free schedulable Longhorn disk capacity on the Pod's eligible node(s), after reservations and headroom. Verify `longhorn-single-node-delete` exists in the cluster before starting either restore test. It is encrypted and strict-local: one disk on the selected node must fit the full request (256 MiB fixture / 48 GiB TSDB). The TSDB Pod uses the same `monitoring: 'true'` node selector as Prometheus. The label and aggregate cluster capacity do not establish 48 GiB free; do not launch or enable the schedule if local capacity is unverified. The restore tests must not overlap repository prune/maintenance: `--no-lock` is used because the repository is read-only. Coordinate manual runs too.
    If a previous revision already synced the declarative seed Job, `prune: false` leaves it behind. Confirm it is no longer desired, verify its Argo owner and UID, and retire only that old Job under supervision before accepting wave 8. If it ran, check completion, Pod release and fixture state first; do not reseed a verified fixture.
 2. Only if the fixture has not already been seeded, confirm the RWO PVC is idle and the immutable `backup-validation/k8up-canary-seed-v1` ConfigMap is synced from the reviewed revision. In an approved maintenance window, from that Infra checkout create **only** the manual Job:
 
    ```sh
-   kubectl --context "${REVIEWED_CONTEXT:?set the approved context}" -n backup-validation create -f 08-backup-validation/manual/seed-job.yaml -o jsonpath='{.metadata.uid}{"\n"}'
+   kubectl --context "${RESTORE_TEST_CONTEXT:?set the approved context}" -n backup-validation create -f 08-backup-validation/manual/seed-job.yaml -o jsonpath='{.metadata.uid}{"\n"}'
    ```
 
    Record the returned Job UID. `create` starts it once; if the name already exists, stop and inspect ownership/status rather than applying, replacing or unsuspending it. The seed writes the marker without replacing conflicting data. Require `Complete=True` on that UID, record the result before its one-hour TTL, and verify its owned Pods release the RWO mount. Job TTL cleans up just the Job and its Pods, not the fixture PVC or Argo-owned tools. Never clean up by the shared restore test label. Require a fresh backup of the fixture PVC and a successful repository check. For Prometheus obtain a fresh tagged backup and successful check as above. A missing/stale or mismatched snapshot is a **failure**, not a skipped test. The observed monitoring namespace had no Snapshot or Backup CR when this change was written; this is not evidence its OMV repository is empty.
-3. With operator approval, clone **one** suspended CronJob at a time as a uniquely named Job (e.g. `kubectl --context "${REVIEWED_CONTEXT:?}" -n backup-validation create job "k8up-backup-validation-${RUN_ID:?}" --from=cronjob/k8up-backup-validation`). Observe the selected snapshot ID/time and terminal verification result in the respective container logs and Job condition. Record this bounded evidence before TTL, not raw application contents. For the fixture, require `stage=backup-validation result=PASS` in the `verify` log. Require `Complete=True`, not merely a successful restore init container.
+3. With operator approval, clone **one** suspended CronJob at a time. Set
+   `RESTORE_TEST_JOB` to a unique name for this run. To test the newest
+   host/path candidate without a pin, create the clone directly and record the
+   returned Job UID:
+
+   ```sh
+   kubectl --context "${RESTORE_TEST_CONTEXT:?set the approved context}" \
+     --namespace "${RESTORE_TEST_NAMESPACE:?set the reviewed namespace}" \
+     create job "${RESTORE_TEST_JOB:?set a unique Job name}" \
+     --from="cronjob/${RESTORE_TEST_CRONJOB:?set the reviewed CronJob name}" \
+     -o jsonpath='{.metadata.uid}{"\n"}'
+   ```
+
+   To verify a specific Backup, **skip the direct clone** and use these gates:
+
+   - **Verify the installed revision before cloning.** From the reviewed Infra
+     commit that supports snapshot pins, render the matching Argo source
+     (`08-backup-validation/resources` for `backup-validation` or
+     `09-kube-prometheus-stack/restore-test` for `kube-prometheus-stack`)
+     with Kustomize. Verify the installed CronJob (`k8up-backup-validation` or
+     `prometheus-restore-test`) is
+     suspended and its Job template matches the reviewed render, accounting
+     only for Kubernetes API defaults. Its `restore` init container must
+     run `/bin/sh /tools/restore.sh` from the `tools`
+     volume, which must reference the rendered, hash-suffixed
+     `k8up-restore-tools` ConfigMap in the same namespace. Set
+     `RESTORE_TEST_TOOLS` to that rendered ConfigMap name and compare its
+     installed `data["restore.sh"]` byte-for-byte with the reviewed script:
+
+     ```sh
+     kubectl --context "${RESTORE_TEST_CONTEXT:?set the approved context}" \
+       --namespace "${RESTORE_TEST_NAMESPACE:?set the reviewed namespace}" \
+       get cronjob "${RESTORE_TEST_CRONJOB:?set the reviewed CronJob name}" -o yaml
+     kubectl --context "${RESTORE_TEST_CONTEXT:?set the approved context}" \
+       --namespace "${RESTORE_TEST_NAMESPACE:?set the reviewed namespace}" \
+       get configmap "${RESTORE_TEST_TOOLS:?set the reviewed ConfigMap name}" \
+       -o jsonpath='{.data.restore\.sh}' > installed-restore-script.txt &&
+       cmp adapters/k8up-restore/restore.sh installed-restore-script.txt
+     ```
+
+     Stop on missing or mismatched evidence: an older mounted script can
+     ignore the pin even if the Job has the variable and completes successfully.
+   - **Render and review the pinned Job.** `--dry-run=client` does not create a
+     Job, but `--from` still reads the CronJob from the Kubernetes API. Render
+     to a fresh local file and proceed only if the command succeeds:
+
+     ```sh
+     kubectl --context "${RESTORE_TEST_CONTEXT:?set the approved context}" \
+       --namespace "${RESTORE_TEST_NAMESPACE:?set the reviewed namespace}" \
+       create job "${RESTORE_TEST_JOB:?set a unique Job name}" \
+       --from="cronjob/${RESTORE_TEST_CRONJOB:?set the reviewed CronJob name}" \
+       --dry-run=client -o yaml > restore-test-job.yaml
+     ```
+
+     With the same explicit context and namespace flags, identify the K8up
+     `Snapshot` that corresponds to the completed Backup and record its full
+     `.spec.id`. Confirm the manifest's name and namespace are the reviewed
+     values. Set one literal `EXPECTED_RESTIC_SNAPSHOT_ID` on the `restore`
+     init container to the recorded 64-character lowercase hex ID as a quoted
+     string. Verify the Job spec matches the verified CronJob's Job template
+     spec except for that pin, including the same command and `tools`
+     reference. The pinned snapshot must still match the source, tags, and
+     freshness checks; there is no fallback, even if a newer backup exists.
+   - **Create only the reviewed manifest.** After operator approval, create
+     it in the same context and namespace and record the returned Job UID:
+
+     ```sh
+     kubectl --context "${RESTORE_TEST_CONTEXT:?set the approved context}" \
+       --namespace "${RESTORE_TEST_NAMESPACE:?set the reviewed namespace}" \
+       create -f restore-test-job.yaml -o jsonpath='{.metadata.uid}{"\n"}'
+     ```
+
+   **Accept the run only in the same context and namespace.** Fetch the exact
+   Job and confirm its UID matches the one returned by `create` and its status
+   has `Complete=True`. Set `RESTORE_TEST_POD` to the Pod name after confirming
+   its controller owner reference is to that Job UID. For a pinned run, check
+   the Pod's `restore` init container still uses the reviewed command, `tools`
+   reference, and literal pin. Read the logs by that exact Pod name:
+
+   ```sh
+   kubectl --context "${RESTORE_TEST_CONTEXT:?set the approved context}" \
+     --namespace "${RESTORE_TEST_NAMESPACE:?set the reviewed namespace}" \
+     logs "${RESTORE_TEST_POD:?set the verified Pod name}" -c restore
+   kubectl --context "${RESTORE_TEST_CONTEXT:?set the approved context}" \
+     --namespace "${RESTORE_TEST_NAMESPACE:?set the reviewed namespace}" \
+     logs "${RESTORE_TEST_POD:?set the verified Pod name}" -c verify
+   ```
+
+   For a pinned run, require a single logged `snapshot_id` from `restore`: it
+   must be a full 64-character lowercase hex ID exactly equal to both the pin
+   and the ID recorded for the Backup. A missing, ambiguous, shortened, or
+   different ID is a failure, even if the Job is `Complete=True`. In both
+   modes, also require `stage=backup-validation result=PASS` or
+   `stage=read-samples result=PASS` from `verify`, as appropriate. Record the
+   selected snapshot ID/time, Job condition, and verifier result before TTL,
+   not raw application contents.
 4. Record the restore test Pod's **own** ephemeral PVC UID, bound PV and CSI handle; check `longhorn-single-node-delete`, `Delete` and `k8up.io/backup: 'false'`. After the Job TTL (one hour), verify that this exact Pod, PVC, PV and Longhorn volume disappear on success and failure. Never force a finalizer or delete another run's resources. Only then enable each schedule by reviewed change. The fixture and both retained repository PVCs are deliberately not cleaned up.
 
 ## Recover a terminating canary claim
