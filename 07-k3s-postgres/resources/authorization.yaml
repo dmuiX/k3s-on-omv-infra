@@ -1,0 +1,34 @@
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: k3s-postgres-ports
+  namespace: cloudnative-pg
+  annotations:
+    argocd.argoproj.io/sync-wave: '-1'
+spec:
+  selector:
+    matchLabels:
+      cnpg.io/cluster: k3s-postgres
+      cnpg.io/podRole: instance
+  action: DENY
+  rules:
+    # NetworkPolicy admits HBONE to the pod. Match each original port by SPIFFE identity.
+    - from:
+        - source:
+            notPrincipals:
+              - cluster.local/ns/cloudnative-pg/sa/k3s-postgres
+              - cluster.local/ns/cloudnative-pg/sa/cloudnative-pg
+              - cluster.local/ns/openbao/sa/openbao
+              - cluster.local/ns/kube-prometheus-stack/sa/kube-prometheus-stack-grafana
+              - cluster.local/ns/radar/sa/radar
+              - cluster.local/ns/backup-validation/sa/backup-validation
+      to:
+        - operation:
+            ports: ['5432']
+    - from:
+        - source:
+            notPrincipals:
+              - cluster.local/ns/kube-prometheus-stack/sa/kube-prometheus-stack-prometheus
+      to:
+        - operation:
+            ports: ['9187']
