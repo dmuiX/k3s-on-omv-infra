@@ -1,15 +1,22 @@
+{{- if .Values.provisioner.enabled }}
+{{- $p := .Values.provisioner }}
+{{- $client := required "provisioner.client is required when provisioner.enabled is true" $p.client }}
+{{- $name := default (printf "%s-oidc-provisioner" $client) $p.name }}
+{{- $role := default $name $p.role }}
+{{- $kvPath := default (printf "%s/oidc-proxy" $client) $p.kvPath }}
+{{- $syncWave := default "1" $p.syncWave }}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
-  name: tekton-dashboard-provisioner
-  namespace: tekton-pipelines
+  name: {{ $name }}
+  namespace: {{ .Values.namespace }}
 automountServiceAccountToken: false
 ---
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: tekton-dashboard-provisioner
-  namespace: tekton-pipelines
+  name: {{ $name }}
+  namespace: {{ .Values.namespace }}
 data:
   provision.py: |
     import base64
@@ -19,24 +26,25 @@ data:
     from credential_helpers import BAO, Failure, ensure, fields, login, request, run
 
     def main():
-        token = login("tekton-dashboard-provisioner")
-        client = request(BAO, "identity/oidc/client/tekton-dashboard", token)["data"]
+        token = login({{ $role | quote }})
+        client = request(BAO, {{ printf "identity/oidc/client/%s" $client | quote }}, token)["data"]
         fields(client, "client_id", "client_secret")
 
         def validate(data):
             fields(data, "client-id", "client-secret", "cookie-secret")
             if (data["client-id"] != client["client_id"] or
                     data["client-secret"] != client["client_secret"]):
-                raise Failure("Tekton Dashboard credentials do not match the native OIDC client")
+                raise Failure({{ printf "Stored %s credentials do not match the native OIDC client" $client | quote }})
             try:
                 key = base64.b64decode(data["cookie-secret"], altchars=b"-_", validate=True)
             except ValueError:
-                raise Failure("Invalid Tekton Dashboard cookie secret encoding") from None
+                raise Failure({{ printf "Invalid %s cookie secret encoding" $client | quote }}) from None
             if len(key) != 32 or base64.urlsafe_b64encode(key).decode() != data["cookie-secret"]:
-                raise Failure("Tekton Dashboard cookie secret must encode 32 bytes as URL-safe Base64")
+                raise Failure({{ printf "%s cookie secret must encode 32 bytes as URL-safe Base64" $client | quote }})
 
-        ensure(token, "tekton-dashboard/oidc-proxy", lambda: {
-            "client-id": client["client_id"], "client-secret": client["client_secret"],
+        ensure(token, {{ $kvPath | quote }}, lambda: {
+            "client-id": client["client_id"],
+            "client-secret": client["client_secret"],
             "cookie-secret": base64.urlsafe_b64encode(secrets.token_bytes(32)).decode(),
         }, validate)
 
@@ -46,23 +54,25 @@ data:
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: tekton-dashboard-provisioner
-  namespace: tekton-pipelines
+  name: {{ $name }}
+  namespace: {{ .Values.namespace }}
   annotations:
     argocd.argoproj.io/hook: Sync
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
-    argocd.argoproj.io/sync-wave: '1'
+    argocd.argoproj.io/sync-wave: {{ $syncWave | quote }}
 spec:
-  # Crossplane can still be creating the client and role after submission.
+  # Allow time for Crossplane to reconcile the client and the login role.
   backoffLimit: 6
   activeDeadlineSeconds: 600
   template:
     metadata:
       labels:
-        app.kubernetes.io/name: tekton-dashboard-provisioner
+        app.kubernetes.io/name: {{ $name }}
+        {{- if .Values.ambient }}
         istio.io/dataplane-mode: ambient
+        {{- end }}
     spec:
-      serviceAccountName: tekton-dashboard-provisioner
+      serviceAccountName: {{ $name }}
       automountServiceAccountToken: false
       restartPolicy: OnFailure
       securityContext:
@@ -74,7 +84,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: provision
-          image: python:3.15.2-slim-trixie@sha256:63bb298d2b7b88f176f51b5189f54ce6535c997682ea70885d2132f5d473a8a5
+          image: {{ $p.image }}
           command: [python3, -B, /config/provision.py]
           resources:
             requests:
@@ -95,7 +105,7 @@ spec:
       volumes:
         - name: config
           configMap:
-            name: tekton-dashboard-provisioner
+            name: {{ $name }}
         - name: helper
           configMap:
             name: credential-custody
@@ -104,5 +114,6 @@ spec:
             sources:
               - serviceAccountToken:
                   path: token
-                  audience: vault://tekton-dashboard-provisioner
+                  audience: {{ printf "vault://%s" $role | quote }}
                   expirationSeconds: 900
+{{- end }}

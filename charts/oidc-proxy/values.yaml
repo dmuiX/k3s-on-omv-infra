@@ -13,3 +13,13 @@ openbaoBackchannelURL: ""
 # Required deployment-specific URLs, supplied by the Live repository.
 issuerURL: ""
 redirectURL: ""
+# Optional Sync-hook Job that provisions client-id, client-secret, and cookie-secret
+# into OpenBao KV using the shared adapters/credential-custody helper ConfigMap.
+provisioner:
+  enabled: false
+  name: ""
+  role: ""
+  client: ""
+  kvPath: ""
+  syncWave: "1"
+  image: python:3.15.2-slim-trixie@sha256:63bb298d2b7b88f176f51b5189f54ce6535c997682ea70885d473a8a5
