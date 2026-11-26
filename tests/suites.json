@@ -16,6 +16,7 @@
     "test_native_reader_accounts",
     "test_openbao_network",
     "test_postgresql_restore_startup",
+    "test_prometheus_backup_pipeline",
     "test_retention",
     "test_shutdown_pod_preview",
     "test_snapshot",
