@@ -37,7 +37,7 @@
                   "--scope=openid longhorn",
                   "--oidc-email-claim=username",
                   "--insecure-oidc-allow-unverified-email=true",
-                  "--allowed-group=radar:admin",
+                  "--allowed-group=platform:admin",
                   "--skip-provider-button=true"
                 ],
                 "env": [

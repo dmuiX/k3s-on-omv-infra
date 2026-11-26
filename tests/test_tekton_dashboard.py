@@ -177,7 +177,7 @@ class TektonDashboardTest(unittest.TestCase):
                 f"--login-url={public_login}/authorize",
                 f"--redeem-url={internal}/token",
                 f"--oidc-jwks-url={internal}/.well-known/keys",
-                "--allowed-group=radar:admin",
+                "--allowed-group=platform:admin",
                 f"--scope=openid {APP}",
                 f"--upstream=http://{APP}.{NAMESPACE}.svc:9097",
             }
@@ -199,7 +199,7 @@ class TektonDashboardTest(unittest.TestCase):
         assignment = self.spec("OidcAssignment", "tekton-dashboard-admin")[
             "forProvider"
         ]
-        self.assertEqual(assignment["groupIdsRefs"], [{"name": "radar-admin"}])
+        self.assertEqual(assignment["groupIdsRefs"], [{"name": "platform-admin"}])
         self.assertEqual(proxy["spec"]["serviceAccountName"], PROXY)
         self.assertIs(
             self.docs["ServiceAccount", PROXY]["automountServiceAccountToken"], False
