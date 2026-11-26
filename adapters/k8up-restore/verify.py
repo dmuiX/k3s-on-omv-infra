@@ -126,10 +126,8 @@ def verify(mode: str, scratch: Path) -> None:
     for block in dest.iterdir():
         require((block / "meta.json").stat().st_size > 0 and (block / "index").stat().st_size > 0)
         require(any((block / "chunks").iterdir()))
-    # promtool v3.15 requires a WAL directory even for immutable blocks. Never
-    # accept one from the archive; create it empty after checking all blocks.
-    (dest / "wal").mkdir()
-    # This stage is not a PASS. Only the final promtool container can report it.
+    # Do not restore a WAL or any other runtime state. Only the final container
+    # can report a PASS, after starting Prometheus and querying this TSDB.
 
 
 if __name__ == "__main__":
