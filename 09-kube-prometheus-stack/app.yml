@@ -74,7 +74,6 @@ spec:
                 cpu: 250m
                 memory: 1Gi
               limits:
-                cpu: '1'
                 memory: 2Gi
         alertmanager:
           podDisruptionBudget:
@@ -146,7 +145,6 @@ spec:
               cpu: 100m
               memory: 256Mi
             limits:
-              cpu: 500m
               memory: 512Mi
         prometheus-node-exporter:
           # Only host collectors require a Pod Security exception, not Grafana/Prometheus.
@@ -156,7 +154,6 @@ spec:
               cpu: 10m
               memory: 32Mi
             limits:
-              cpu: 100m
               memory: 128Mi
           securityContext:
             runAsNonRoot: true

@@ -95,7 +95,7 @@ class BarmanSidecarResourcesTest(unittest.TestCase):
                       optional: false
               resources:
                 requests: {cpu: 50m, memory: 64Mi}
-                limits: {cpu: 250m, memory: 256Mi}
+                limits: {memory: 256Mi}
         """
         )
         self.assertEqual(store["spec"], expected)

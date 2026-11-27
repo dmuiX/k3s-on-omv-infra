@@ -36,7 +36,6 @@ spec:
             cpu: 25m
             memory: 224Mi
           limits:
-            cpu: '1'
             memory: 512Mi
         global:
           platform: k3s
@@ -47,7 +46,6 @@ spec:
                 cpu: 50m
                 memory: 64Mi
               limits:
-                cpu: 300m
                 memory: 256Mi
   - repoURL: https://blob.istio.io/istio-release/charts
     chart: cni
@@ -64,7 +62,6 @@ spec:
             cpu: 25m
             memory: 100Mi
           limits:
-            cpu: 500m
             memory: 256Mi
   - repoURL: https://blob.istio.io/istio-release/charts
     chart: ztunnel
@@ -78,7 +75,6 @@ spec:
             cpu: 150m
             memory: 64Mi
           limits:
-            cpu: '1'
             memory: 256Mi
   syncPolicy:
     managedNamespaceMetadata:

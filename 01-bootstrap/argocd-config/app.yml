@@ -158,7 +158,6 @@ spec:
               cpu: 100m
               memory: 512Mi
             limits:
-              cpu: 500m
               memory: 2Gi
         repoServer:
           metrics:
@@ -179,7 +178,6 @@ spec:
               cpu: 50m
               memory: 128Mi
             limits:
-              cpu: 500m
               memory: 512Mi
         server:
           metrics:
@@ -200,7 +198,6 @@ spec:
               cpu: 20m
               memory: 128Mi
             limits:
-              cpu: 250m
               memory: 256Mi
         applicationSet:
           resources:
