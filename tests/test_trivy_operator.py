@@ -66,7 +66,7 @@ class TrivyOperatorContractTest(unittest.TestCase):
         self.assertEqual(config["OPERATOR_CLUSTER_COMPLIANCE_ENABLED"], "false")
         self.assertEqual(config["OPERATOR_CONCURRENT_SCAN_JOBS_LIMIT"], "2")
         self.assertEqual(config["OPERATOR_SCAN_JOB_TIMEOUT"], "10m")
-        self.assertEqual(config["OPERATOR_SCAN_JOB_TTL"], "24h")
+        self.assertEqual(config["OPERATOR_SCAN_JOB_TTL"], "")
 
         operator_cm = next(
             d["data"]

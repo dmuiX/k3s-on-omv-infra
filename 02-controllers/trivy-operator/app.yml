@@ -20,7 +20,6 @@ spec:
           replicas: 2
           scanJobsConcurrentLimit: 2
           scanJobTimeout: 10m
-          scanJobTTL: 24h
           builtInTrivyServer: true
           sbomGenerationEnabled: true
           infraAssessmentScannerEnabled: false
