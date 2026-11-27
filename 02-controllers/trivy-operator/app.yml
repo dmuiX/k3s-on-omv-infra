@@ -1,0 +1,91 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: trivy-operator
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: '2'
+spec:
+  project: default
+  destination:
+    name: in-cluster
+    namespace: trivy-operator
+  sources:
+  - repoURL: https://aquasecurity.github.io/helm-charts/
+    chart: trivy-operator
+    targetRevision: 0.38.1
+    helm:
+      valuesObject:
+        operator:
+          replicas: 1
+          scanJobsConcurrentLimit: 2
+          scanJobTTL: 5m
+          sbomGenerationEnabled: false
+          infraAssessmentScannerEnabled: false
+          clusterComplianceEnabled: false
+        serviceMonitor:
+          enabled: true
+        trivyOperator:
+          scanJobNodeSelector:
+            compute-class: standard
+          scanJobPodTemplatePodSecurityContext:
+            runAsNonRoot: true
+            runAsUser: 10000
+            runAsGroup: 10000
+            fsGroup: 10000
+            seccompProfile:
+              type: RuntimeDefault
+          scanJobPodTemplateContainerSecurityContext:
+            allowPrivilegeEscalation: false
+            privileged: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+              - ALL
+        trivy:
+          slow: true
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+        nodeSelector:
+          compute-class: standard
+        podSecurityContext:
+          runAsNonRoot: true
+          seccompProfile:
+            type: RuntimeDefault
+        securityContext:
+          privileged: false
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            drop:
+            - ALL
+        resources:
+          requests:
+            cpu: 20m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 512Mi
+  - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
+    targetRevision: main
+    path: 02-controllers/trivy-operator/resources
+  syncPolicy:
+    managedNamespaceMetadata:
+      annotations:
+        radarhq.io/ignore-checks: automountServiceAccountToken
+      labels:
+        istio.io/dataplane-mode: ambient
+        pod-security.kubernetes.io/enforce: restricted
+    automated:
+      enabled: true
+      prune: false
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+    - CreateNamespace=true
+    - ServerSideApply=true
