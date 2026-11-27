@@ -47,7 +47,7 @@ spec:
           severity: MEDIUM,HIGH,CRITICAL
           slow: true
           timeout: 10m0s
-          additionalVulnerabilityReportFields: Description,Links,CVSS,Target,Class,PackagePath,PackageType
+          additionalVulnerabilityReportFields: CVSS,Target,Class,PackagePath,PackageType
           storageClassEnabled: true
           storageClassName: longhorn-single-node-delete
           storageSize: 5Gi
@@ -110,7 +110,7 @@ spec:
             memory: 128Mi
           limits:
             cpu: 500m
-            memory: 512Mi
+            memory: 768Mi
   - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
     targetRevision: main
     path: 02-controllers/trivy-operator/resources

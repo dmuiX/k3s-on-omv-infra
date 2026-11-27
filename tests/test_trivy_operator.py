@@ -43,7 +43,7 @@ class TrivyOperatorContractTest(unittest.TestCase):
             container["resources"],
             {
                 "requests": {"cpu": "20m", "memory": "128Mi"},
-                "limits": {"cpu": "500m", "memory": "512Mi"},
+                "limits": {"cpu": "500m", "memory": "768Mi"},
             },
         )
 
@@ -109,7 +109,7 @@ class TrivyOperatorContractTest(unittest.TestCase):
         self.assertEqual(trivy_cm["trivy.timeout"], "10m0s")
         self.assertEqual(
             trivy_cm["trivy.additionalVulnerabilityReportFields"],
-            "Description,Links,CVSS,Target,Class,PackagePath,PackageType",
+            "CVSS,Target,Class,PackagePath,PackageType",
         )
         self.assertEqual(trivy_cm["trivy.resources.requests.cpu"], "100m")
         self.assertEqual(trivy_cm["trivy.resources.requests.memory"], "128Mi")
