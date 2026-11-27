@@ -85,7 +85,11 @@ class RetentionManifestTest(unittest.TestCase):
         }
         for current, result, flags, expected in (
             (None, "failed", {}, "false"),
-            (legacy, "success", {"restore_target_verified": True, "mirror_verified": True}, "true"),
+            (legacy, "success", {
+                "restore_target_verified": True,
+                "mirror_verified": True,
+                "app_databases_verified": True,
+            }, "true"),
         ):
             with self.subTest(result=result), patch.object(adapter, "api", side_effect=[current, {}]) as api:
                 started = datetime.now(timezone.utc)
@@ -103,6 +107,7 @@ class RetentionManifestTest(unittest.TestCase):
                     "k3s-on-omv.io/result": result,
                     "k3s-on-omv.io/restore-target-verified": expected,
                     "k3s-on-omv.io/omv-mirror-verified": expected,
+                    "k3s-on-omv.io/app-databases-verified": expected,
                 })
                 self.assertEqual(body["spec"]["holderIdentity"], "postgresql-restore-test")
                 renewed = MODULE._parse_time(body["spec"]["renewTime"])

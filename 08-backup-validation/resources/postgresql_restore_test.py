@@ -44,10 +44,53 @@ def secret(namespace, name):
     return {key: base64.b64decode(value).decode() for key, value in payload.items()}
 
 
-def connect(values, host):
+def connect(values, host, *, dbname: str | None = None, read_only: bool = False):
     import psycopg2
 
-    return psycopg2.connect(host=host, port=values.get("port", "5432"), dbname=values.get("dbname", "app"), user=values["username"], password=values["password"], connect_timeout=15, sslmode="require")
+    kwargs = {
+        "host": host,
+        "port": values.get("port", "5432"),
+        "dbname": dbname or values.get("dbname", "app"),
+        "user": values["username"],
+        "password": values["password"],
+        "connect_timeout": 15,
+        "sslmode": "require",
+    }
+    if read_only:
+        kwargs["options"] = "-c default_transaction_read_only=on"
+    return psycopg2.connect(**kwargs)
+
+
+APP_DATABASE_CHECKS: dict[str, tuple[tuple[str, str], ...]] = {
+    "grafana": (
+        ("migration_log", 'SELECT count(*) FROM public.migration_log'),
+        ("org", 'SELECT count(*) FROM public.org'),
+        ("user", 'SELECT count(*) FROM public."user"'),
+    ),
+    "radar": (
+        ("radar_timeline_schema_migrations", "SELECT count(*) FROM public.radar_timeline_schema_migrations"),
+        ("radar_timeline_seen_resources", "SELECT count(*) FROM public.radar_timeline_seen_resources"),
+        ("radar_timeline_events", "SELECT count(*) FROM public.radar_timeline_events"),
+    ),
+}
+
+
+def verify_app_databases(host: str) -> dict[str, dict[str, int]]:
+    """Verify Grafana and Radar databases are readable and non-empty on the isolated restore."""
+    creds = secret(VALIDATION_NS, f"{RESTORE}-superuser")
+    counts: dict[str, dict[str, int]] = {}
+    for dbname, checks in APP_DATABASE_CHECKS.items():
+        db_counts: dict[str, int] = {}
+        with connect(creds, host, dbname=dbname, read_only=True) as db, db.cursor() as cursor:
+            for label, query in checks:
+                cursor.execute(query)
+                row = cursor.fetchone()
+                count = int(row[0]) if row else 0
+                if count < 1:
+                    raise RuntimeError(f"restored database {dbname!r} table {label!r} is empty")
+                db_counts[label] = count
+        counts[dbname] = db_counts
+    return counts
 
 
 def connect_source_at_startup(values: dict[str, str], host: str):
@@ -70,7 +113,13 @@ def connect_source_at_startup(values: dict[str, str], host: str):
     return connect(values, host)
 
 
-def put_lease(result: str, *, restore_target_verified: bool = False, mirror_verified: bool = False) -> None:
+def put_lease(
+    result: str,
+    *,
+    restore_target_verified: bool = False,
+    mirror_verified: bool = False,
+    app_databases_verified: bool = False,
+) -> None:
     now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     body = {
         "apiVersion": "coordination.k8s.io/v1",
@@ -82,6 +131,7 @@ def put_lease(result: str, *, restore_target_verified: bool = False, mirror_veri
                 "k3s-on-omv.io/result": result,
                 "k3s-on-omv.io/restore-target-verified": str(restore_target_verified).lower(),
                 "k3s-on-omv.io/omv-mirror-verified": str(mirror_verified).lower(),
+                "k3s-on-omv.io/app-databases-verified": str(app_databases_verified).lower(),
             },
         },
         "spec": {"holderIdentity": RESTORE, "renewTime": now, "leaseDurationSeconds": 691200},
@@ -172,6 +222,7 @@ def validation_cluster(target: str, storage_size: str = "5Gi") -> dict:
         "metadata": {"name": RESTORE, "namespace": VALIDATION_NS},
         "spec": {
             "instances": 1, "imageName": IMAGE,
+            "enableSuperuserAccess": True,
             "storage": {"storageClass": "longhorn-single-node-delete", "size": storage_size},
             "inheritedMetadata": {"annotations": {"k8up.io/backup": "false"}},
             "bootstrap": {"recovery": {"source": "origin", "recoveryTarget": {"targetTime": target}}},
@@ -264,11 +315,13 @@ def main():
         )
         wait_ready()
         restored = secret(VALIDATION_NS, f"{RESTORE}-app")
-        with connect(restored, f"{RESTORE}-rw.{VALIDATION_NS}.svc") as db, db.cursor() as cursor:
+        restore_host = f"{RESTORE}-rw.{VALIDATION_NS}.svc"
+        with connect(restored, restore_host) as db, db.cursor() as cursor:
             cursor.execute("SELECT run_id, phase FROM public.platform_backup_validation WHERE run_id IN (%s,%s)", (before, after))
             rows = set(cursor.fetchall())
         if rows != {(before, "before")}:
             raise RuntimeError("restored rows do not match the requested recovery time")
+        verify_app_databases(restore_host)
         if not mirror_matches_catalog():
             raise RuntimeError("OMV mirror does not contain every completed base-backup catalog entry")
     except Exception:
@@ -295,7 +348,7 @@ def main():
         if cleanup_errors:
             put_lease("failed-cleanup")
             raise RuntimeError("validation cleanup failed") from cleanup_errors[0]
-    put_lease("success", restore_target_verified=True, mirror_verified=True)
+    put_lease("success", restore_target_verified=True, mirror_verified=True, app_databases_verified=True)
 
 
 if __name__ == "__main__":

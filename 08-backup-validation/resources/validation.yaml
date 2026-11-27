@@ -60,6 +60,7 @@ rules:
       - secrets
     resourceNames:
       - postgresql-restore-test-app
+      - postgresql-restore-test-superuser
     verbs:
       - get
 ---
