@@ -17,10 +17,12 @@ spec:
     helm:
       valuesObject:
         operator:
-          replicas: 1
+          replicas: 2
           scanJobsConcurrentLimit: 2
-          scanJobTTL: 5m
-          sbomGenerationEnabled: false
+          scanJobTimeout: 10m
+          scanJobTTL: 24h
+          builtInTrivyServer: true
+          sbomGenerationEnabled: true
           infraAssessmentScannerEnabled: false
           clusterComplianceEnabled: false
         serviceMonitor:
@@ -44,6 +46,10 @@ spec:
               - ALL
         trivy:
           slow: true
+          additionalVulnerabilityReportFields: Description,Links,CVSS,Target,Class,PackagePath,PackageType
+          storageClassEnabled: true
+          storageClassName: longhorn-single-node-delete
+          storageSize: 5Gi
           resources:
             requests:
               cpu: 100m
@@ -51,8 +57,41 @@ spec:
             limits:
               cpu: 500m
               memory: 512Mi
+          server:
+            replicas: 1
+            resources:
+              requests:
+                cpu: 100m
+                memory: 256Mi
+              limits:
+                cpu: '1'
+                memory: 1Gi
+            podSecurityContext:
+              runAsUser: 65534
+              runAsGroup: 65534
+              runAsNonRoot: true
+              fsGroup: 65534
+              seccompProfile:
+                type: RuntimeDefault
+            securityContext:
+              privileged: false
+              allowPrivilegeEscalation: false
+              readOnlyRootFilesystem: true
+              capabilities:
+                drop:
+                - ALL
         nodeSelector:
           compute-class: standard
+        affinity:
+          podAntiAffinity:
+            preferredDuringSchedulingIgnoredDuringExecution:
+            - weight: 100
+              podAffinityTerm:
+                topologyKey: kubernetes.io/hostname
+                labelSelector:
+                  matchLabels:
+                    app.kubernetes.io/name: trivy-operator
+                    app.kubernetes.io/instance: trivy-operator
         podSecurityContext:
           runAsNonRoot: true
           seccompProfile:
