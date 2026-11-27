@@ -30,7 +30,7 @@ class RestoreTestManifests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.docs = {ns: render(t[0]) for ns, t in TARGETS.items()}
-        cls.seed = yaml.safe_load(public_path(ROOT, f'{BACKUP}/manual/seed-job.yaml').read_text())
+        cls.seed = yaml.safe_load(public_path(ROOT, f'{BACKUP}/resources/canary-seed-job.yaml').read_text())
 
     def test_sources_and_schedule_ownership(self):
         schedules = set()
@@ -152,9 +152,18 @@ class RestoreTestManifests(unittest.TestCase):
     def test_one_shot_seed_is_confined_and_non_destructive(self):
         identity = ('Job', 'k8up-canary-seed-v1')
         self.assertEqual(self.seed['kind'], identity[0])
-        self.assertEqual(self.seed['metadata'], {'name': identity[1], 'namespace': 'backup-validation'})
-        for rendered in self.docs.values():
-            self.assertNotIn(identity, rendered)
+        self.assertEqual(self.seed['metadata'], {
+            'name': identity[1],
+            'namespace': 'backup-validation',
+            'annotations': {
+                'argocd.argoproj.io/hook': 'PostSync',
+                'argocd.argoproj.io/hook-delete-policy': 'BeforeHookCreation',
+            },
+        })
+        self.assertIn(identity, self.docs['backup-validation'])
+        for ns, rendered in self.docs.items():
+            if ns != 'backup-validation':
+                self.assertNotIn(identity, rendered)
         docs = self.docs['backup-validation']; job = self.seed['spec']
         self.assertFalse(job.get('suspend', False)); self.assertEqual(job['ttlSecondsAfterFinished'], 3600)
         self.assertEqual(job['backoffLimit'], 0); self.assertEqual(job['activeDeadlineSeconds'], 300)
