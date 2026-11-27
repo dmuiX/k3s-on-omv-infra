@@ -452,7 +452,7 @@ class RepositoryWorkloads(unittest.TestCase):
         annotation = "storageclass.kubernetes.io/is-default-class"
         for old, new in replacements.items():
             with self.subTest(storage_class=new):
-                expected_meta = {"name": new}
+                expected_meta: dict[str, object] = {"name": new}
                 if new == "longhorn-replicated-retain":
                     expected_meta["annotations"] = {annotation: "true"}
                 self.assertEqual(
