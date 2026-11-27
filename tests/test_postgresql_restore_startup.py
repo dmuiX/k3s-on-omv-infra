@@ -133,6 +133,9 @@ class PostgreSQLRestoreStartupTest(unittest.TestCase):
         )
         self.enterContext(patch.object(VALIDATOR, "wait_ready"))
         self.enterContext(
+            patch.object(VALIDATOR, "verify_app_databases", return_value={"grafana": {"user": 1}, "radar": {"radar_timeline_events": 1}})
+        )
+        self.enterContext(
             patch.object(VALIDATOR, "mirror_matches_catalog", return_value=True)
         )
         self.source_store = {
@@ -169,8 +172,37 @@ class PostgreSQLRestoreStartupTest(unittest.TestCase):
             ["CREATE", "INSERT", "SELECT", "INSERT", "SELECT", "DELETE"],
         )
         self.assertEqual(
-            self.lease.call_args_list, [call("running"), call("success", restore_target_verified=True, mirror_verified=True)]
+            self.lease.call_args_list,
+            [
+                call("running"),
+                call(
+                    "success",
+                    restore_target_verified=True,
+                    mirror_verified=True,
+                    app_databases_verified=True,
+                ),
+            ],
         )
+
+    def test_verify_app_databases_checks_grafana_and_radar_read_only(self) -> None:
+        self.connect.return_value = self.db
+        self.cursor.fetchone.side_effect = [(12,), (1,), (1,), (2,), (500,), (10000,)]
+        result = VALIDATOR.verify_app_databases("postgresql-restore-test-rw.backup-validation.svc")
+        self.assertEqual(result["grafana"], {"migration_log": 12, "org": 1, "user": 1})
+        self.assertEqual(
+            result["radar"],
+            {
+                "radar_timeline_schema_migrations": 2,
+                "radar_timeline_seen_resources": 500,
+                "radar_timeline_events": 10000,
+            },
+        )
+        for conn_call in self.connect.call_args_list:
+            self.assertEqual(conn_call.kwargs["options"], "-c default_transaction_read_only=on")
+
+        self.cursor.fetchone.side_effect = [(12,), (1,), (0,)]
+        with self.assertRaisesRegex(RuntimeError, "grafana.*user.*empty"):
+            VALIDATOR.verify_app_databases("postgresql-restore-test-rw.backup-validation.svc")
 
     def test_later_source_connect_error_is_not_retried_but_markers_are_cleaned(
         self,
@@ -377,7 +409,12 @@ class PostgreSQLRestoreStartupTest(unittest.TestCase):
                     (f"{RUN.hex}-before", f"{RUN.hex}-after"),
                 ),
                 call.db_exit(None, None, None),
-                call.lease("success", restore_target_verified=True, mirror_verified=True),
+                call.lease(
+                    "success",
+                    restore_target_verified=True,
+                    mirror_verified=True,
+                    app_databases_verified=True,
+                ),
             ],
         )
 
