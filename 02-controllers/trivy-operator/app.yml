@@ -44,6 +44,7 @@ spec:
               drop:
               - ALL
         trivy:
+          severity: MEDIUM,HIGH,CRITICAL
           slow: true
           timeout: 10m0s
           additionalVulnerabilityReportFields: Description,Links,CVSS,Target,Class,PackagePath,PackageType

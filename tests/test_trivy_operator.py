@@ -104,6 +104,7 @@ class TrivyOperatorContractTest(unittest.TestCase):
             and d["metadata"]["name"] == "trivy-operator-trivy-config"
         )
         self.assertEqual(trivy_cm["trivy.mode"], "ClientServer")
+        self.assertEqual(trivy_cm["trivy.severity"], "MEDIUM,HIGH,CRITICAL")
         self.assertEqual(trivy_cm["trivy.slow"], "true")
         self.assertEqual(trivy_cm["trivy.timeout"], "10m0s")
         self.assertEqual(
