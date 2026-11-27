@@ -206,6 +206,7 @@ class RepositoryWorkloads(unittest.TestCase):
             "crossplane",
             "csi-driver-smb",
             "k8up",
+            "kyverno",
             "longhorn",
             "tekton-pipelines",
             "trivy-operator",

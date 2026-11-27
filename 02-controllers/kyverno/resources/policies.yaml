@@ -1,0 +1,131 @@
+# Baseline supply-chain audit policies. All policies start in Audit mode so
+# PolicyReports surface findings in Radar and Prometheus without blocking
+# rollouts before exceptions are reviewed.
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: require-image-digest
+  annotations:
+    argocd.argoproj.io/sync-wave: '5'
+    policies.kyverno.io/title: Require Image Digest
+    policies.kyverno.io/category: Supply Chain Security
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/description: >-
+      Audit that all container images are pinned by immutable sha256 digest
+      rather than mutable tags alone.
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+  - name: require-container-digest
+    match:
+      any:
+      - resources:
+          kinds:
+          - Pod
+    exclude:
+      any:
+      - resources:
+          namespaces:
+          - kube-system
+          - kube-public
+          - kube-node-lease
+    validate:
+      message: Container images should be pinned with an immutable @sha256 digest.
+      pattern:
+        spec:
+          containers:
+          - image: '*@sha256:*'
+          =(initContainers):
+          - image: '*@sha256:*'
+          =(ephemeralContainers):
+          - image: '*@sha256:*'
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: restrict-image-registries
+  annotations:
+    argocd.argoproj.io/sync-wave: '5'
+    policies.kyverno.io/title: Restrict Image Registries
+    policies.kyverno.io/category: Supply Chain Security
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/description: >-
+      Audit that container images are pulled only from approved registries.
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+  - name: validate-approved-registries
+    match:
+      any:
+      - resources:
+          kinds:
+          - Pod
+    exclude:
+      any:
+      - resources:
+          namespaces:
+          - kube-system
+          - kube-public
+          - kube-node-lease
+    validate:
+      message: Container images must come from an approved registry.
+      foreach:
+      - list: request.object.spec.containers
+        deny:
+          conditions:
+            all:
+            - key: '{{ element.image }}'
+              operator: AllNotIn
+              value:
+              - 'docker.io/*'
+              - 'ghcr.io/*'
+              - 'quay.io/*'
+              - 'registry.k8s.io/*'
+              - 'mirror.gcr.io/*'
+              - 'xpkg.crossplane.io/*'
+              - 'xpkg.upbound.io/*'
+              - 'ecr-public.aws.com/*'
+              - 'public.ecr.aws/*'
+            - key: "{{ contains(element.image, '/') }}"
+              operator: Equals
+              value: true
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: verify-kyverno-image-signatures
+  annotations:
+    argocd.argoproj.io/sync-wave: '5'
+    policies.kyverno.io/title: Verify Kyverno Image Signatures
+    policies.kyverno.io/category: Supply Chain Security
+    policies.kyverno.io/severity: high
+    policies.kyverno.io/description: >-
+      Audit Cosign keyless Sigstore signatures on Kyverno images built by
+      official GitHub Actions workflows.
+spec:
+  validationFailureAction: Audit
+  background: false
+  webhookTimeoutSeconds: 15
+  failurePolicy: Ignore
+  rules:
+  - name: verify-kyverno-cosign
+    match:
+      any:
+      - resources:
+          kinds:
+          - Pod
+    verifyImages:
+    - imageReferences:
+      - 'ghcr.io/kyverno/*'
+      mutateDigest: false
+      verifyDigest: false
+      attestors:
+      - count: 1
+        entries:
+        - keyless:
+            subject: 'https://github.com/kyverno/kyverno/.github/workflows/*'
+            issuer: 'https://token.actions.githubusercontent.com'
+            rekor:
+              url: https://rekor.sigstore.dev
