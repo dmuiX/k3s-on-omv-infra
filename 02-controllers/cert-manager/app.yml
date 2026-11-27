@@ -96,6 +96,8 @@ spec:
             memory: 256Mi
   syncPolicy:
     managedNamespaceMetadata:
+      annotations:
+        radarhq.io/ignore-checks: livenessProbeMissing,readinessProbeMissing,automountServiceAccountToken
       labels:
         istio.io/dataplane-mode: ambient
         pod-security.kubernetes.io/enforce: restricted

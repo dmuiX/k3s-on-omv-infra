@@ -272,6 +272,8 @@ spec:
       include: grafana.yaml
   syncPolicy:
     managedNamespaceMetadata:
+      annotations:
+        radarhq.io/ignore-checks: livenessProbeMissing,readinessProbeMissing,automountServiceAccountToken,serviceNoMatchingPods
       labels:
         istio.io/dataplane-mode: ambient
         pod-security.kubernetes.io/enforce: restricted
