@@ -1,0 +1,46 @@
+# Restrict OpenBao API/UI/OIDC port 8200 to audited SPIFFE principals over
+# Istio Ambient mTLS, leaving Raft (8201) and metrics (9101, guarded by
+# openbao-metrics) unaffected.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: openbao-api
+  namespace: openbao
+  annotations:
+    argocd.argoproj.io/sync-wave: '-30'
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: openbao
+      app.kubernetes.io/instance: openbao
+      component: server
+  action: DENY
+  rules:
+    - from:
+        - source:
+            notPrincipals:
+              # OpenBao peers (standby->active forwarding) and Raft snapshot CronJob
+              - cluster.local/ns/openbao/sa/openbao
+              - cluster.local/ns/openbao/sa/openbao-snapshot
+              # Gateway (OpenBao UI and public OIDC endpoints)
+              - cluster.local/ns/istio-gateway/sa/istio-gateway-istio
+              # Platform secret & configuration controllers
+              - cluster.local/ns/vault-secrets-operator/sa/vault-secrets-operator-controller-manager
+              - cluster.local/ns/crossplane-system/sa/provider-vault
+              # In-cluster OIDC backchannel proxies
+              - cluster.local/ns/longhorn/sa/longhorn-oidc-proxy
+              - cluster.local/ns/tekton-pipelines/sa/tekton-dashboard-oidc-proxy
+              - cluster.local/ns/opencost/sa/opencost-oidc-proxy
+              - cluster.local/ns/project-bot/sa/project-bot-oidc-proxy
+              # Credential-custody provisioner and configurator Jobs
+              - cluster.local/ns/cloudnative-pg/sa/k3s-postgres-manager-provisioner
+              - cluster.local/ns/kube-prometheus-stack/sa/grafana-admin-provisioner
+              - cluster.local/ns/longhorn/sa/longhorn-proxy-provisioner
+              - cluster.local/ns/tekton-pipelines/sa/tekton-dashboard-provisioner
+              - cluster.local/ns/radar/sa/radar-auth-provisioner
+              - cluster.local/ns/opencost/sa/opencost-oidc-provisioner
+              - cluster.local/ns/project-bot/sa/project-bot-oidc-provisioner
+              - cluster.local/ns/audiobookshelf/sa/audiobookshelf-configurator
+      to:
+        - operation:
+            ports: ['8200']
