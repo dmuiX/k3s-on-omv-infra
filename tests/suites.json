@@ -24,6 +24,7 @@
     "test_smb_vso_account",
     "test_tekton_dashboard",
     "test_tekton_pilot",
+    "test_trivy_operator",
     "test_repo_suite",
     "test_repo_workloads",
     "test_request_rightsizing",

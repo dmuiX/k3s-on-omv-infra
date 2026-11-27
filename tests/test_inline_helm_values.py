@@ -188,6 +188,7 @@ class InlineHelmValuesTest(unittest.TestCase):
             'crossplane-system': ('crossplane', ambient),
             'k8up': ('k8up', ambient),
             'longhorn': ('longhorn', {**privileged, **warnings}),
+            'trivy-operator': ('trivy-operator', ambient),
             'vault-secrets-operator': ('vault-secrets-operator', ambient),
             'openbao': ('openbao', ambient),
             'backup-validation': ('backup-validation', ambient),
@@ -215,6 +216,9 @@ class InlineHelmValuesTest(unittest.TestCase):
                     'livenessProbeMissing,readinessProbeMissing,automountServiceAccountToken,'
                     'readOnlyRootFs,podHARisk'
                 ),
+            },
+            'trivy-operator': {
+                'radarhq.io/ignore-checks': 'automountServiceAccountToken',
             },
             'vault-secrets-operator': {
                 'radarhq.io/ignore-checks': 'automountServiceAccountToken',

@@ -55,6 +55,7 @@ Istio is the sole Ambient/Gateway controller; packaged Traefik is disabled. Its 
 | Backup and restore | [K8up](02-controllers/k8up/app.yml), [SMB CSI](02-controllers/csi-driver-smb/app.yml), [OpenBao snapshots](06-platform/openbao-backups/app.yml), [validation](08-backup-validation/app.yml) | Separate backup transports and restore-validation contracts; actual recovery requires runtime evidence |
 | Resource metrics | [Metrics Server](01-bootstrap/metrics-server/app.yml) | Official chart on standard nodes; resource Metrics API for `kubectl top` and HPA, before Istiod |
 | Observability | [Prometheus Operator CRDs](01-bootstrap/prometheus-operator-crds/app.yml), [kube-prometheus-stack](09-kube-prometheus-stack/app.yml) | Prometheus, Grafana, exporters and platform alerts; Alertmanager configuration exists, but public defaults set its replicas to zero |
+| Security scanning | [Trivy Operator](02-controllers/trivy-operator/app.yml) | In-cluster container image vulnerability, exposed-secret, config-audit and RBAC scanning with Prometheus metrics |
 | Admission defaults | [Timezone defaults](01-bootstrap/timezone-defaults/app.yml), [resource defaults](01-bootstrap/resource-defaults/app.yml) | Native Kubernetes policies with isolated admission tests |
 | Application integration | [Integration charts](charts/), [credential custody](adapters/credential-custody/) | Reusable routing, network-policy, OIDC and PostgreSQL-consumer resources without moving application ownership into Infra |
 

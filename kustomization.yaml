@@ -17,6 +17,7 @@ resources:
 - 02-controllers/k8up/app.yml
 - 02-controllers/longhorn/app.yml
 - 02-controllers/tekton-pipelines/app.yml
+- 02-controllers/trivy-operator/app.yml
 - 02-controllers/vault-secrets-operator/app.yml
 - 03-provider-vault/app.yml
 - 04-openbao/app.yml
