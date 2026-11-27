@@ -449,19 +449,22 @@ class RepositoryWorkloads(unittest.TestCase):
             "longhorn-monitoring": "longhorn-single-node-omv-wyse-retain",
             "longhorn-restore-test": "longhorn-single-node-delete",
         }
+        annotation = "storageclass.kubernetes.io/is-default-class"
         for old, new in replacements.items():
             with self.subTest(storage_class=new):
+                expected_meta: dict[str, object] = {"name": new}
+                if new == "longhorn-replicated-retain":
+                    expected_meta["annotations"] = {annotation: "true"}
                 self.assertEqual(
-                    by_name[new], {**by_name[old], "metadata": {"name": new}}
+                    by_name[new], {**by_name[old], "metadata": expected_meta}
                 )
-        annotation = "storageclass.kubernetes.io/is-default-class"
         self.assertEqual(
             [
                 name
                 for name, doc in by_name.items()
                 if doc["metadata"].get("annotations", {}).get(annotation) == "true"
             ],
-            ["longhorn"],
+            ["longhorn-replicated-retain"],
         )
 
     def test_longhorn_preserves_encrypted_local_storage_and_trim_only_maintenance(

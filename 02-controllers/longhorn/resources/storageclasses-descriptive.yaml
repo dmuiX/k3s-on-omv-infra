@@ -1,9 +1,11 @@
-# Keep the original classes while existing workloads migrate. The replicated
-# replacement is deliberately not marked as default during this phase.
+# Keep the original classes while existing workloads migrate. New PVCs without
+# an explicit storageClassName now default to longhorn-replicated-retain.
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
   name: longhorn-replicated-retain
+  annotations:
+    storageclass.kubernetes.io/is-default-class: "true"
 provisioner: driver.longhorn.io
 reclaimPolicy: Retain
 volumeBindingMode: Immediate
