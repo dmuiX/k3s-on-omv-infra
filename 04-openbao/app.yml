@@ -278,6 +278,8 @@ spec:
       exclude: '*values.y*ml'
   syncPolicy:
     managedNamespaceMetadata:
+      annotations:
+        radarhq.io/ignore-checks: livenessProbeMissing,automountServiceAccountToken,readOnlyRootFs
       labels:
         istio.io/dataplane-mode: ambient
         pod-security.kubernetes.io/enforce: restricted

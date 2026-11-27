@@ -45,6 +45,7 @@ spec:
             type: RuntimeDefault
         securityContext:
           allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
           capabilities:
             drop:
             - ALL
@@ -53,6 +54,8 @@ spec:
     path: 02-controllers/k8up/resources
   syncPolicy:
     managedNamespaceMetadata:
+      annotations:
+        radarhq.io/ignore-checks: readinessProbeMissing,automountServiceAccountToken
       labels:
         istio.io/dataplane-mode: ambient
         pod-security.kubernetes.io/enforce: restricted

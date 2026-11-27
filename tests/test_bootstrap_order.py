@@ -271,6 +271,8 @@ class BootstrapOrderTest(unittest.TestCase):
         policy = apps[owners[0]]['spec']['syncPolicy']
         self.assertIn('CreateNamespace=true', policy['syncOptions'])
         self.assertEqual(policy['managedNamespaceMetadata'], {
+            'annotations': {
+                'radarhq.io/ignore-checks': 'livenessProbeMissing,automountServiceAccountToken'},
             'labels': {'pod-security.kubernetes.io/enforce': 'restricted'}})
 
     def test_root_selects_every_application_once_at_both_directory_depths(self):

@@ -194,6 +194,44 @@ class InlineHelmValuesTest(unittest.TestCase):
             'kube-prometheus-stack': ('kube-prometheus-stack', ambient),
             'argocd': ('argocd-config', {**restricted, **warnings}),
         }
+        expected_steward_annotations = {
+            'istio-gateway': {
+                'radarhq.io/ignore-checks': 'livenessProbeMissing,automountServiceAccountToken',
+            },
+            'cert-manager': {
+                'radarhq.io/ignore-checks': 'livenessProbeMissing,readinessProbeMissing,automountServiceAccountToken',
+            },
+            'cloudnative-pg': {
+                'radarhq.io/ignore-checks': 'automountServiceAccountToken',
+            },
+            'k8up': {
+                'radarhq.io/ignore-checks': 'readinessProbeMissing,automountServiceAccountToken',
+            },
+            'longhorn': {
+                'radarhq.io/ignore-checks': (
+                    'privileged,privilegeEscalation,hostPID,dangerousCapabilities,'
+                    'runAsRoot,sensitiveHostPath,gitops-unmanaged-workload,'
+                    'cpuRequestMissing,memoryRequestMissing,memoryLimitMissing,missingPDB,'
+                    'livenessProbeMissing,readinessProbeMissing,automountServiceAccountToken,'
+                    'readOnlyRootFs,podHARisk'
+                ),
+            },
+            'vault-secrets-operator': {
+                'radarhq.io/ignore-checks': 'automountServiceAccountToken',
+            },
+            'openbao': {
+                'radarhq.io/ignore-checks': 'livenessProbeMissing,automountServiceAccountToken,readOnlyRootFs',
+            },
+            'kube-prometheus-stack': {
+                'radarhq.io/ignore-checks': (
+                    'livenessProbeMissing,readinessProbeMissing,'
+                    'automountServiceAccountToken,serviceNoMatchingPods'
+                ),
+            },
+            'argocd': {
+                'radarhq.io/ignore-checks': 'livenessProbeMissing,readinessProbeMissing,automountServiceAccountToken',
+            },
+        }
         stewards = {}
         for path in INFRA.glob('**/app.yml'):
             app = yaml.safe_load(path.read_text())
@@ -206,14 +244,8 @@ class InlineHelmValuesTest(unittest.TestCase):
             name, labels = expected[namespace]
             self.assertEqual(app['metadata']['name'], name)
             expected_metadata = {'labels': labels}
-            if namespace == 'longhorn':
-                expected_metadata['annotations'] = {
-                    'radarhq.io/ignore-checks': (
-                        'privileged,privilegeEscalation,hostPID,dangerousCapabilities,'
-                        'runAsRoot,sensitiveHostPath,gitops-unmanaged-workload,'
-                        'cpuRequestMissing,memoryRequestMissing,memoryLimitMissing,missingPDB'
-                    ),
-                }
+            if namespace in expected_steward_annotations:
+                expected_metadata['annotations'] = expected_steward_annotations[namespace]
             self.assertEqual(policy['managedNamespaceMetadata'], expected_metadata)
             self.assertIn('CreateNamespace=true', policy['syncOptions'])
         self.assertEqual(set(stewards), set(expected))
@@ -241,13 +273,25 @@ class InlineHelmValuesTest(unittest.TestCase):
             'tekton-pipelines-resolvers': {**tekton_labels, 'app.kubernetes.io/component': 'resolvers'},
         }
         self.assertEqual(set(explicit), set(expected_explicit))
+        expected_explicit_annotations = {
+            'node-exporter': {
+                'argocd.argoproj.io/sync-wave': '-20',
+                'radarhq.io/ignore-checks': 'hostPID,hostNetwork,sensitiveHostPath',
+            },
+            'tekton-pipelines': {
+                'radarhq.io/ignore-checks': 'automountServiceAccountToken',
+            },
+            'tekton-pipelines-resolvers': {
+                'radarhq.io/ignore-checks': (
+                    'livenessProbeMissing,readinessProbeMissing,'
+                    'automountServiceAccountToken,secretInConfigMap'
+                ),
+            },
+        }
         for name, doc in explicit.items():
             metadata = {'name': name, 'labels': expected_explicit[name]}
-            if name == 'node-exporter':
-                metadata['annotations'] = {
-                    'argocd.argoproj.io/sync-wave': '-20',
-                    'radarhq.io/ignore-checks': 'hostPID,hostNetwork,sensitiveHostPath',
-                }
+            if name in expected_explicit_annotations:
+                metadata['annotations'] = expected_explicit_annotations[name]
             self.assertEqual(doc, {'apiVersion': 'v1', 'kind': 'Namespace', 'metadata': metadata})
             self.assertNotIn(name, stewards)
 

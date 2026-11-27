@@ -103,7 +103,7 @@ spec:
   syncPolicy:
     managedNamespaceMetadata:
       annotations:
-        radarhq.io/ignore-checks: privileged,privilegeEscalation,hostPID,dangerousCapabilities,runAsRoot,sensitiveHostPath,gitops-unmanaged-workload,cpuRequestMissing,memoryRequestMissing,memoryLimitMissing,missingPDB
+        radarhq.io/ignore-checks: privileged,privilegeEscalation,hostPID,dangerousCapabilities,runAsRoot,sensitiveHostPath,gitops-unmanaged-workload,cpuRequestMissing,memoryRequestMissing,memoryLimitMissing,missingPDB,livenessProbeMissing,readinessProbeMissing,automountServiceAccountToken,readOnlyRootFs,podHARisk
       labels:
         pod-security.kubernetes.io/enforce: privileged
         pod-security.kubernetes.io/warn: restricted

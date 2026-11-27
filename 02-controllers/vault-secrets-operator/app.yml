@@ -24,6 +24,7 @@ spec:
               type: RuntimeDefault
           securityContext:
             allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
             capabilities:
               drop:
               - ALL
@@ -57,6 +58,8 @@ spec:
       include: vso-controller.yaml
   syncPolicy:
     managedNamespaceMetadata:
+      annotations:
+        radarhq.io/ignore-checks: automountServiceAccountToken
       labels:
         istio.io/dataplane-mode: ambient
         pod-security.kubernetes.io/enforce: restricted

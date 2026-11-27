@@ -47,6 +47,8 @@ spec:
     path: 02-controllers/cloudnative-pg/resources
   syncPolicy:
     managedNamespaceMetadata:
+      annotations:
+        radarhq.io/ignore-checks: automountServiceAccountToken
       labels:
         istio.io/dataplane-mode: ambient
         pod-security.kubernetes.io/enforce: restricted

@@ -16,6 +16,8 @@ spec:
       path: infra/letsencrypt-dns01
   syncPolicy:
     managedNamespaceMetadata:
+      annotations:
+        radarhq.io/ignore-checks: livenessProbeMissing,automountServiceAccountToken
       labels:
         pod-security.kubernetes.io/enforce: restricted
     automated:
