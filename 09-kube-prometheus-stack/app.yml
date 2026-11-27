@@ -87,6 +87,12 @@ spec:
               monitoring: 'true'
             podAntiAffinity: hard
             configSecret: alertmanager-platform-config
+            resources:
+              requests:
+                cpu: 10m
+                memory: 64Mi
+              limits:
+                memory: 256Mi
             storage:
               volumeClaimTemplate:
                 spec:
