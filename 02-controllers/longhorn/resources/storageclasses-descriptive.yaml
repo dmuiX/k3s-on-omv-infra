@@ -1,5 +1,4 @@
-# Keep the original classes while existing workloads migrate. New PVCs without
-# an explicit storageClassName now default to longhorn-replicated-retain.
+# Descriptive Longhorn StorageClasses; longhorn-replicated-retain is the sole default.
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:

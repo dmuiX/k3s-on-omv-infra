@@ -382,17 +382,22 @@ class PlatformContractTest < Minitest::Test
   end
 
   def test_storage_classes_encode_replication_encryption_and_locality
-    documents = yaml_documents(INFRA / "02-controllers/longhorn/resources/storageclasses.yaml")
+    documents = yaml_documents(INFRA / "02-controllers/longhorn/resources/storageclasses-descriptive.yaml")
     classes = documents.to_h { |document| [document.dig("metadata", "name"), document] }
-    assert_equal %w[longhorn longhorn-local longhorn-monitoring longhorn-restore-test], classes.keys.sort
-    restore_test = classes.fetch("longhorn-restore-test")
-    assert_equal classes.fetch("longhorn-local").merge(
-      "metadata" => {"name" => "longhorn-restore-test"}, "reclaimPolicy" => "Delete"
+    assert_equal %w[
+      longhorn-replicated-retain
+      longhorn-single-node-delete
+      longhorn-single-node-omv-wyse-retain
+      longhorn-single-node-retain
+    ], classes.keys.sort
+    restore_test = classes.fetch("longhorn-single-node-delete")
+    assert_equal classes.fetch("longhorn-single-node-retain").merge(
+      "metadata" => {"name" => "longhorn-single-node-delete"}, "reclaimPolicy" => "Delete"
     ), restore_test
-    assert_equal "Retain", classes["longhorn"]["reclaimPolicy"]
-    assert_equal "true", classes["longhorn"].dig("parameters", "encrypted")
-    assert_equal "3", classes["longhorn"].dig("parameters", "numberOfReplicas")
-    %w[longhorn-local longhorn-monitoring].each do |name|
+    assert_equal "Retain", classes["longhorn-replicated-retain"]["reclaimPolicy"]
+    assert_equal "true", classes["longhorn-replicated-retain"].dig("parameters", "encrypted")
+    assert_equal "3", classes["longhorn-replicated-retain"].dig("parameters", "numberOfReplicas")
+    %w[longhorn-single-node-retain longhorn-single-node-omv-wyse-retain].each do |name|
       storage_class = classes[name]
       assert_equal "Retain", storage_class["reclaimPolicy"]
       assert_equal "WaitForFirstConsumer", storage_class["volumeBindingMode"]
@@ -400,7 +405,7 @@ class PlatformContractTest < Minitest::Test
       assert_equal "1", storage_class.dig("parameters", "numberOfReplicas")
       assert_equal "strict-local", storage_class.dig("parameters", "dataLocality")
     end
-    assert_equal "monitoring-storage", classes["longhorn-monitoring"].dig("parameters", "nodeSelector")
+    assert_equal "monitoring-storage", classes["longhorn-single-node-omv-wyse-retain"].dig("parameters", "nodeSelector")
     classes.each_value do |storage_class|
       %w[node-stage node-publish node-expand].each do |operation|
         assert_equal "longhorn-crypto", storage_class.dig("parameters", "csi.storage.k8s.io/#{operation}-secret-name")

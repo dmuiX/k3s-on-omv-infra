@@ -453,21 +453,14 @@ class RepositoryWorkloads(unittest.TestCase):
         self.assertEqual(
             len(by_name), len(classes), "StorageClass names must be unique"
         )
-        replacements = {
-            "longhorn": "longhorn-replicated-retain",
-            "longhorn-local": "longhorn-single-node-retain",
-            "longhorn-monitoring": "longhorn-single-node-omv-wyse-retain",
-            "longhorn-restore-test": "longhorn-single-node-delete",
+        expected = {
+            "longhorn-replicated-retain",
+            "longhorn-single-node-retain",
+            "longhorn-single-node-omv-wyse-retain",
+            "longhorn-single-node-delete",
         }
+        self.assertEqual(set(by_name), expected)
         annotation = "storageclass.kubernetes.io/is-default-class"
-        for old, new in replacements.items():
-            with self.subTest(storage_class=new):
-                expected_meta: dict[str, object] = {"name": new}
-                if new == "longhorn-replicated-retain":
-                    expected_meta["annotations"] = {annotation: "true"}
-                self.assertEqual(
-                    by_name[new], {**by_name[old], "metadata": expected_meta}
-                )
         self.assertEqual(
             [
                 name
@@ -487,10 +480,13 @@ class RepositoryWorkloads(unittest.TestCase):
         classes = {
             d["metadata"]["name"]: d for d in docs if d["kind"] == "StorageClass"
         }
-        self.assertIn("longhorn-local", classes)
-        self.assertEqual(classes["longhorn-local"]["parameters"]["encrypted"], "true")
+        self.assertIn("longhorn-single-node-retain", classes)
         self.assertEqual(
-            classes["longhorn-local"]["parameters"]["numberOfReplicas"], "1"
+            classes["longhorn-single-node-retain"]["parameters"]["encrypted"], "true"
+        )
+        self.assertEqual(
+            classes["longhorn-single-node-retain"]["parameters"]["numberOfReplicas"],
+            "1",
         )
         policy = repo.render("longhorn-config")
         jobs = [d for d in policy if d["kind"] == "RecurringJob"]
