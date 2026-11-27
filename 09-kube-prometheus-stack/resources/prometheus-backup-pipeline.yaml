@@ -232,7 +232,11 @@ data:
                                 "readOnlyRootFilesystem": True,
                                 "capabilities": {"drop": ["ALL"]},
                             },
-                            "volumeMounts": [{"name": "prometheus-data", "mountPath": "/prometheus"}],
+                            "volumeMounts": [{
+                                "name": "prometheus-data",
+                                "mountPath": "/prometheus",
+                                "subPath": "prometheus-db",
+                            }],
                         }],
                         "volumes": [{
                             "name": "prometheus-data",

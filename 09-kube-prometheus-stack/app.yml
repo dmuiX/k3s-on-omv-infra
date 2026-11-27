@@ -53,8 +53,8 @@ spec:
                   memory: 512Mi
             replicas: 2
             enableAdminAPI: true
-            retention: 15d
-            retentionSize: 18GB
+            retention: 30d
+            retentionSize: 36GB
             nodeSelector:
               monitoring: 'true'
             podAntiAffinity: hard
@@ -68,7 +68,7 @@ spec:
                   - ReadWriteOnce
                   resources:
                     requests:
-                      storage: 20Gi
+                      storage: 45Gi
             resources:
               requests:
                 cpu: 250m
