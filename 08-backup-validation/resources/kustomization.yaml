@@ -6,6 +6,7 @@ resources:
   - postgresql-retention-access.yaml
   - network-policy.yaml
   - validation.yaml
+  - canary-seed-job.yaml
   - ../restore-test
 # Policies are additive. Keep the existing general grants for other workloads,
 # not the offline restore test or seed. Live's namespace-wide API and HTTPS

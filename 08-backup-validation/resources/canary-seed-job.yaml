@@ -3,8 +3,11 @@ kind: Job
 metadata:
   name: k8up-canary-seed-v1
   namespace: backup-validation
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
 spec:
-  # Manual create only. TTL reclaims this Job and its Pods, not the fixture PVC.
+  # Idempotent PostSync hook: creates marker.txt on an empty PVC or verifies it if present.
   ttlSecondsAfterFinished: 3600
   backoffLimit: 0
   activeDeadlineSeconds: 300
