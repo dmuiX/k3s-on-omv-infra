@@ -178,9 +178,7 @@ class TrivyOperatorContractTest(unittest.TestCase):
         self.assertEqual(monitor["spec"]["endpoints"][0]["port"], "metrics")
 
         authz = {
-            d["metadata"]["name"]: d
-            for d in docs
-            if d["kind"] == "AuthorizationPolicy"
+            d["metadata"]["name"]: d for d in docs if d["kind"] == "AuthorizationPolicy"
         }
         self.assertEqual(set(authz), {"trivy-operator-metrics", "trivy-server-api"})
 
