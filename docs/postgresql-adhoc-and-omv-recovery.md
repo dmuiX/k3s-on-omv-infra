@@ -1,6 +1,6 @@
 # PostgreSQL Ad-Hoc Backups & Local-Mirror (OMV-Only) Recovery
 
-This document defines the supported procedures for **ad-hoc CloudNativePG backups** and **local-mirror-only (OMV) recovery** when remote S3/R2 object storage is unavailable.
+This document defines the supported procedures for **ad-hoc CloudNativePG backups** and **local-mirror (OMV-only) recovery** alongside the primary remote S3/R2 backup copy (for fast LAN restores, offline drills, or when remote S3/R2 is unavailable).
 
 ## 1. Automated Verification Scope
 
@@ -38,9 +38,9 @@ kubectl -n cloudnative-pg get backups.postgresql.cnpg.io -w
 
 ---
 
-## 3. Local-Mirror (OMV-Only) Recovery When Remote S3/R2 Is Unreachable
+## 3. Local-Mirror (OMV-Only) Recovery
 
-Every completed R2 Barman base backup and WAL archive is mirrored locally to the NAS (`postgresql-backup-mirror-validation` read-only mount / host path on the NAS). If remote S3/R2 is unavailable:
+Every completed R2 Barman base backup and WAL archive is continuously mirrored locally to the NAS (`postgresql-backup-mirror-validation` read-only mount / host path on the NAS) so both remote R2 and local NAS copies always exist. You can recover directly from the local mirror at any time (for example, for fast LAN restores, offline drills, or if remote S3/R2 is unavailable):
 
 ### Pre-Recovery Verification
 1. Inspect the local mirror directory on the NAS to confirm the desired `base/<backup_id>/backup.info` and corresponding `wals/` segments exist and match the last verified `postgresql-restore-status` Lease.
