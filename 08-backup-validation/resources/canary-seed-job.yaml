@@ -27,23 +27,39 @@ spec:
         runAsGroup: 1000
         fsGroup: 1000
         fsGroupChangePolicy: OnRootMismatch
-        seccompProfile: {type: RuntimeDefault}
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: seed
           image: python:3.15.2-slim-trixie@sha256:63bb298d2b7b88f176f51b5189f54ce6535c997682ea70885d2132f5d473a8a5
-          command: [/usr/local/bin/python, -IB, /tools/seed.py]
+          command:
+            - /usr/local/bin/python
+            - -IB
+            - /tools/seed.py
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
-            capabilities: {drop: [ALL]}
+            capabilities:
+              drop:
+                - ALL
           resources:
-            requests: {cpu: 10m, memory: 16Mi}
-            limits: {cpu: 100m, memory: 64Mi}
+            requests:
+              cpu: 10m
+              memory: 16Mi
+            limits:
+              cpu: 100m
+              memory: 64Mi
           volumeMounts:
-            - {name: fixture, mountPath: /canary}
-            - {name: tool, mountPath: /tools, readOnly: true}
+            - name: fixture
+              mountPath: /canary
+            - name: tool
+              mountPath: /tools
+              readOnly: true
       volumes:
         - name: fixture
-          persistentVolumeClaim: {claimName: k8up-validation-canary}
+          persistentVolumeClaim:
+            claimName: k8up-validation-canary
         - name: tool
-          configMap: {name: k8up-canary-seed-v1, defaultMode: 0444}
+          configMap:
+            name: k8up-canary-seed-v1
+            defaultMode: 0444
