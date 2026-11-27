@@ -31,7 +31,8 @@ spec:
             runAsUser: 1000
             runAsGroup: 1000
             fsGroup: 1000
-            seccompProfile: {type: RuntimeDefault}
+            seccompProfile:
+              type: RuntimeDefault
           initContainers:
             - name: restore
               terminationMessagePolicy: FallbackToLogsOnError
@@ -39,23 +40,37 @@ spec:
               command: [/bin/sh, /tools/restore.sh]
               args: [backup-validation, '172800']
               env:
-                - {name: TMPDIR, value: /scratch}
+                - name: TMPDIR
+                  value: /scratch
                 - name: RESTIC_REPOSITORY
                   value: /repository
                 - name: RESTIC_PASSWORD
                   valueFrom:
-                    secretKeyRef: {name: k8up-repository, key: password}
+                    secretKeyRef:
+                      name: k8up-repository
+                      key: password
               securityContext: &hardened
                 allowPrivilegeEscalation: false
                 readOnlyRootFilesystem: true
-                capabilities: {drop: [ALL]}
+                capabilities:
+                  drop:
+                  - ALL
               resources:
-                requests: {cpu: 100m, memory: 128Mi}
-                limits: {cpu: 500m, memory: 512Mi}
+                requests:
+                  cpu: 100m
+                  memory: 128Mi
+                limits:
+                  cpu: 500m
+                  memory: 512Mi
               volumeMounts:
-                - {name: repository, mountPath: /repository, readOnly: true}
-                - {name: scratch, mountPath: /scratch}
-                - {name: tools, mountPath: /tools, readOnly: true}
+                - name: repository
+                  mountPath: /repository
+                  readOnly: true
+                - name: scratch
+                  mountPath: /scratch
+                - name: tools
+                  mountPath: /tools
+                  readOnly: true
           containers:
             - name: verify
               terminationMessagePolicy: FallbackToLogsOnError
@@ -64,16 +79,28 @@ spec:
               args: [backup-validation]
               securityContext: *hardened
               resources:
-                requests: {cpu: 50m, memory: 64Mi}
-                limits: {cpu: 500m, memory: 256Mi}
+                requests:
+                  cpu: 50m
+                  memory: 64Mi
+                limits:
+                  cpu: 500m
+                  memory: 256Mi
               volumeMounts:
-                - {name: scratch, mountPath: /scratch, readOnly: true}
-                - {name: tools, mountPath: /tools, readOnly: true}
+                - name: scratch
+                  mountPath: /scratch
+                  readOnly: true
+                - name: tools
+                  mountPath: /tools
+                  readOnly: true
           volumes:
             - name: repository
-              persistentVolumeClaim: {claimName: k8up-omv-repository, readOnly: true}
+              persistentVolumeClaim:
+                claimName: k8up-omv-repository
+                readOnly: true
             - name: tools
-              configMap: {name: k8up-restore-tools, defaultMode: 0444}
+              configMap:
+                name: k8up-restore-tools
+                defaultMode: 292
             - name: scratch
               ephemeral:
                 volumeClaimTemplate:
@@ -84,4 +111,5 @@ spec:
                     storageClassName: longhorn-single-node-delete
                     accessModes: [ReadWriteOnce]
                     resources:
-                      requests: {storage: 256Mi}
+                      requests:
+                        storage: 256Mi

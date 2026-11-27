@@ -6,5 +6,7 @@ resources:
 configMapGenerator:
   # Stable, versioned reference for the separately created manual/seed-job.yaml.
   - name: k8up-canary-seed-v1
-    options: {disableNameSuffixHash: true, immutable: true}
+    options:
+      disableNameSuffixHash: true
+      immutable: true
     files: [seed.py]
