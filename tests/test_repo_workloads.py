@@ -22,7 +22,7 @@ class RepositoryWorkloads(unittest.TestCase):
                 "openbao-backups",
                 "openbao-snapshot",
                 "CronJob",
-                "4128f566fda4221fbb3aea2546b62011c34d3e84aa563aa1d913e3b419963a95",
+                "74d86463d99482c8e1d8961ef9a925f3e11b9d2e141c17e2b4cb93a0a1b820f4",
             ),
             (
                 "k3s-postgres",
