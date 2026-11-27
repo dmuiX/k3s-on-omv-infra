@@ -43,7 +43,7 @@ class TrivyOperatorContractTest(unittest.TestCase):
             container["resources"],
             {
                 "requests": {"cpu": "20m", "memory": "128Mi"},
-                "limits": {"cpu": "500m", "memory": "768Mi"},
+                "limits": {"memory": "768Mi"},
             },
         )
 

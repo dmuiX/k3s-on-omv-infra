@@ -88,8 +88,8 @@ class RestoreTestManifests(unittest.TestCase):
                     self.assertTrue(c['securityContext']['readOnlyRootFilesystem'])
                     self.assertFalse(c['securityContext']['allowPrivilegeEscalation'])
                     self.assertEqual(c['securityContext']['capabilities']['drop'], ['ALL'])
-                    for k in ('requests', 'limits'):
-                        self.assertTrue({'cpu', 'memory'} <= c['resources'][k].keys())
+                    self.assertTrue({'cpu', 'memory'} <= c['resources']['requests'].keys())
+                    self.assertIn('memory', c['resources']['limits'])
                 for c in stages[1:]:
                     self.assertFalse(any('valueFrom' in e for e in c.get('env', [])))
                     self.assertNotIn('repository', [m['name'] for m in c['volumeMounts']])

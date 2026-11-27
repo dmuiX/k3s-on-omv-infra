@@ -191,9 +191,7 @@ class MemoryLimitsContractTest(unittest.TestCase):
                 }
             ],
         )
-        self.assertEqual(
-            prom["spec"]["resources"]["limits"], {"cpu": "1", "memory": "2Gi"}
-        )
+        self.assertEqual(prom["spec"]["resources"]["limits"], {"memory": "2Gi"})
         (alertmanager,) = [d for d in docs if d["kind"] == "Alertmanager"]
         self.assertEqual(alertmanager["spec"]["replicas"], 0)
 

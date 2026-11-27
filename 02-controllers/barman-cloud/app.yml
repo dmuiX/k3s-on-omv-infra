@@ -32,7 +32,6 @@ spec:
             cpu: 20m
             memory: 80Mi
           limits:
-            cpu: 300m
             memory: 256Mi
   - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
     targetRevision: main

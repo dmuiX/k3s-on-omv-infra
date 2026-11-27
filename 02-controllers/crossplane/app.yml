@@ -26,7 +26,6 @@ spec:
             cpu: 100m
             memory: 256Mi
           limits:
-            cpu: 500m
             memory: 512Mi
         # Native chart shares this profile with the RBAC init container.
         resourcesRBACManager:
