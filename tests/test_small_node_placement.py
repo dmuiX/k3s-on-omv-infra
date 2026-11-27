@@ -61,7 +61,7 @@ class SmallNodePlacementTest(unittest.TestCase):
             source["helm"]["valuesObject"]["resources"],
             {
                 "requests": {"cpu": "150m", "memory": "64Mi"},
-                "limits": {"cpu": "1", "memory": "256Mi"},
+                "limits": {"memory": "256Mi"},
             },
         )
 

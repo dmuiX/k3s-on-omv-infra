@@ -183,7 +183,7 @@ class RepositoryWorkloads(unittest.TestCase):
         self.assertTrue(container.get("readinessProbe"))
         self.assertTrue(container.get("livenessProbe"))
         self.assertEqual(set(container["resources"]["requests"]), {"cpu", "memory"})
-        self.assertEqual(set(container["resources"]["limits"]), {"cpu", "memory"})
+        self.assertEqual(set(container["resources"]["limits"]), {"memory"})
 
     def test_every_infra_child_has_a_declared_scope_and_public_sources_render(
         self,
