@@ -53,6 +53,9 @@ spec:
       releaseName: longhorn-oidc-proxy
       valueFiles:
       - $live/infra/longhorn/proxy-values.yml
+      valuesObject:
+        ambient: true
+        openbaoBackchannelURL: http://openbao-active.openbao.svc.cluster.local:8200/v1/identity/oidc/provider/longhorn
   syncPolicy:
     automated:
       enabled: true
