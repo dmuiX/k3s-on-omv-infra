@@ -15,9 +15,8 @@ class TrivyOperatorContractTest(unittest.TestCase):
         self.assertEqual(deployment["spec"]["replicas"], 2)
         pod_spec = deployment["spec"]["template"]["spec"]
         self.assertEqual(pod_spec["nodeSelector"], {"compute-class": "standard"})
-        anti_affinity = pod_spec["affinity"]["podAntiAffinity"][
-            "preferredDuringSchedulingIgnoredDuringExecution"
-        ]
+        affinity = pod_spec["affinity"]["podAntiAffinity"]
+        anti_affinity = affinity["preferredDuringSchedulingIgnoredDuringExecution"]
         self.assertEqual(anti_affinity[0]["weight"], 100)
         self.assertEqual(
             anti_affinity[0]["podAffinityTerm"]["topologyKey"],
@@ -106,6 +105,7 @@ class TrivyOperatorContractTest(unittest.TestCase):
         )
         self.assertEqual(trivy_cm["trivy.mode"], "ClientServer")
         self.assertEqual(trivy_cm["trivy.slow"], "true")
+        self.assertEqual(trivy_cm["trivy.timeout"], "10m0s")
         self.assertEqual(
             trivy_cm["trivy.additionalVulnerabilityReportFields"],
             "Description,Links,CVSS,Target,Class,PackagePath,PackageType",
@@ -115,9 +115,7 @@ class TrivyOperatorContractTest(unittest.TestCase):
         self.assertEqual(trivy_cm["trivy.resources.limits.cpu"], "500m")
         self.assertEqual(trivy_cm["trivy.resources.limits.memory"], "512Mi")
 
-    def test_built_in_trivy_server_is_restricted_and_uses_descriptive_storage(
-        self,
-    ) -> None:
+    def test_built_in_trivy_server_security_and_storage(self) -> None:
         repo = Repository()
         docs = repo.render("trivy-operator")
 
@@ -219,9 +217,7 @@ class TrivyOperatorContractTest(unittest.TestCase):
             set(netpols),
             {"trivy-operator-metrics-ingress", "trivy-server-ingress"},
         )
-        metrics_ports = netpols["trivy-operator-metrics-ingress"]["spec"]["ingress"][0][
-            "ports"
-        ]
-        server_ports = netpols["trivy-server-ingress"]["spec"]["ingress"][0]["ports"]
-        self.assertEqual({p["port"] for p in metrics_ports}, {8080, 15008})
-        self.assertEqual({p["port"] for p in server_ports}, {4954, 15008})
+        metrics_rule = netpols["trivy-operator-metrics-ingress"]["spec"]["ingress"][0]
+        server_rule = netpols["trivy-server-ingress"]["spec"]["ingress"][0]
+        self.assertEqual({p["port"] for p in metrics_rule["ports"]}, {8080, 15008})
+        self.assertEqual({p["port"] for p in server_rule["ports"]}, {4954, 15008})

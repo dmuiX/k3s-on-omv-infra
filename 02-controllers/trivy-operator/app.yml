@@ -46,6 +46,7 @@ spec:
               - ALL
         trivy:
           slow: true
+          timeout: 10m0s
           additionalVulnerabilityReportFields: Description,Links,CVSS,Target,Class,PackagePath,PackageType
           storageClassEnabled: true
           storageClassName: longhorn-single-node-delete
