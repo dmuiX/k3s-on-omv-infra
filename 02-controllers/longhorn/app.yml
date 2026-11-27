@@ -53,6 +53,18 @@ spec:
           defaultFsType: ext4
         longhornUI:
           replicas: 2
+          affinity:
+            podAntiAffinity:
+              preferredDuringSchedulingIgnoredDuringExecution:
+              - weight: 100
+                podAffinityTerm:
+                  labelSelector:
+                    matchExpressions:
+                    - key: app
+                      operator: In
+                      values:
+                      - longhorn-ui
+                  topologyKey: kubernetes.io/hostname
           podDisruptionBudget:
             enabled: true
             minAvailable: 1

@@ -39,7 +39,7 @@ spec:
                   values:
                   - longhorn-ui
               topologyKey: kubernetes.io/hostname
-            weight: 1
+            weight: 100
       containers:
       - name: longhorn-ui
         image: docker.io/longhornio/longhorn-ui:v1.13.0@sha256:f22fb0254ae50195c1635ce428dfae26375956b3d7bd39640fae8fe33a236023
