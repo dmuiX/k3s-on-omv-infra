@@ -1,0 +1,6 @@
+openbaoOIDC:
+  client:
+    redirectUris:
+      - https://kyverno.example.invalid:9443/oauth2/callback
+  provider:
+    issuerURL: https://openbao.example.invalid:9443/v1/identity/oidc/provider/policy-reporter

@@ -1,0 +1,53 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: policy-reporter-oidc-proxy
+  namespace: kyverno
+automountServiceAccountToken: false
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultAuth
+metadata:
+  name: policy-reporter-oidc-proxy
+  namespace: kyverno
+spec:
+  method: kubernetes
+  mount: kubernetes
+  kubernetes:
+    role: policy-reporter-oidc-proxy
+    serviceAccount: policy-reporter-oidc-proxy
+    tokenExpirationSeconds: 600
+  vaultConnectionRef: vault-secrets-operator/default
+---
+apiVersion: secrets.hashicorp.com/v1beta1
+kind: VaultStaticSecret
+metadata:
+  name: policy-reporter-oidc-proxy
+  namespace: kyverno
+  annotations:
+    argocd.argoproj.io/sync-wave: '10'
+spec:
+  vaultAuthRef: policy-reporter-oidc-proxy
+  mount: kv
+  type: kv-v2
+  path: policy-reporter/oidc-proxy
+  refreshAfter: 1h
+  rolloutRestartTargets:
+    - kind: Deployment
+      name: policy-reporter-oidc-proxy
+  destination:
+    create: true
+    name: policy-reporter-oidc-proxy
+    type: Opaque
+    transformation:
+      excludeRaw: true
+      transformationRefs:
+        - name: required-openbao-value
+          namespace: vault-secrets-operator
+      templates:
+        client-id:
+          text: '{{- template "requiredValue" (dict "key" "client-id" "value" (get .Secrets "client-id")) -}}'
+        client-secret:
+          text: '{{- template "requiredValue" (dict "key" "client-secret" "value" (get .Secrets "client-secret")) -}}'
+        cookie-secret:
+          text: '{{- template "requiredValue" (dict "key" "cookie-secret" "value" (get .Secrets "cookie-secret")) -}}'

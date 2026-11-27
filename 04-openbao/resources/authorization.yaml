@@ -30,6 +30,7 @@ spec:
               # In-cluster OIDC backchannel proxies
               - cluster.local/ns/longhorn/sa/longhorn-oidc-proxy
               - cluster.local/ns/tekton-pipelines/sa/tekton-dashboard-oidc-proxy
+              - cluster.local/ns/kyverno/sa/policy-reporter-oidc-proxy
               - cluster.local/ns/opencost/sa/opencost-oidc-proxy
               - cluster.local/ns/project-bot/sa/project-bot-oidc-proxy
               # Credential-custody provisioner and configurator Jobs
@@ -37,6 +38,7 @@ spec:
               - cluster.local/ns/kube-prometheus-stack/sa/grafana-admin-provisioner
               - cluster.local/ns/longhorn/sa/longhorn-proxy-provisioner
               - cluster.local/ns/tekton-pipelines/sa/tekton-dashboard-provisioner
+              - cluster.local/ns/kyverno/sa/policy-reporter-provisioner
               - cluster.local/ns/radar/sa/radar-auth-provisioner
               - cluster.local/ns/opencost/sa/opencost-oidc-provisioner
               - cluster.local/ns/project-bot/sa/project-bot-oidc-provisioner

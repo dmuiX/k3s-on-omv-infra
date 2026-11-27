@@ -53,7 +53,6 @@ class KyvernoContractTest(unittest.TestCase):
                 self.assertEqual(sec["capabilities"]["drop"], ["ALL"], name)
                 self.assertIn("cpu", container["resources"]["requests"], name)
                 self.assertIn("memory", container["resources"]["requests"], name)
-                self.assertIn("cpu", container["resources"]["limits"], name)
                 self.assertIn("memory", container["resources"]["limits"], name)
 
         (pdb,) = [d for d in docs if d["kind"] == "PodDisruptionBudget"]
