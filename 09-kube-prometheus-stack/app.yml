@@ -63,7 +63,7 @@ spec:
             storageSpec:
               volumeClaimTemplate:
                 spec:
-                  storageClassName: longhorn-monitoring
+                  storageClassName: longhorn-single-node-omv-wyse-retain
                   accessModes:
                   - ReadWriteOnce
                   resources:
@@ -96,7 +96,7 @@ spec:
             storage:
               volumeClaimTemplate:
                 spec:
-                  storageClassName: longhorn-monitoring
+                  storageClassName: longhorn-single-node-omv-wyse-retain
                   accessModes:
                   - ReadWriteOnce
                   resources:
