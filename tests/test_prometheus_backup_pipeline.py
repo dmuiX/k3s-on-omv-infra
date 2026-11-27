@@ -43,6 +43,14 @@ class PrometheusBackupPipelineTest(unittest.TestCase):
         self.assertTrue(container["securityContext"]["readOnlyRootFilesystem"])
         self.assertFalse(container["securityContext"]["allowPrivilegeEscalation"])
 
+        _, mod = load_pipeline_module()
+        cleanup_mounts = mod.build_cleanup_job("test")["spec"]["template"]["spec"]["containers"][0]["volumeMounts"]
+        self.assertEqual(cleanup_mounts, [{
+            "name": "prometheus-data",
+            "mountPath": "/prometheus",
+            "subPath": "prometheus-db",
+        }])
+
     def test_pipeline_runs_backup_check_cleanup_prune_in_order(self):
         _, mod = load_pipeline_module()
         calls = []

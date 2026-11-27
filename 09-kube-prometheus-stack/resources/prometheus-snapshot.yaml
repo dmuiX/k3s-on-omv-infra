@@ -94,6 +94,7 @@ spec:
           volumeMounts:
             - name: prometheus-data
               mountPath: /prometheus
+              subPath: prometheus-db
             - name: snapshot-tool
               mountPath: /tools
               readOnly: true
