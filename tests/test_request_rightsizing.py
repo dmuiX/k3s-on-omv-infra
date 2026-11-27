@@ -237,9 +237,7 @@ class RequestRightsizingTest(unittest.TestCase):
         main = target(docs, "crossplane-rbac-manager", "crossplane")
         init = target(docs, "crossplane-rbac-manager", "crossplane-init")
         self.assertEqual(main["resources"], init["resources"])
-        self.assertEqual(
-            main["resources"]["limits"], {"cpu": "100m", "memory": "128Mi"}
-        )
+        self.assertEqual(main["resources"]["limits"], {"memory": "128Mi"})
         self.assertEqual(main["resources"]["requests"]["memory"], "64Mi")
         controller = target(docs, "crossplane", "crossplane")
         self.assertEqual(
