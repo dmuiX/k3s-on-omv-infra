@@ -208,6 +208,7 @@ class RepositoryWorkloads(unittest.TestCase):
             "k8up",
             "longhorn",
             "tekton-pipelines",
+            "trivy-operator",
             "vault-secrets-operator",
             "provider-vault",
             "openbao",
