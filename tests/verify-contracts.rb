@@ -446,7 +446,7 @@ class PlatformContractTest < Minitest::Test
     openbao = chart_values("04-openbao/app.yml")
     assert_equal 3, openbao.dig("server", "ha", "replicas")
     assert_equal "1Gi", openbao.dig("server", "dataStorage", "size")
-    assert_equal "longhorn", openbao.dig("server", "dataStorage", "storageClass")
+    assert_equal "longhorn-replicated-retain", openbao.dig("server", "dataStorage", "storageClass")
 
     postgresql = yaml_documents(INFRA / "07-k3s-postgres/resources/cluster.yaml").find { |document| document["kind"] == "Cluster" }
     assert_equal 3, postgresql.dig("spec", "instances")

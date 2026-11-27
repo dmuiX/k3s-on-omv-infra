@@ -212,7 +212,7 @@ spec:
           dataStorage:
             enabled: true
             size: 1Gi
-            storageClass: longhorn
+            storageClass: longhorn-replicated-retain
             accessMode: ReadWriteOnce
           resources:
             requests:
