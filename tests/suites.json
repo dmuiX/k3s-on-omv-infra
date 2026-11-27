@@ -14,6 +14,7 @@
     "test_native_alert_rules",
     "test_native_request_profile",
     "test_native_reader_accounts",
+    "test_openbao_api_authorization",
     "test_openbao_network",
     "test_postgresql_restore_startup",
     "test_prometheus_backup_pipeline",
