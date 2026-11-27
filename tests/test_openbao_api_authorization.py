@@ -49,6 +49,7 @@ class OpenBaoAPIAuthorizationTest(unittest.TestCase):
             "cluster.local/ns/vault-secrets-operator/"
             "sa/vault-secrets-operator-controller-manager",
             "cluster.local/ns/crossplane-system/sa/provider-vault",
+            "cluster.local/ns/longhorn/sa/longhorn-oidc-proxy",
             "cluster.local/ns/tekton-pipelines/sa/tekton-dashboard-oidc-proxy",
             "cluster.local/ns/opencost/sa/opencost-oidc-proxy",
             "cluster.local/ns/project-bot/sa/project-bot-oidc-proxy",
