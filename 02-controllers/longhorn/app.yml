@@ -90,6 +90,8 @@ spec:
     ref: live
   syncPolicy:
     managedNamespaceMetadata:
+      annotations:
+        radarhq.io/ignore-checks: privileged,privilegeEscalation,hostPID,dangerousCapabilities,runAsRoot,sensitiveHostPath,gitops-unmanaged-workload,cpuRequestMissing,memoryRequestMissing,memoryLimitMissing,missingPDB
       labels:
         pod-security.kubernetes.io/enforce: privileged
         pod-security.kubernetes.io/warn: restricted

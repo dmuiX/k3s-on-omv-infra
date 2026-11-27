@@ -205,7 +205,16 @@ class InlineHelmValuesTest(unittest.TestCase):
             stewards[namespace] = app['metadata']['name']
             name, labels = expected[namespace]
             self.assertEqual(app['metadata']['name'], name)
-            self.assertEqual(policy['managedNamespaceMetadata'], {'labels': labels})
+            expected_metadata = {'labels': labels}
+            if namespace == 'longhorn':
+                expected_metadata['annotations'] = {
+                    'radarhq.io/ignore-checks': (
+                        'privileged,privilegeEscalation,hostPID,dangerousCapabilities,'
+                        'runAsRoot,sensitiveHostPath,gitops-unmanaged-workload,'
+                        'cpuRequestMissing,memoryRequestMissing,memoryLimitMissing,missingPDB'
+                    ),
+                }
+            self.assertEqual(policy['managedNamespaceMetadata'], expected_metadata)
             self.assertIn('CreateNamespace=true', policy['syncOptions'])
         self.assertEqual(set(stewards), set(expected))
         explicit = {}
@@ -235,7 +244,10 @@ class InlineHelmValuesTest(unittest.TestCase):
         for name, doc in explicit.items():
             metadata = {'name': name, 'labels': expected_explicit[name]}
             if name == 'node-exporter':
-                metadata['annotations'] = {'argocd.argoproj.io/sync-wave': '-20'}
+                metadata['annotations'] = {
+                    'argocd.argoproj.io/sync-wave': '-20',
+                    'radarhq.io/ignore-checks': 'hostPID,hostNetwork,sensitiveHostPath',
+                }
             self.assertEqual(doc, {'apiVersion': 'v1', 'kind': 'Namespace', 'metadata': metadata})
             self.assertNotIn(name, stewards)
 
