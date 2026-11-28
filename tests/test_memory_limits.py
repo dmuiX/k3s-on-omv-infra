@@ -344,11 +344,7 @@ class NativeMemoryLimitApiTest(unittest.TestCase):
             # Helm removes keys set to null during values merge; the raw Kubernetes API
             # would instead interpret a literal null Quantity as 0.
             rendered: Document = {
-                section: {
-                    key: value
-                    for key, value in values_map.items()
-                    if value is not None
-                }
+                section: {k: v for k, v in values_map.items() if v is not None}
                 for section, values_map in copy.deepcopy(native).items()
             }
             containers.append(
