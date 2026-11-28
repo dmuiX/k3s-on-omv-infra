@@ -187,6 +187,7 @@ class InlineHelmValuesTest(unittest.TestCase):
             'cloudnative-pg': ('cloudnative-pg', ambient),
             'crossplane-system': ('crossplane', ambient),
             'k8up': ('k8up', ambient),
+            'kyverno': ('kyverno', ambient),
             'longhorn': ('longhorn', {**privileged, **warnings}),
             'trivy-operator': ('trivy-operator', ambient),
             'vault-secrets-operator': ('vault-secrets-operator', ambient),
@@ -207,6 +208,9 @@ class InlineHelmValuesTest(unittest.TestCase):
             },
             'k8up': {
                 'radarhq.io/ignore-checks': 'readinessProbeMissing,automountServiceAccountToken',
+            },
+            'kyverno': {
+                'radarhq.io/ignore-checks': 'automountServiceAccountToken',
             },
             'longhorn': {
                 'radarhq.io/ignore-checks': (

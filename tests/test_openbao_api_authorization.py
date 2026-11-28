@@ -51,6 +51,8 @@ class OpenBaoAPIAuthorizationTest(unittest.TestCase):
             "cluster.local/ns/crossplane-system/sa/provider-vault",
             "cluster.local/ns/longhorn/sa/longhorn-oidc-proxy",
             "cluster.local/ns/tekton-pipelines/sa/tekton-dashboard-oidc-proxy",
+            "cluster.local/ns/kyverno/sa/policy-reporter-oidc-proxy",
+            "cluster.local/ns/kyverno/sa/policy-reporter-provisioner",
             "cluster.local/ns/opencost/sa/opencost-oidc-proxy",
             "cluster.local/ns/project-bot/sa/project-bot-oidc-proxy",
             "cluster.local/ns/radar/sa/radar-auth-provisioner",

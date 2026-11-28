@@ -15,6 +15,7 @@ resources:
 - 02-controllers/crossplane/app.yml
 - 02-controllers/csi-driver-smb/app.yml
 - 02-controllers/k8up/app.yml
+- 02-controllers/kyverno/app.yml
 - 02-controllers/longhorn/app.yml
 - 02-controllers/tekton-pipelines/app.yml
 - 02-controllers/trivy-operator/app.yml
@@ -24,6 +25,7 @@ resources:
 - 05-provider-vault-connection/app.yml
 - 06-platform/letsencrypt-dns01-credentials/app.yml
 - 06-platform/longhorn-config/app.yml
+- 06-platform/policy-reporter/app.yml
 - 06-platform/tekton-dashboard/app.yml
 - 06-platform/openbao-backups/app.yml
 - 06-platform/openbao-config/app.yml

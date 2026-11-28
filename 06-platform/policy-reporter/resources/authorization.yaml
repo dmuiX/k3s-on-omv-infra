@@ -1,0 +1,66 @@
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: policy-reporter-ui
+  namespace: kyverno
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: policy-reporter-ui
+      app.kubernetes.io/instance: policy-reporter
+  action: DENY
+  rules:
+    - from:
+        - source:
+            notPrincipals:
+              - cluster.local/ns/kyverno/sa/policy-reporter-oidc-proxy
+      to:
+        - operation:
+            ports:
+              - '8080'
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: policy-reporter-api
+  namespace: kyverno
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: policy-reporter
+      app.kubernetes.io/instance: policy-reporter
+  action: DENY
+  rules:
+    - from:
+        - source:
+            notPrincipals:
+              - cluster.local/ns/kyverno/sa/policy-reporter-ui
+              - cluster.local/ns/kube-prometheus-stack/sa/kube-prometheus-stack-prometheus
+      to:
+        - operation:
+            ports:
+              - '8080'
+---
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: policy-reporter-plugins
+  namespace: kyverno
+spec:
+  selector:
+    matchExpressions:
+      - key: app.kubernetes.io/name
+        operator: In
+        values:
+          - policy-reporter-kyverno-plugin
+          - policy-reporter-trivy-plugin
+  action: DENY
+  rules:
+    - from:
+        - source:
+            notPrincipals:
+              - cluster.local/ns/kyverno/sa/policy-reporter-ui
+      to:
+        - operation:
+            ports:
+              - '8080'

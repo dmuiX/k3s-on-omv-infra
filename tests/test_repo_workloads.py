@@ -102,6 +102,7 @@ class RepositoryWorkloads(unittest.TestCase):
             "k3s-postgres",
             "longhorn-config",
             "kube-prometheus-stack",
+            "policy-reporter",
             "tekton-dashboard",
         ):
             with self.subTest(application=app):
@@ -206,6 +207,7 @@ class RepositoryWorkloads(unittest.TestCase):
             "crossplane",
             "csi-driver-smb",
             "k8up",
+            "kyverno",
             "longhorn",
             "tekton-pipelines",
             "trivy-operator",
@@ -216,6 +218,7 @@ class RepositoryWorkloads(unittest.TestCase):
             "platform-credentials",
             "letsencrypt-dns01-credentials",
             "longhorn-config",
+            "policy-reporter",
             "tekton-dashboard",
             "openbao-backups",
             "openbao-config",

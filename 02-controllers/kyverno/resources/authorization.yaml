@@ -1,0 +1,22 @@
+# Restrict Kyverno Prometheus metrics (8000) to Prometheus over Istio Ambient mTLS,
+# while leaving the admission webhook and kubelet health probes on port 9443 unaffected.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: kyverno-metrics
+  namespace: kyverno
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: kyverno
+      app.kubernetes.io/part-of: kyverno
+  action: DENY
+  rules:
+    - from:
+        - source:
+            notPrincipals:
+              - cluster.local/ns/kube-prometheus-stack/sa/kube-prometheus-stack-prometheus
+      to:
+        - operation:
+            ports:
+              - '8000'

@@ -1,0 +1,144 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: policy-reporter
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: '7'
+spec:
+  project: default
+  destination:
+    name: in-cluster
+    namespace: kyverno
+  sources:
+    - repoURL: https://kyverno.github.io/policy-reporter
+      chart: policy-reporter
+      targetRevision: 3.11.2
+      helm:
+        releaseName: policy-reporter
+        valuesObject:
+          rest:
+            enabled: true
+          metrics:
+            enabled: true
+          monitoring:
+            enabled: true
+            grafana:
+              dashboards:
+                enabled: false
+            serviceMonitor:
+              enabled: true
+          nodeSelector:
+            compute-class: standard
+          resources:
+            requests:
+              cpu: 20m
+              memory: 64Mi
+            limits:
+              memory: 256Mi
+          ui:
+            enabled: true
+            nodeSelector:
+              compute-class: standard
+            resources:
+              requests:
+                cpu: 10m
+                memory: 48Mi
+              limits:
+                memory: 192Mi
+          plugin:
+            kyverno:
+              enabled: true
+              nodeSelector:
+                compute-class: standard
+              resources:
+                requests:
+                  cpu: 10m
+                  memory: 48Mi
+                limits:
+                  memory: 192Mi
+            trivy:
+              enabled: true
+              cveawg:
+                disable: true
+              github:
+                disable: true
+              nodeSelector:
+                compute-class: standard
+              resources:
+                requests:
+                  cpu: 20m
+                  memory: 64Mi
+                limits:
+                  memory: 256Mi
+    - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
+      targetRevision: main
+      path: 06-platform/policy-reporter/resources
+    - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
+      targetRevision: main
+      path: adapters/credential-custody
+    - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
+      targetRevision: main
+      path: charts/openbao-oidc
+      helm:
+        releaseName: policy-reporter-oidc
+        valueFiles:
+          - $live/infra/policy-reporter/oidc-values.yml
+        valuesObject:
+          openbaoOIDC:
+            assignments:
+              - name: policy-reporter-admin
+            key:
+              syncWave: '-1'
+            scopes:
+              - name: policy-reporter
+                syncWave: '-1'
+            client:
+              name: policy-reporter
+              assignments:
+                - policy-reporter-admin
+    - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
+      targetRevision: main
+      path: charts/oidc-proxy
+      helm:
+        releaseName: policy-reporter-oidc-proxy
+        valueFiles:
+          - $live/infra/policy-reporter/proxy-values.yml
+        valuesObject:
+          name: policy-reporter-oidc-proxy
+          namespace: kyverno
+          upstream: http://policy-reporter-ui.kyverno.svc:8080
+          scope: openid policy-reporter
+          allowedGroup: platform:admin
+          passBasicAuth: false
+          ambient: true
+          podSecurityContext:
+            seccompProfile:
+              type: RuntimeDefault
+          openbaoBackchannelURL: http://openbao-active.openbao.svc.cluster.local:8200/v1/identity/oidc/provider/policy-reporter
+          provisioner:
+            enabled: true
+            name: policy-reporter-provisioner
+            client: policy-reporter
+    - repoURL: https://github.com/dmuiX/k3s-on-omv-infra.git
+      targetRevision: main
+      path: charts/service-route
+      helm:
+        releaseName: policy-reporter-route
+        valueFiles:
+          - $live/infra/policy-reporter/route-values.yml
+    - repoURL: https://github.com/dmuiX/k3s-on-omv-live.git
+      targetRevision: main
+      ref: live
+      path: infra/policy-reporter
+      directory:
+        include: network-peers.yaml
+  syncPolicy:
+    automated:
+      enabled: true
+      prune: false
+      selfHeal: true
+      allowEmpty: false
+    syncOptions:
+      - ServerSideApply=true
+      - SkipDryRunOnMissingResource=true
