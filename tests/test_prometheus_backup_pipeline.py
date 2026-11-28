@@ -1,8 +1,10 @@
 """Offline unit and manifest tests for prometheus-backup-pipeline."""
+from io import BytesIO
 from pathlib import Path
 import types
 import unittest
 from unittest import mock
+from urllib.error import HTTPError, URLError
 
 import yaml
 
@@ -118,6 +120,124 @@ class PrometheusBackupPipelineTest(unittest.TestCase):
                 mod.run("test")
 
         self.assertEqual(posts, ["/apis/k8up.io/v1/namespaces/kube-prometheus-stack/backups"])
+
+    def test_api_retries_transient_429_storage_reinitializing(self):
+        _, mod = load_pipeline_module()
+        body = (
+            b'{"kind":"Status","status":"Failure","message":"storage is (re)initializing",'
+            b'"reason":"TooManyRequests","details":{"retryAfterSeconds":2},"code":429}'
+        )
+        transient = HTTPError(
+            "https://10.43.0.1:443/apis/k8up.io/v1/namespaces/kube-prometheus-stack/snapshots",
+            429,
+            "Too Many Requests",
+            hdrs={},
+            fp=BytesIO(body),
+        )
+        ok_resp = mock.MagicMock()
+        ok_resp.__enter__.return_value = ok_resp
+        ok_resp.read.return_value = b'{"items": []}'
+        sleeps = []
+
+        with (
+            mock.patch.object(mod, "api_settings", return_value=("https://10.43.0.1:443", {}, None)),
+            mock.patch.object(mod, "urlopen", side_effect=[transient, ok_resp]) as mocked_open,
+            mock.patch.object(mod.time, "sleep", side_effect=sleeps.append),
+        ):
+            result = mod.api("/apis/k8up.io/v1/namespaces/kube-prometheus-stack/snapshots")
+
+        self.assertEqual(result, {"items": []})
+        self.assertEqual(mocked_open.call_count, 2)
+        self.assertEqual(sleeps, [2.0])
+
+    def test_api_does_not_retry_non_transient_403(self):
+        _, mod = load_pipeline_module()
+        forbidden = HTTPError(
+            "https://10.43.0.1:443/apis/k8up.io/v1/namespaces/kube-prometheus-stack/snapshots",
+            403,
+            "Forbidden",
+            hdrs={},
+            fp=BytesIO(b'{"code":403}'),
+        )
+        sleeps = []
+
+        with (
+            mock.patch.object(mod, "api_settings", return_value=("https://10.43.0.1:443", {}, None)),
+            mock.patch.object(mod, "urlopen", side_effect=[forbidden]) as mocked_open,
+            mock.patch.object(mod.time, "sleep", side_effect=sleeps.append),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "HTTP 403"):
+                mod.api("/apis/k8up.io/v1/namespaces/kube-prometheus-stack/snapshots")
+
+        self.assertEqual(mocked_open.call_count, 1)
+        self.assertEqual(sleeps, [])
+
+    def test_api_retries_408_5xx_retry_after_header_and_get_transport_errors(self):
+        _, mod = load_pipeline_module()
+        url = "https://10.43.0.1:443/apis/k8up.io/v1/namespaces/kube-prometheus-stack/snapshots"
+        timeout_408 = HTTPError(url, 408, "Request Timeout", hdrs={}, fp=BytesIO(b""))
+        unavailable_503 = HTTPError(
+            url,
+            503,
+            "Service Unavailable",
+            hdrs={"Retry-After": "3"},
+            fp=BytesIO(b'{"code":503}'),
+        )
+        transport_err = URLError("temporary reset")
+        ok_resp = mock.MagicMock()
+        ok_resp.__enter__.return_value = ok_resp
+        ok_resp.read.return_value = b'{"items": ["ok"]}'
+        sleeps = []
+
+        with (
+            mock.patch.object(mod, "api_settings", return_value=("https://10.43.0.1:443", {}, None)),
+            mock.patch.object(
+                mod,
+                "urlopen",
+                side_effect=[timeout_408, unavailable_503, transport_err, ok_resp],
+            ) as mocked_open,
+            mock.patch.object(mod.time, "sleep", side_effect=sleeps.append),
+        ):
+            result = mod.api("/apis/k8up.io/v1/namespaces/kube-prometheus-stack/snapshots")
+
+        self.assertEqual(result, {"items": ["ok"]})
+        self.assertEqual(mocked_open.call_count, 4)
+        self.assertEqual(sleeps, [1.0, 3.0, 4.0])
+
+    def test_api_stops_after_max_attempts_on_persistent_503(self):
+        _, mod = load_pipeline_module()
+        url = "https://10.43.0.1:443/apis/k8up.io/v1/namespaces/kube-prometheus-stack/snapshots"
+        errors = [
+            HTTPError(url, 503, "Service Unavailable", hdrs={}, fp=BytesIO(b"unavailable"))
+            for _ in range(mod.API_MAX_ATTEMPTS)
+        ]
+        sleeps = []
+
+        with (
+            mock.patch.object(mod, "api_settings", return_value=("https://10.43.0.1:443", {}, None)),
+            mock.patch.object(mod, "urlopen", side_effect=errors) as mocked_open,
+            mock.patch.object(mod.time, "sleep", side_effect=sleeps.append),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "HTTP 503"):
+                mod.api("/apis/k8up.io/v1/namespaces/kube-prometheus-stack/snapshots")
+
+        self.assertEqual(mocked_open.call_count, mod.API_MAX_ATTEMPTS)
+        self.assertEqual(sleeps, [1.0, 2.0, 4.0, 8.0, 16.0])
+
+    def test_api_does_not_retry_post_transport_error(self):
+        _, mod = load_pipeline_module()
+        sleeps = []
+
+        with (
+            mock.patch.object(mod, "api_settings", return_value=("https://10.43.0.1:443", {}, None)),
+            mock.patch.object(mod, "urlopen", side_effect=URLError("reset after write")) as mocked_open,
+            mock.patch.object(mod.time, "sleep", side_effect=sleeps.append),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "POST"):
+                mod.api("/apis/k8up.io/v1/namespaces/kube-prometheus-stack/backups", "POST", {"kind": "Backup"})
+
+        self.assertEqual(mocked_open.call_count, 1)
+        self.assertEqual(sleeps, [])
 
 
 if __name__ == "__main__":

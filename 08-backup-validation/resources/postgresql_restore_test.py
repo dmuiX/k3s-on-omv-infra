@@ -5,10 +5,12 @@ from datetime import datetime, timezone
 from functools import cache
 from http.client import HTTPException
 from pathlib import Path
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 API = "https://kubernetes.default.svc"
+RETRYABLE_HTTP_CODES = frozenset({408, 429, 500, 502, 503, 504})
+API_MAX_ATTEMPTS = 6
 SOURCE_NS, VALIDATION_NS = "cloudnative-pg", "backup-validation"
 SOURCE = "k3s-postgres"
 RESTORE = STORE = "postgresql-restore-test"
@@ -25,18 +27,51 @@ def api_settings() -> tuple[dict[str, str], ssl.SSLContext]:
     return {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}, tls
 
 
+def _retry_delay(attempt: int, exc: Exception, detail: str = "") -> float:
+    backoff = float(min(2 ** (attempt - 1), 30))
+    if isinstance(exc, HTTPError):
+        retry_after = exc.headers.get("Retry-After") if exc.headers else None
+        if retry_after and retry_after.isdigit():
+            return max(backoff, min(float(retry_after), 60.0))
+        try:
+            parsed = json.loads(detail)
+            seconds = parsed.get("details", {}).get("retryAfterSeconds")
+            if isinstance(seconds, (int, float)) and seconds > 0:
+                return max(backoff, min(float(seconds), 60.0))
+        except (ValueError, TypeError, AttributeError):
+            pass
+    return backoff
+
+
 def api(path, method="GET", body=None, allowed=(), *, timeout: float = 30):
     headers, tls = api_settings()
     data = None if body is None else json.dumps(body).encode()
-    try:
-        with urlopen(Request(API + path, data=data, method=method, headers=headers), context=tls, timeout=timeout) as response:
-            payload = response.read()
-            return json.loads(payload) if payload else {}
-    except HTTPError as exc:
-        exc.close()
-        if exc.code in allowed:
-            return None
-        raise RuntimeError(f"Kubernetes API {method} {path} failed with HTTP {exc.code}") from exc
+    for attempt in range(1, API_MAX_ATTEMPTS + 1):
+        try:
+            with urlopen(Request(API + path, data=data, method=method, headers=headers), context=tls, timeout=timeout) as response:
+                payload = response.read()
+                return json.loads(payload) if payload else {}
+        except HTTPError as exc:
+            retry = (
+                method == "GET"
+                and exc.code not in allowed
+                and exc.code in RETRYABLE_HTTP_CODES
+                and attempt < API_MAX_ATTEMPTS
+            )
+            detail = exc.read().decode(errors="replace") if retry else ""
+            exc.close()
+            if exc.code in allowed:
+                return None
+            if retry:
+                time.sleep(_retry_delay(attempt, exc, detail))
+                continue
+            raise RuntimeError(f"Kubernetes API {method} {path} failed with HTTP {exc.code}") from exc
+        except (URLError, TimeoutError) as exc:
+            if method == "GET" and attempt < API_MAX_ATTEMPTS:
+                time.sleep(_retry_delay(attempt, exc))
+                continue
+            raise
+    raise AssertionError("unreachable")
 
 
 def secret(namespace, name):
