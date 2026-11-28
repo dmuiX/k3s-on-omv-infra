@@ -341,11 +341,17 @@ class NativeMemoryLimitApiTest(unittest.TestCase):
         for index, (app, chart, path, _, _, _, cap) in enumerate(CAPS):
             native = resources(repo, app, chart, path)
             self.assertEqual(native["limits"]["memory"], cap)
+            # Helm removes keys set to null during values merge; the raw Kubernetes API
+            # would instead interpret a literal null Quantity as 0.
+            rendered: Document = {
+                section: {k: v for k, v in values_map.items() if v is not None}
+                for section, values_map in copy.deepcopy(native).items()
+            }
             containers.append(
                 {
                     "name": f"profile-{index}",
                     "image": "registry.k8s.io/pause:3.10",
-                    "resources": copy.deepcopy(native),
+                    "resources": rendered,
                 }
             )
         admitted = timezone.NativeTimezoneAdmissionTest.admit(timezone.pod(containers))

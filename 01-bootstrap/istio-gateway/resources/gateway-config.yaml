@@ -51,6 +51,7 @@ data:
                   cpu: 50m
                   memory: 64Mi
                 limits:
+                  cpu: null
                   memory: 256Mi
   podDisruptionBudget: |
     spec:

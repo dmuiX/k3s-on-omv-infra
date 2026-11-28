@@ -26,6 +26,7 @@ spec:
             cpu: 100m
             memory: 256Mi
           limits:
+            cpu: null
             memory: 512Mi
         # Native chart shares this profile with the RBAC init container.
         resourcesRBACManager:
@@ -33,6 +34,7 @@ spec:
             cpu: 10m
             memory: 64Mi
           limits:
+            cpu: null
             memory: 128Mi
         podSecurityContextCrossplane:
           runAsNonRoot: true
