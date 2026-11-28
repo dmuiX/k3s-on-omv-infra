@@ -1,37 +1,37 @@
 {{- if .Values.proxy.enabled }}
-{{- /* --- 1. Resolve proxy identity, OIDC URLs, and optional mesh backchannel --- */ -}}
-{{- $appName        := include "web-access.name" . -}}
-{{- $proxyName      := include "web-access.proxyName" . -}}
-{{- $namespace      := include "web-access.namespace" . -}}
-{{- $scope          := default (printf "openid %s" $appName) .Values.proxy.scope -}}
-{{- $issuerURL      := required "proxy.issuerURL (or oidc.issuerURL) is required when proxy.enabled is true" (include "web-access.issuerURL" .) -}}
-{{- $redirectURL    := required "proxy.redirectURL (or oidc.redirectURLs[0]) is required when proxy.enabled is true" (include "web-access.redirectURL" .) -}}
-{{- $backchannelURL := include "web-access.backchannelURL" . -}}
+  {{- /* --- 1. Resolve proxy identity, OIDC URLs, and optional mesh backchannel --- */ -}}
+  {{- $appName        := include "web-access.name" . -}}
+  {{- $proxyName      := include "web-access.proxyName" . -}}
+  {{- $namespace      := include "web-access.namespace" . -}}
+  {{- $scope          := default (printf "openid %s" $appName) .Values.proxy.scope -}}
+  {{- $issuerURL      := required "proxy.issuerURL (or oidc.issuerURL) is required when proxy.enabled is true" (include "web-access.issuerURL" .) -}}
+  {{- $redirectURL    := required "proxy.redirectURL (or oidc.redirectURLs[0]) is required when proxy.enabled is true" (include "web-access.redirectURL" .) -}}
+  {{- $backchannelURL := include "web-access.backchannelURL" . -}}
 
-{{- /* --- 2. Validate OpenBao mesh backchannel against the public HTTPS issuer --- */ -}}
-{{- if $backchannelURL -}}
-  {{- $publicIssuer      := urlParse $issuerURL -}}
-  {{- $internalIssuer    := urlParse $backchannelURL -}}
-  {{- $backchannelInvalid := or
-    (ne $publicIssuer.scheme "https")
-    (not (regexMatch "^/v1/identity/oidc/provider/[a-z0-9-]+$" $publicIssuer.path))
-    (ne $internalIssuer.path $publicIssuer.path)
-    (not (has $internalIssuer.scheme (list "http" "https")))
-  -}}
-  {{- if $backchannelInvalid -}}
-    {{- fail "proxy.openbaoBackchannelURL must point to the same OpenBao OIDC provider as the public HTTPS issuer" -}}
-  {{- end -}}
-  {{- if and (eq $internalIssuer.scheme "http") (not .Values.proxy.ambient) -}}
-    {{- fail "an HTTP OpenBao backchannel requires Istio Ambient enrollment" -}}
-  {{- end -}}
-  {{- range $parsedURL := list $publicIssuer $internalIssuer -}}
-    {{- if or (empty $parsedURL.host) $parsedURL.query $parsedURL.fragment $parsedURL.userinfo -}}
-      {{- fail "OpenBao issuer and backchannel URLs must contain a host and no query, fragment, or credentials" -}}
+  {{- /* --- 2. Validate OpenBao mesh backchannel against the public HTTPS issuer --- */ -}}
+  {{- if $backchannelURL -}}
+    {{- $publicIssuer      := urlParse $issuerURL -}}
+    {{- $internalIssuer    := urlParse $backchannelURL -}}
+    {{- $backchannelInvalid := or
+      (ne $publicIssuer.scheme "https")
+      (not (regexMatch "^/v1/identity/oidc/provider/[a-z0-9-]+$" $publicIssuer.path))
+      (ne $internalIssuer.path $publicIssuer.path)
+      (not (has $internalIssuer.scheme (list "http" "https")))
+    -}}
+    {{- if $backchannelInvalid -}}
+      {{- fail "proxy.openbaoBackchannelURL must point to the same OpenBao OIDC provider as the public HTTPS issuer" -}}
+    {{- end -}}
+    {{- if and (eq $internalIssuer.scheme "http") (not .Values.proxy.ambient) -}}
+      {{- fail "an HTTP OpenBao backchannel requires Istio Ambient enrollment" -}}
+    {{- end -}}
+    {{- range $parsedURL := list $publicIssuer $internalIssuer -}}
+      {{- if or (empty $parsedURL.host) $parsedURL.query $parsedURL.fragment $parsedURL.userinfo -}}
+        {{- fail "OpenBao issuer and backchannel URLs must contain a host and no query, fragment, or credentials" -}}
+      {{- end -}}
     {{- end -}}
   {{- end -}}
-{{- end -}}
 
-{{- /* --- 3. Render inputs ConfigMap, Deployment, and Service --- */ -}}
+  {{- /* --- 3. Render inputs ConfigMap, Deployment, and Service --- */ -}}
 {{- include "web-access.proxyInputsConfigMap" . }}
 ---
 apiVersion: apps/v1

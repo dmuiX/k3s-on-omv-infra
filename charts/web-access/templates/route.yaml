@@ -1,42 +1,42 @@
 {{- if .Values.route.enabled }}
-{{- /* --- 1. Resolve route identity and validate required fields --- */ -}}
-{{- $route     := .Values.route -}}
-{{- $name      := default (include "web-access.name" .) $route.name -}}
-{{- $namespace := include "web-access.namespace" . -}}
+  {{- /* --- 1. Resolve route identity and validate required fields --- */ -}}
+  {{- $route     := .Values.route -}}
+  {{- $name      := default (include "web-access.name" .) $route.name -}}
+  {{- $namespace := include "web-access.namespace" . -}}
 
-{{- if empty $route.hostnames -}}
-  {{- fail "route.hostnames must be non-empty when route.enabled is true" -}}
-{{- end -}}
-{{- if empty $route.parentRefs -}}
-  {{- fail "route.parentRefs must be non-empty when route.enabled is true" -}}
-{{- end -}}
-
-{{- /* --- 2. Build rules (explicit route.rules override or single-backend shorthand) --- */ -}}
-{{- $rules := $route.rules -}}
-{{- if empty $rules -}}
-  {{- $backendName := $route.backend.name -}}
-  {{- if empty $backendName -}}
-    {{- if .Values.proxy.enabled -}}
-      {{- $backendName = include "web-access.proxyName" . -}}
-    {{- else -}}
-      {{- fail "route.backend.name is required when route.enabled is true and proxy.enabled is false" -}}
-    {{- end -}}
+  {{- if empty $route.hostnames -}}
+    {{- fail "route.hostnames must be non-empty when route.enabled is true" -}}
+  {{- end -}}
+  {{- if empty $route.parentRefs -}}
+    {{- fail "route.parentRefs must be non-empty when route.enabled is true" -}}
   {{- end -}}
 
-  {{- $defaultRule := dict
-    "backend" (dict
-      "name" $backendName
-      "port" $route.backend.port
-      "weight" $route.backend.weight
-    )
-    "matches" (list (dict "path" (dict "type" "PathPrefix" "value" "/")))
-    "filters" $route.filters
-    "timeouts" $route.timeouts
-  -}}
-  {{- $rules = list $defaultRule -}}
-{{- end -}}
+  {{- /* --- 2. Build rules (explicit route.rules override or single-backend shorthand) --- */ -}}
+  {{- $rules := $route.rules -}}
+  {{- if empty $rules -}}
+    {{- $backendName := $route.backend.name -}}
+    {{- if empty $backendName -}}
+      {{- if .Values.proxy.enabled -}}
+        {{- $backendName = include "web-access.proxyName" . -}}
+      {{- else -}}
+        {{- fail "route.backend.name is required when route.enabled is true and proxy.enabled is false" -}}
+      {{- end -}}
+    {{- end -}}
 
-{{- /* --- 3. Render Gateway API HTTPRoute with explicit backendRefs defaults --- */ -}}
+    {{- $defaultRule := dict
+      "backend" (dict
+        "name" $backendName
+        "port" $route.backend.port
+        "weight" $route.backend.weight
+      )
+      "matches" (list (dict "path" (dict "type" "PathPrefix" "value" "/")))
+      "filters" $route.filters
+      "timeouts" $route.timeouts
+    -}}
+    {{- $rules = list $defaultRule -}}
+  {{- end -}}
+
+  {{- /* --- 3. Render Gateway API HTTPRoute with explicit backendRefs defaults --- */ -}}
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
