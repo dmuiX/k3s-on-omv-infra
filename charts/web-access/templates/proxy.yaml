@@ -1,25 +1,31 @@
 {{- if .Values.proxy.enabled }}
 {{- /* --- 1. Resolve proxy identity, OIDC URLs, and optional mesh backchannel --- */ -}}
-{{- $baseName       := include "web-access.name" . -}}
+{{- $appName        := include "web-access.name" . -}}
 {{- $proxyName      := include "web-access.proxyName" . -}}
 {{- $namespace      := include "web-access.namespace" . -}}
-{{- $scope          := default (printf "openid %s" $baseName) .Values.proxy.scope -}}
+{{- $scope          := default (printf "openid %s" $appName) .Values.proxy.scope -}}
 {{- $issuerURL      := required "proxy.issuerURL (or oidc.issuerURL) is required when proxy.enabled is true" (include "web-access.issuerURL" .) -}}
 {{- $redirectURL    := required "proxy.redirectURL (or oidc.redirectURLs[0]) is required when proxy.enabled is true" (include "web-access.redirectURL" .) -}}
 {{- $backchannelURL := include "web-access.backchannelURL" . -}}
 
 {{- /* --- 2. Validate OpenBao mesh backchannel against the public HTTPS issuer --- */ -}}
 {{- if $backchannelURL -}}
-  {{- $public   := urlParse $issuerURL -}}
-  {{- $internal := urlParse $backchannelURL -}}
-  {{- if or (ne $public.scheme "https") (not (regexMatch "^/v1/identity/oidc/provider/[a-z0-9-]+$" $public.path)) (ne $internal.path $public.path) (not (has $internal.scheme (list "http" "https"))) -}}
+  {{- $publicIssuer      := urlParse $issuerURL -}}
+  {{- $internalIssuer    := urlParse $backchannelURL -}}
+  {{- $backchannelInvalid := or
+    (ne $publicIssuer.scheme "https")
+    (not (regexMatch "^/v1/identity/oidc/provider/[a-z0-9-]+$" $publicIssuer.path))
+    (ne $internalIssuer.path $publicIssuer.path)
+    (not (has $internalIssuer.scheme (list "http" "https")))
+  -}}
+  {{- if $backchannelInvalid -}}
     {{- fail "proxy.openbaoBackchannelURL must point to the same OpenBao OIDC provider as the public HTTPS issuer" -}}
   {{- end -}}
-  {{- if and (eq $internal.scheme "http") (not .Values.proxy.ambient) -}}
+  {{- if and (eq $internalIssuer.scheme "http") (not .Values.proxy.ambient) -}}
     {{- fail "an HTTP OpenBao backchannel requires Istio Ambient enrollment" -}}
   {{- end -}}
-  {{- range list $public $internal -}}
-    {{- if or (empty .host) .query .fragment .userinfo -}}
+  {{- range $parsedURL := list $publicIssuer $internalIssuer -}}
+    {{- if or (empty $parsedURL.host) $parsedURL.query $parsedURL.fragment $parsedURL.userinfo -}}
       {{- fail "OpenBao issuer and backchannel URLs must contain a host and no query, fragment, or credentials" -}}
     {{- end -}}
   {{- end -}}
