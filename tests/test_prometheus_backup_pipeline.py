@@ -1,8 +1,10 @@
 """Offline unit and manifest tests for prometheus-backup-pipeline."""
+from io import BytesIO
 from pathlib import Path
 import types
 import unittest
 from unittest import mock
+from urllib.error import HTTPError
 
 import yaml
 
@@ -118,6 +120,57 @@ class PrometheusBackupPipelineTest(unittest.TestCase):
                 mod.run("test")
 
         self.assertEqual(posts, ["/apis/k8up.io/v1/namespaces/kube-prometheus-stack/backups"])
+
+    def test_api_retries_transient_429_storage_reinitializing(self):
+        _, mod = load_pipeline_module()
+        body = (
+            b'{"kind":"Status","status":"Failure","message":"storage is (re)initializing",'
+            b'"reason":"TooManyRequests","details":{"retryAfterSeconds":2},"code":429}'
+        )
+        transient = HTTPError(
+            "https://10.43.0.1:443/apis/k8up.io/v1/namespaces/kube-prometheus-stack/snapshots",
+            429,
+            "Too Many Requests",
+            hdrs={},
+            fp=BytesIO(body),
+        )
+        ok_resp = mock.MagicMock()
+        ok_resp.__enter__.return_value = ok_resp
+        ok_resp.read.return_value = b'{"items": []}'
+        sleeps = []
+
+        with (
+            mock.patch.object(mod, "api_settings", return_value=("https://10.43.0.1:443", {}, None)),
+            mock.patch.object(mod, "urlopen", side_effect=[transient, ok_resp]) as mocked_open,
+            mock.patch.object(mod.time, "sleep", side_effect=sleeps.append),
+        ):
+            result = mod.api("/apis/k8up.io/v1/namespaces/kube-prometheus-stack/snapshots")
+
+        self.assertEqual(result, {"items": []})
+        self.assertEqual(mocked_open.call_count, 2)
+        self.assertEqual(sleeps, [2.0])
+
+    def test_api_does_not_retry_non_transient_403(self):
+        _, mod = load_pipeline_module()
+        forbidden = HTTPError(
+            "https://10.43.0.1:443/apis/k8up.io/v1/namespaces/kube-prometheus-stack/snapshots",
+            403,
+            "Forbidden",
+            hdrs={},
+            fp=BytesIO(b'{"code":403}'),
+        )
+        sleeps = []
+
+        with (
+            mock.patch.object(mod, "api_settings", return_value=("https://10.43.0.1:443", {}, None)),
+            mock.patch.object(mod, "urlopen", side_effect=[forbidden]) as mocked_open,
+            mock.patch.object(mod.time, "sleep", side_effect=sleeps.append),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "HTTP 403"):
+                mod.api("/apis/k8up.io/v1/namespaces/kube-prometheus-stack/snapshots")
+
+        self.assertEqual(mocked_open.call_count, 1)
+        self.assertEqual(sleeps, [])
 
 
 if __name__ == "__main__":
