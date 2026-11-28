@@ -46,7 +46,16 @@ class PrometheusBackupPipelineTest(unittest.TestCase):
         self.assertFalse(container["securityContext"]["allowPrivilegeEscalation"])
 
         _, mod = load_pipeline_module()
-        cleanup_mounts = mod.build_cleanup_job("test")["spec"]["template"]["spec"]["containers"][0]["volumeMounts"]
+        self.assertEqual(mod.build_backup("test")["metadata"]["name"], "prometheus-test")
+        self.assertEqual(mod.build_check("test")["metadata"]["name"], "prometheus-test")
+        self.assertEqual(mod.build_prune("test")["metadata"]["name"], "prometheus-test")
+        cleanup_job = mod.build_cleanup_job("test")
+        self.assertEqual(cleanup_job["metadata"]["name"], "prometheus-snapshot-cleanup-test")
+        self.assertEqual(
+            cleanup_job["spec"]["template"]["metadata"]["labels"]["app.kubernetes.io/name"],
+            "prometheus-snapshot-cleanup",
+        )
+        cleanup_mounts = cleanup_job["spec"]["template"]["spec"]["containers"][0]["volumeMounts"]
         self.assertEqual(cleanup_mounts, [{
             "name": "prometheus-data",
             "mountPath": "/prometheus",
@@ -95,7 +104,7 @@ class PrometheusBackupPipelineTest(unittest.TestCase):
             return {"status": {"conditions": [{"type": "Completed", "status": "True", "reason": "Succeeded"}]}}
 
         with mock.patch.object(mod, "api", side_effect=fake_api), mock.patch.object(mod.time, "sleep"):
-            with self.assertRaisesRegex(RuntimeError, "checks/prometheus-tsdb-check-test"):
+            with self.assertRaisesRegex(RuntimeError, "checks/prometheus-test"):
                 mod.run("test")
 
         self.assertEqual(posts, [
