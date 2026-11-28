@@ -1,23 +1,28 @@
 {{- if .Values.oidc.enabled }}
-{{- $baseName := include "web-access.name" . -}}
-{{- $v := .Values.oidc -}}
-{{- $clientCfg := $v.client | default dict -}}
+{{- /* --- 1. Resolve defaults for key, scopes, assignments, client, and provider --- */ -}}
+{{- $baseName   := include "web-access.name" . -}}
+{{- $oidc       := .Values.oidc -}}
+{{- $clientCfg  := $oidc.client | default dict -}}
 {{- $clientName := default $baseName $clientCfg.name -}}
-{{- $key := merge (deepCopy ($v.key | default dict)) (dict "name" $clientName) -}}
+
+{{- $key       := merge (deepCopy ($oidc.key | default dict)) (dict "name" $clientName) -}}
 {{- $clientKey := default $key.name $clientCfg.key -}}
+
 {{- $defaultScopeTemplate := "{\"username\":{{identity.entity.name}},\"groups\":{{identity.entity.groups.names}}}" -}}
-{{- $scopes := $v.scopes -}}
+{{- $scopes := $oidc.scopes -}}
 {{- if kindIs "invalid" $scopes -}}
-{{- $scopes = list (dict "name" $clientName "template" $defaultScopeTemplate) -}}
+  {{- $scopes = list (dict "name" $clientName "template" $defaultScopeTemplate) -}}
 {{- end -}}
 {{- $scopeNames := list -}}
 {{- range $scopes -}}
-{{- $scopeNames = append $scopeNames .name -}}
+  {{- $scopeNames = append $scopeNames .name -}}
 {{- end -}}
-{{- $assignments := $v.assignments -}}
+
+{{- $assignments := $oidc.assignments -}}
 {{- if kindIs "invalid" $assignments -}}
-{{- $assignments = list (dict "name" (printf "%s-admin" $clientName)) -}}
+  {{- $assignments = list (dict "name" (printf "%s-admin" $clientName)) -}}
 {{- end -}}
+
 {{- $clientAssignments := $clientCfg.assignments -}}
 {{- if empty $clientAssignments -}}
   {{- $derivedAssignments := list -}}
@@ -26,31 +31,43 @@
   {{- end -}}
   {{- $clientAssignments = $derivedAssignments -}}
 {{- end -}}
+
+{{- $provider := merge
+  (deepCopy ($oidc.provider | default dict))
+  (dict "name" $clientName "clientRefs" (list $clientName) "scopeRefs" $scopeNames)
+-}}
+
+{{- /* --- 2. Fail-closed validation of URLs and key/provider consistency --- */ -}}
 {{- if empty $clientAssignments -}}
-{{- fail "oidc.client.assignments must be non-empty when oidc.enabled is true" -}}
+  {{- fail "oidc.client.assignments must be non-empty when oidc.enabled is true" -}}
 {{- end -}}
-{{- $provider := merge (deepCopy ($v.provider | default dict)) (dict "name" $clientName "clientRefs" (list $clientName) "scopeRefs" $scopeNames) -}}
-{{- $issuerURL := required "oidc.issuerURL is required when oidc.enabled is true" $v.issuerURL -}}
-{{- $issuer := urlParse $issuerURL -}}
-{{- if or (ne $issuer.scheme "https") (empty $issuer.host) (not (empty $issuer.userinfo)) (not (empty $issuer.query)) (not (empty $issuer.fragment)) (ne $issuer.path (printf "/v1/identity/oidc/provider/%s" $provider.name)) -}}
-{{- fail "oidc.issuerURL must be the dedicated provider HTTPS URL" -}}
+
+{{- $issuerURL := required "oidc.issuerURL is required when oidc.enabled is true" $oidc.issuerURL -}}
+{{- $issuer    := urlParse $issuerURL -}}
+{{- $expectedIssuerPath := printf "/v1/identity/oidc/provider/%s" $provider.name -}}
+{{- if or (ne $issuer.scheme "https") (empty $issuer.host) (not (empty $issuer.userinfo)) (not (empty $issuer.query)) (not (empty $issuer.fragment)) (ne $issuer.path $expectedIssuerPath) -}}
+  {{- fail "oidc.issuerURL must be the dedicated provider HTTPS URL" -}}
 {{- end -}}
-{{- if empty $v.redirectURLs -}}
-{{- fail "oidc.redirectURLs must be non-empty when oidc.enabled is true" -}}
+
+{{- if empty $oidc.redirectURLs -}}
+  {{- fail "oidc.redirectURLs must be non-empty when oidc.enabled is true" -}}
 {{- end -}}
-{{- range $v.redirectURLs -}}
-{{- $uri := urlParse . -}}
-{{- if or (ne $uri.scheme "https") (empty $uri.host) (not (empty $uri.userinfo)) (not (empty $uri.fragment)) (contains "REQUIRED_" .) -}}
-{{- fail "oidc.redirectURLs must be confirmed HTTPS URLs" -}}
+{{- range $oidc.redirectURLs -}}
+  {{- $uri := urlParse . -}}
+  {{- if or (ne $uri.scheme "https") (empty $uri.host) (not (empty $uri.userinfo)) (not (empty $uri.fragment)) (contains "REQUIRED_" .) -}}
+    {{- fail "oidc.redirectURLs must be confirmed HTTPS URLs" -}}
+  {{- end -}}
 {{- end -}}
-{{- end -}}
+
 {{- if or (ne $clientKey $key.name) (not (has $clientName $provider.clientRefs)) -}}
-{{- fail "client must reference this key and be explicitly allowed by this provider" -}}
+  {{- fail "client must reference this key and be explicitly allowed by this provider" -}}
 {{- end -}}
-{{- range $v.groups }}
+
+{{- /* --- 3. Render Crossplane OpenBao OIDC resources --- */ -}}
+{{- range $oidc.groups }}
 {{- $extMembers := true }}
 {{- if hasKey . "externalMemberEntityIds" }}
-{{- $extMembers = .externalMemberEntityIds }}
+  {{- $extMembers = .externalMemberEntityIds }}
 {{- end }}
 ---
 apiVersion: identity.vault.upbound.io/v1alpha1
@@ -58,7 +75,7 @@ kind: Group
 metadata:
   {{- include "web-access.oidcMetadata" . | nindent 2 }}
 spec:
-  {{- include "web-access.oidcCommon" $v | nindent 2 }}
+  {{- include "web-access.oidcCommon" $oidc | nindent 2 }}
   forProvider:
     name: {{ .externalName | quote }}
     type: {{ default "internal" .type | quote }}
@@ -71,7 +88,7 @@ kind: OidcAssignment
 metadata:
   {{- include "web-access.oidcMetadata" . | nindent 2 }}
 spec:
-  {{- include "web-access.oidcCommon" $v | nindent 2 }}
+  {{- include "web-access.oidcCommon" $oidc | nindent 2 }}
   forProvider:
     name: {{ .name | quote }}
     groupIdsRefs:
@@ -85,7 +102,7 @@ kind: OidcKey
 metadata:
   {{- include "web-access.oidcMetadata" $key | nindent 2 }}
 spec:
-  {{- include "web-access.oidcCommon" $v | nindent 2 }}
+  {{- include "web-access.oidcCommon" $oidc | nindent 2 }}
   forProvider:
     name: {{ $key.name | quote }}
     algorithm: {{ $key.algorithm | quote }}
@@ -100,7 +117,7 @@ kind: OidcScope
 metadata:
   {{- include "web-access.oidcMetadata" . | nindent 2 }}
 spec:
-  {{- include "web-access.oidcCommon" $v | nindent 2 }}
+  {{- include "web-access.oidcCommon" $oidc | nindent 2 }}
   forProvider:
     name: {{ .name | quote }}
     template: {{ default $defaultScopeTemplate .template | quote }}
@@ -112,7 +129,7 @@ metadata:
   {{- $clientMeta := merge (deepCopy $clientCfg) (dict "name" $clientName) -}}
   {{- include "web-access.oidcMetadata" $clientMeta | nindent 2 }}
 spec:
-  {{- include "web-access.oidcCommon" $v | nindent 2 }}
+  {{- include "web-access.oidcCommon" $oidc | nindent 2 }}
   forProvider:
     name: {{ $clientName | quote }}
     clientType: confidential
@@ -120,7 +137,7 @@ spec:
     assignments:
       {{- toYaml $clientAssignments | nindent 6 }}
     redirectUris:
-      {{- toYaml $v.redirectURLs | nindent 6 }}
+      {{- toYaml $oidc.redirectURLs | nindent 6 }}
     idTokenTtl: {{ $clientCfg.idTokenTtl }}
     accessTokenTtl: {{ $clientCfg.accessTokenTtl }}
   {{- with $clientCfg.connectionSecret }}
@@ -134,7 +151,7 @@ kind: OidcProvider
 metadata:
   {{- include "web-access.oidcMetadata" $provider | nindent 2 }}
 spec:
-  {{- include "web-access.oidcCommon" $v | nindent 2 }}
+  {{- include "web-access.oidcCommon" $oidc | nindent 2 }}
   forProvider:
     name: {{ $provider.name | quote }}
     issuerHost: {{ $issuer.host | quote }}

@@ -1,11 +1,15 @@
 {{- if and .Values.proxy.enabled .Values.proxy.provisioner.enabled }}
-{{- $p := .Values.proxy.provisioner }}
-{{- $namespace := include "web-access.namespace" . }}
-{{- $client := default (include "web-access.name" .) $p.client }}
-{{- $name := default (printf "%s-oidc-provisioner" $client) $p.name }}
-{{- $role := default $name $p.role }}
-{{- $kvPath := default (printf "%s/oidc-proxy" $client) $p.kvPath }}
-{{- $syncWave := default "1" $p.syncWave }}
+{{- /*
+  Derive provisioner identity, OpenBao auth role, and KV path from the app name
+  unless explicitly overridden.
+*/ -}}
+{{- $provisioner := .Values.proxy.provisioner }}
+{{- $namespace   := include "web-access.namespace" . }}
+{{- $client      := default (include "web-access.name" .) $provisioner.client }}
+{{- $name        := default (printf "%s-oidc-provisioner" $client) $provisioner.name }}
+{{- $role        := default $name $provisioner.role }}
+{{- $kvPath      := default (printf "%s/oidc-proxy" $client) $provisioner.kvPath }}
+{{- $syncWave    := default "1" $provisioner.syncWave }}
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -85,7 +89,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: provision
-          image: {{ $p.image }}
+          image: {{ $provisioner.image }}
           command: [python3, -B, /config/provision.py]
           resources:
             requests:
