@@ -466,7 +466,7 @@ class PlatformContractTest < Minitest::Test
     assert_equal true, postgresql.dig("spec", "postgresql", "synchronous", "failoverQuorum")
     refute postgresql.key?("certificates")
     refute_match(/serverTLSSecret|sslrootcert|verify-full/, (INFRA / "07-k3s-postgres/resources/cluster.yaml").read)
-    assert_includes (INFRA / "07-k3s-postgres/resources/network-policy.yaml").read, "mode: STRICT"
+    assert_includes (INFRA / "07-k3s-postgres/resources/peer-authentication.yaml").read, "mode: STRICT"
 
     monitoring = chart_values("09-kube-prometheus-stack/app.yml")
     assert_equal 2, monitoring.dig("prometheus", "prometheusSpec", "replicas")

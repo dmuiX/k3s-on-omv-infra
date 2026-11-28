@@ -1,0 +1,25 @@
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: postgresql-strict
+  namespace: cloudnative-pg
+spec:
+  mtls:
+    mode: STRICT
+---
+# The Kubernetes API server cannot originate HBONE. Its admission request
+# already uses CNPG's authenticated HTTPS webhook on workload port 9443.
+apiVersion: security.istio.io/v1
+kind: PeerAuthentication
+metadata:
+  name: cnpg-webhook
+  namespace: cloudnative-pg
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cloudnative-pg
+  mtls:
+    mode: STRICT
+  portLevelMtls:
+    9443:
+      mode: PERMISSIVE
