@@ -180,7 +180,7 @@ class OpenBaoNetworkTests(unittest.TestCase):
         self.assertNotIn('valueFiles', self.app['spec']['sources'][0]['helm'])
 
     def test_security_policy_identities_are_stable(self):
-        documents = yaml.safe_load_all((ROOT / '04-openbao/resources/security.yaml').read_text())
+        documents = yaml.safe_load_all((ROOT / '04-openbao/resources/network-policy.yaml').read_text())
         policies = {d['metadata']['name']: d for d in documents if d}
         self.assertEqual(set(policies), {
             'default-deny', 'allow-openbao-agent-injector', 'allow-openbao-snapshot-egress'})

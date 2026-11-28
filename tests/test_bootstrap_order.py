@@ -208,7 +208,7 @@ class BootstrapOrderTest(unittest.TestCase):
         self.assertIn('postgresql-retention-access.yaml', config['resources'])
 
     def test_openbao_ambient_transport_preserves_peer_scope(self):
-        docs = list(yaml.safe_load_all((ROOT / '04-openbao/resources/security.yaml').read_text()))
+        docs = list(yaml.safe_load_all((ROOT / '04-openbao/resources/network-policy.yaml').read_text()))
         app = applications()['openbao']
         policy = app['spec']['sources'][0]['helm']['valuesObject']['server']['networkPolicy']
         self.assertTrue(policy['enabled'])
