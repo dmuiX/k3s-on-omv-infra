@@ -1,0 +1,134 @@
+{{- if and .Values.proxy.enabled .Values.proxy.provisioner.enabled }}
+  {{- /*
+    Derive provisioner identity, OpenBao auth role, and KV path from the app name
+    unless explicitly overridden.
+  */ -}}
+  {{- $provisioner := .Values.proxy.provisioner -}}
+  {{- $namespace   := include "web-access.namespace" . -}}
+  {{- $client      := default (include "web-access.name" .) $provisioner.client -}}
+  {{- $name        := default (printf "%s-oidc-provisioner" $client) $provisioner.name -}}
+  {{- $role        := default $name $provisioner.role -}}
+  {{- $kvPath      := default (printf "%s/oidc-proxy" $client) $provisioner.kvPath -}}
+  {{- $syncWave    := default "1" $provisioner.syncWave }}
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ $name }}
+  namespace: {{ $namespace }}
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ $name }}
+  namespace: {{ $namespace }}
+data:
+  provision.py: |
+    import base64
+    import secrets
+    import sys
+    sys.path.insert(0, "/helper")
+    from credential_helpers import BAO, Failure, ensure, fields, login, request, run
+
+    def main():
+        token = login({{ $role | quote }})
+        client = request(BAO, {{ printf "identity/oidc/client/%s" $client | quote }}, token)["data"]
+        fields(client, "client_id", "client_secret")
+
+        def validate(data):
+            fields(data, "client-id", "client-secret", "cookie-secret")
+            if (data["client-id"] != client["client_id"] or
+                    data["client-secret"] != client["client_secret"]):
+                raise Failure({{ printf "Stored %s credentials do not match the native OIDC client" $client | quote }})
+            try:
+                key = base64.b64decode(data["cookie-secret"], altchars=b"-_", validate=True)
+            except ValueError:
+                raise Failure({{ printf "Invalid %s cookie secret encoding" $client | quote }}) from None
+            if len(key) != 32 or base64.urlsafe_b64encode(key).decode() != data["cookie-secret"]:
+                raise Failure({{ printf "%s cookie secret must encode 32 bytes as URL-safe Base64" $client | quote }})
+
+        ensure(token, {{ $kvPath | quote }}, lambda: {
+            "client-id": client["client_id"],
+            "client-secret": client["client_secret"],
+            "cookie-secret": base64.urlsafe_b64encode(secrets.token_bytes(32)).decode(),
+        }, validate)
+
+    if __name__ == "__main__":
+        run(main)
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $name }}
+  namespace: {{ $namespace }}
+  annotations:
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+    argocd.argoproj.io/sync-wave: {{ $syncWave | quote }}
+spec:
+  # Allow time for Crossplane to reconcile the client and the login role.
+  backoffLimit: 6
+  activeDeadlineSeconds: 600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: {{ $name }}
+        {{- if .Values.proxy.ambient }}
+        istio.io/dataplane-mode: ambient
+        {{- end }}
+    spec:
+      serviceAccountName: {{ $name }}
+      automountServiceAccountToken: false
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: provision
+          image: {{ $provisioner.image }}
+          command:
+            - python3
+            - -B
+            - /config/provision.py
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 500m
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          volumeMounts:
+            - name: config
+              mountPath: /config
+              readOnly: true
+            - name: helper
+              mountPath: /helper
+              readOnly: true
+            - name: openbao-auth
+              mountPath: /var/run/openbao
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: {{ $name }}
+        - name: helper
+          configMap:
+            name: credential-custody
+        - name: openbao-auth
+          projected:
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  audience: {{ printf "vault://%s" $role | quote }}
+                  expirationSeconds: 900
+{{- end }}

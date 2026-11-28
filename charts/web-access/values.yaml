@@ -1,0 +1,74 @@
+# Explicit identity; never derived from the Helm release name.
+name: ""
+namespace: ""
+
+route:
+  enabled: true
+  name: "" # defaults to .Values.name
+  syncWave: ""
+  parentRefs:
+    - group: gateway.networking.k8s.io
+      kind: Gateway
+      name: istio-gateway
+      namespace: istio-gateway
+      sectionName: https
+  hostnames: []
+  # Single-rule shorthand (used when rules is empty).
+  # When proxy.enabled is true, defaults to <proxy.name>:80.
+  backend:
+    name: ""
+    port: 80
+    weight: 1
+  filters: []
+  timeouts: {}
+  # Optional full rules override for multi-rule routes.
+  rules: []
+
+oidc:
+  enabled: false
+  credentialHelper: true # renders credential-custody ConfigMap when oidc.enabled
+  providerConfigName: openbao
+  deletionPolicy: Orphan
+  # Environment-specific URLs supplied by Live (reused by proxy by default).
+  issuerURL: ""
+  redirectURLs: []
+  groups: []
+  # Defaults to [{name: "<name>-admin", groupRefs: ["platform-admin"]}] when null.
+  # Set explicitly to [] for apps like Radar that use client.assignments: [allow_all].
+  assignments: null
+  key:
+    algorithm: RS256
+    allowedClientIds:
+      - '*'
+    rotationPeriod: 86400
+    verificationTtl: 172800
+  scopes: null # defaults to [{name: "<name>", template: defaultScopeTemplate}]
+  client:
+    idTokenTtl: 3600
+    accessTokenTtl: 3600
+  provider: {}
+
+proxy:
+  enabled: false
+  name: "" # defaults to "<name>-oidc-proxy"
+  upstream: ""
+  scope: "" # defaults to "openid <name>"
+  allowedGroup: platform:admin
+  passBasicAuth: false
+  ambient: true
+  podSecurityContext:
+    seccompProfile:
+      type: RuntimeDefault
+  # Defaults to http://openbao-active.openbao.svc.cluster.local:8200/v1/identity/oidc/provider/<name>
+  # when ambient is true. Set explicitly to "" to disable backchannel discovery override.
+  openbaoBackchannelURL: null
+  issuerURL: "" # defaults to .Values.oidc.issuerURL
+  redirectURL: "" # defaults to first entry of .Values.oidc.redirectURLs
+  provisioner:
+    enabled: false
+    name: "" # defaults to "<name>-oidc-provisioner"
+    role: "" # defaults to provisioner.name
+    client: "" # defaults to .Values.name
+    kvPath: "" # defaults to "<client>/oidc-proxy"
+    syncWave: "1"
+    image: python:3.15.2-slim-trixie@sha256:63bb298d2b7b88f176f51b5189f54ce6535c997682ea70885d2132f5d473a8a5

@@ -1,0 +1,187 @@
+{{- if .Values.oidc.enabled }}
+  {{- /* --- 1. Resolve defaults for key, scopes, assignments, client, and provider --- */ -}}
+  {{- $appName      := include "web-access.name" . -}}
+  {{- $oidc         := .Values.oidc -}}
+  {{- $clientConfig := $oidc.client | default dict -}}
+  {{- $clientName   := default $appName $clientConfig.name -}}
+
+  {{- $keyConfig := merge (deepCopy ($oidc.key | default dict)) (dict "name" $clientName) -}}
+  {{- $clientKey := default $keyConfig.name $clientConfig.key -}}
+
+  {{- $defaultScopeTemplate := "{\"username\":{{identity.entity.name}},\"groups\":{{identity.entity.groups.names}}}" -}}
+  {{- $scopes := $oidc.scopes -}}
+  {{- if kindIs "invalid" $scopes -}}
+    {{- $scopes = list (dict "name" $clientName "template" $defaultScopeTemplate) -}}
+  {{- end -}}
+
+  {{- $scopeNames := list -}}
+  {{- range $scope := $scopes -}}
+    {{- $scopeNames = append $scopeNames $scope.name -}}
+  {{- end -}}
+
+  {{- $assignments := $oidc.assignments -}}
+  {{- if kindIs "invalid" $assignments -}}
+    {{- $assignments = list (dict "name" (printf "%s-admin" $clientName)) -}}
+  {{- end -}}
+
+  {{- $clientAssignments := $clientConfig.assignments -}}
+  {{- if empty $clientAssignments -}}
+    {{- $derivedAssignments := list -}}
+    {{- range $assignment := $assignments -}}
+      {{- $derivedAssignments = append $derivedAssignments $assignment.name -}}
+    {{- end -}}
+    {{- $clientAssignments = $derivedAssignments -}}
+  {{- end -}}
+
+  {{- $provider := merge
+    (deepCopy ($oidc.provider | default dict))
+    (dict
+      "name"       $clientName
+      "clientRefs" (list $clientName)
+      "scopeRefs"  $scopeNames
+    )
+  -}}
+
+  {{- /* --- 2. Fail-closed validation of URLs and key/provider consistency --- */ -}}
+  {{- if empty $clientAssignments -}}
+    {{- fail "oidc.client.assignments must be non-empty when oidc.enabled is true" -}}
+  {{- end -}}
+
+  {{- $issuerURL          := required "oidc.issuerURL is required when oidc.enabled is true" $oidc.issuerURL -}}
+  {{- $parsedIssuer       := urlParse $issuerURL -}}
+  {{- $expectedIssuerPath := printf "/v1/identity/oidc/provider/%s" $provider.name -}}
+  {{- $issuerInvalid      := or
+    (ne $parsedIssuer.scheme "https")
+    (empty $parsedIssuer.host)
+    (not (empty $parsedIssuer.userinfo))
+    (not (empty $parsedIssuer.query))
+    (not (empty $parsedIssuer.fragment))
+    (ne $parsedIssuer.path $expectedIssuerPath)
+  -}}
+  {{- if $issuerInvalid -}}
+    {{- fail "oidc.issuerURL must be the dedicated provider HTTPS URL" -}}
+  {{- end -}}
+
+  {{- if empty $oidc.redirectURLs -}}
+    {{- fail "oidc.redirectURLs must be non-empty when oidc.enabled is true" -}}
+  {{- end -}}
+  {{- range $redirectURL := $oidc.redirectURLs -}}
+    {{- $parsedRedirect  := urlParse $redirectURL -}}
+    {{- $redirectInvalid := or
+      (ne $parsedRedirect.scheme "https")
+      (empty $parsedRedirect.host)
+      (not (empty $parsedRedirect.userinfo))
+      (not (empty $parsedRedirect.fragment))
+      (contains "REQUIRED_" $redirectURL)
+    -}}
+    {{- if $redirectInvalid -}}
+      {{- fail "oidc.redirectURLs must be confirmed HTTPS URLs" -}}
+    {{- end -}}
+  {{- end -}}
+
+  {{- if or (ne $clientKey $keyConfig.name) (not (has $clientName $provider.clientRefs)) -}}
+    {{- fail "client must reference this key and be explicitly allowed by this provider" -}}
+  {{- end -}}
+
+  {{- /* --- 3. Render Crossplane OpenBao OIDC resources --- */ -}}
+  {{- range $group := $oidc.groups }}
+    {{- $externalMemberEntityIds := true }}
+    {{- if hasKey $group "externalMemberEntityIds" }}
+      {{- $externalMemberEntityIds = $group.externalMemberEntityIds }}
+    {{- end }}
+---
+apiVersion: identity.vault.upbound.io/v1alpha1
+kind: Group
+metadata:
+  {{- include "web-access.oidcMetadata" $group | nindent 2 }}
+spec:
+  {{- include "web-access.oidcCommon" $oidc | nindent 2 }}
+  forProvider:
+    name: {{ $group.externalName | quote }}
+    type: {{ default "internal" $group.type | quote }}
+    externalMemberEntityIds: {{ $externalMemberEntityIds }}
+  {{- end }}
+  {{- range $assignment := $assignments }}
+---
+apiVersion: identity.vault.upbound.io/v1alpha1
+kind: OidcAssignment
+metadata:
+  {{- include "web-access.oidcMetadata" $assignment | nindent 2 }}
+spec:
+  {{- include "web-access.oidcCommon" $oidc | nindent 2 }}
+  forProvider:
+    name: {{ $assignment.name | quote }}
+    groupIdsRefs:
+      {{- range $groupRef := (default (list "platform-admin") $assignment.groupRefs) }}
+      - name: {{ $groupRef | quote }}
+      {{- end }}
+  {{- end }}
+---
+apiVersion: identity.vault.upbound.io/v1alpha1
+kind: OidcKey
+metadata:
+  {{- include "web-access.oidcMetadata" $keyConfig | nindent 2 }}
+spec:
+  {{- include "web-access.oidcCommon" $oidc | nindent 2 }}
+  forProvider:
+    name: {{ $keyConfig.name | quote }}
+    algorithm: {{ $keyConfig.algorithm | quote }}
+    allowedClientIds:
+      {{- toYaml $keyConfig.allowedClientIds | nindent 6 }}
+    rotationPeriod: {{ $keyConfig.rotationPeriod }}
+    verificationTtl: {{ $keyConfig.verificationTtl }}
+  {{- range $scope := $scopes }}
+---
+apiVersion: identity.vault.upbound.io/v1alpha1
+kind: OidcScope
+metadata:
+  {{- include "web-access.oidcMetadata" $scope | nindent 2 }}
+spec:
+  {{- include "web-access.oidcCommon" $oidc | nindent 2 }}
+  forProvider:
+    name: {{ $scope.name | quote }}
+    template: {{ default $defaultScopeTemplate $scope.template | quote }}
+  {{- end }}
+---
+apiVersion: identity.vault.upbound.io/v1alpha1
+kind: OidcClient
+metadata:
+  {{- $clientMetadata := merge (deepCopy $clientConfig) (dict "name" $clientName) -}}
+  {{- include "web-access.oidcMetadata" $clientMetadata | nindent 2 }}
+spec:
+  {{- include "web-access.oidcCommon" $oidc | nindent 2 }}
+  forProvider:
+    name: {{ $clientName | quote }}
+    clientType: confidential
+    key: {{ $clientKey | quote }}
+    assignments:
+      {{- toYaml $clientAssignments | nindent 6 }}
+    redirectUris:
+      {{- toYaml $oidc.redirectURLs | nindent 6 }}
+    idTokenTtl: {{ $clientConfig.idTokenTtl }}
+    accessTokenTtl: {{ $clientConfig.accessTokenTtl }}
+  {{- if $clientConfig.connectionSecret }}
+  writeConnectionSecretToRef:
+    name: {{ $clientConfig.connectionSecret.name | quote }}
+    namespace: {{ $clientConfig.connectionSecret.namespace | quote }}
+  {{- end }}
+---
+apiVersion: identity.vault.upbound.io/v1alpha1
+kind: OidcProvider
+metadata:
+  {{- include "web-access.oidcMetadata" $provider | nindent 2 }}
+spec:
+  {{- include "web-access.oidcCommon" $oidc | nindent 2 }}
+  forProvider:
+    name: {{ $provider.name | quote }}
+    issuerHost: {{ $parsedIssuer.host | quote }}
+    httpsEnabled: true
+    allowedClientIdsRefs:
+      {{- range $clientRef := $provider.clientRefs }}
+      - name: {{ $clientRef | quote }}
+      {{- end }}
+    scopesSupportedRefs:
+      {{- range $scopeRef := $provider.scopeRefs }}
+      - name: {{ $scopeRef | quote }}
+      {{- end }}
+{{- end }}
