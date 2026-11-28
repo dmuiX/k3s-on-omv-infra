@@ -190,7 +190,7 @@ data:
         return {
             "apiVersion": "k8up.io/v1",
             "kind": "Backup",
-            "metadata": {"name": f"prometheus-tsdb-{run_id}", "namespace": NAMESPACE},
+            "metadata": {"name": f"prometheus-{run_id}", "namespace": NAMESPACE},
             "spec": {
                 "backend": BACKEND,
                 "podConfigRef": POD_CONFIG_REF,
@@ -207,7 +207,7 @@ data:
         return {
             "apiVersion": "k8up.io/v1",
             "kind": "Check",
-            "metadata": {"name": f"prometheus-tsdb-check-{run_id}", "namespace": NAMESPACE},
+            "metadata": {"name": f"prometheus-{run_id}", "namespace": NAMESPACE},
             "spec": {
                 "backend": BACKEND,
                 "podConfigRef": POD_CONFIG_REF,
@@ -222,7 +222,7 @@ data:
         return {
             "apiVersion": "batch/v1",
             "kind": "Job",
-            "metadata": {"name": f"prometheus-tsdb-cleanup-{run_id}", "namespace": NAMESPACE},
+            "metadata": {"name": f"prometheus-snapshot-cleanup-{run_id}", "namespace": NAMESPACE},
             "spec": {
                 "backoffLimit": 0,
                 "activeDeadlineSeconds": 600,
@@ -230,7 +230,7 @@ data:
                 "template": {
                     "metadata": {
                         "labels": {
-                            "app.kubernetes.io/name": "prometheus-tsdb-cleanup",
+                            "app.kubernetes.io/name": "prometheus-snapshot-cleanup",
                             "istio.io/dataplane-mode": "none",
                         }
                     },
@@ -292,7 +292,7 @@ data:
         return {
             "apiVersion": "k8up.io/v1",
             "kind": "Prune",
-            "metadata": {"name": f"prometheus-tsdb-prune-{run_id}", "namespace": NAMESPACE},
+            "metadata": {"name": f"prometheus-{run_id}", "namespace": NAMESPACE},
             "spec": {
                 "backend": BACKEND,
                 "podConfigRef": POD_CONFIG_REF,
