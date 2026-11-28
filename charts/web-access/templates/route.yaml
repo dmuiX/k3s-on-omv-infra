@@ -1,15 +1,20 @@
 {{- if .Values.route.enabled }}
-{{- $name := default (include "web-access.name" .) .Values.route.name -}}
+{{- /* --- 1. Resolve route identity and validate required fields --- */ -}}
+{{- $route     := .Values.route -}}
+{{- $name      := default (include "web-access.name" .) $route.name -}}
 {{- $namespace := include "web-access.namespace" . -}}
-{{- if empty .Values.route.hostnames -}}
-{{- fail "route.hostnames must be non-empty when route.enabled is true" -}}
+
+{{- if empty $route.hostnames -}}
+  {{- fail "route.hostnames must be non-empty when route.enabled is true" -}}
 {{- end -}}
-{{- if empty .Values.route.parentRefs -}}
-{{- fail "route.parentRefs must be non-empty when route.enabled is true" -}}
+{{- if empty $route.parentRefs -}}
+  {{- fail "route.parentRefs must be non-empty when route.enabled is true" -}}
 {{- end -}}
-{{- $rules := .Values.route.rules -}}
+
+{{- /* --- 2. Build rules (explicit route.rules override or single-backend shorthand) --- */ -}}
+{{- $rules := $route.rules -}}
 {{- if empty $rules -}}
-  {{- $backendName := .Values.route.backend.name -}}
+  {{- $backendName := $route.backend.name -}}
   {{- if empty $backendName -}}
     {{- if .Values.proxy.enabled -}}
       {{- $backendName = include "web-access.proxyName" . -}}
@@ -17,30 +22,33 @@
       {{- fail "route.backend.name is required when route.enabled is true and proxy.enabled is false" -}}
     {{- end -}}
   {{- end -}}
-  {{- $rule := dict
+
+  {{- $defaultRule := dict
     "backend" (dict
       "name" $backendName
-      "port" .Values.route.backend.port
-      "weight" .Values.route.backend.weight
+      "port" $route.backend.port
+      "weight" $route.backend.weight
     )
     "matches" (list (dict "path" (dict "type" "PathPrefix" "value" "/")))
-    "filters" .Values.route.filters
-    "timeouts" .Values.route.timeouts
+    "filters" $route.filters
+    "timeouts" $route.timeouts
   -}}
-  {{- $rules = list $rule -}}
+  {{- $rules = list $defaultRule -}}
 {{- end -}}
+
+{{- /* --- 3. Render Gateway API HTTPRoute with explicit backendRefs defaults --- */ -}}
 apiVersion: gateway.networking.k8s.io/v1
 kind: HTTPRoute
 metadata:
   name: {{ $name | quote }}
   namespace: {{ $namespace | quote }}
-  {{- with .Values.route.syncWave }}
+  {{- with $route.syncWave }}
   annotations:
     argocd.argoproj.io/sync-wave: {{ . | quote }}
   {{- end }}
 spec:
   parentRefs:
-  {{- range .Values.route.parentRefs }}
+  {{- range $route.parentRefs }}
   - group: gateway.networking.k8s.io
     kind: Gateway
     name: {{ .name | quote }}
@@ -50,7 +58,7 @@ spec:
     {{- end }}
   {{- end }}
   hostnames:
-    {{- toYaml .Values.route.hostnames | nindent 4 }}
+    {{- toYaml $route.hostnames | nindent 4 }}
   rules:
   {{- range $rules }}
   - backendRefs:
