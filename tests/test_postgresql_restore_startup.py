@@ -8,7 +8,7 @@ from io import BytesIO, StringIO
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import ANY, MagicMock, Mock, call, patch
-from urllib.error import HTTPError
+from urllib.error import HTTPError, URLError
 from uuid import UUID
 
 SCRIPT = (
@@ -440,3 +440,47 @@ class PostgreSQLRestoreStartupTest(unittest.TestCase):
         self.assertEqual(
             self.lease.call_args_list, [call("running"), call("failed-cleanup")]
         )
+
+    def test_api_retries_transient_408_429_and_get_transport_errors(self) -> None:
+        retry_429 = HTTPError(
+            SOURCE_STORE,
+            429,
+            "Too Many Requests",
+            {},
+            BytesIO(
+                b'{"message":"storage is (re)initializing","details":{"retryAfterSeconds":2}}'
+            ),
+        )
+        timeout_408 = HTTPError(SOURCE_STORE, 408, "Request Timeout", {}, BytesIO())
+        self.respond(retry_429, timeout_408, URLError("reset"), {"ok": True})
+        result = VALIDATOR.api(SOURCE_STORE)
+        self.assertEqual(result, {"ok": True})
+        self.assertEqual(self.urlopen.call_count, 4)
+        self.assertEqual(self.sleep.call_args_list, [call(2.0), call(2.0), call(4.0)])
+
+    def test_api_allowed_status_and_non_transient_errors_do_not_retry(self) -> None:
+        self.respond(HTTPError(CLUSTER_PATH, 404, "Not Found", {}, BytesIO()))
+        self.assertIsNone(VALIDATOR.api(CLUSTER_PATH, allowed=(404,)))
+        self.assertEqual(self.urlopen.call_count, 1)
+        self.sleep.assert_not_called()
+
+        self.urlopen.reset_mock()
+        self.respond(HTTPError(CLUSTER_PATH, 403, "Forbidden", {}, BytesIO()))
+        with self.assertRaisesRegex(RuntimeError, "HTTP 403"):
+            VALIDATOR.api(CLUSTER_PATH)
+        self.assertEqual(self.urlopen.call_count, 1)
+        self.sleep.assert_not_called()
+
+        self.urlopen.reset_mock()
+        self.respond(URLError("reset after post"))
+        with self.assertRaises(URLError):
+            VALIDATOR.api(CLUSTER, "POST", {"kind": "Cluster"})
+        self.assertEqual(self.urlopen.call_count, 1)
+        self.sleep.assert_not_called()
+
+        self.urlopen.reset_mock()
+        self.respond(HTTPError(CLUSTER, 504, "Gateway Timeout", {}, BytesIO()))
+        with self.assertRaisesRegex(RuntimeError, "HTTP 504"):
+            VALIDATOR.api(CLUSTER, "POST", {"kind": "Cluster"})
+        self.assertEqual(self.urlopen.call_count, 1)
+        self.sleep.assert_not_called()

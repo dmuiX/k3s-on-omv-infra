@@ -52,11 +52,17 @@ def api(path, method="GET", body=None, allowed=(), *, timeout: float = 30):
                 payload = response.read()
                 return json.loads(payload) if payload else {}
         except HTTPError as exc:
-            detail = exc.read().decode(errors="replace")
+            retry = (
+                method == "GET"
+                and exc.code not in allowed
+                and exc.code in RETRYABLE_HTTP_CODES
+                and attempt < API_MAX_ATTEMPTS
+            )
+            detail = exc.read().decode(errors="replace") if retry else ""
             exc.close()
             if exc.code in allowed:
                 return None
-            if exc.code in RETRYABLE_HTTP_CODES and attempt < API_MAX_ATTEMPTS:
+            if retry:
                 time.sleep(_retry_delay(attempt, exc, detail))
                 continue
             raise RuntimeError(f"Kubernetes API {method} {path} failed with HTTP {exc.code}") from exc
@@ -64,7 +70,7 @@ def api(path, method="GET", body=None, allowed=(), *, timeout: float = 30):
             if method == "GET" and attempt < API_MAX_ATTEMPTS:
                 time.sleep(_retry_delay(attempt, exc))
                 continue
-            raise RuntimeError(f"Kubernetes API {method} {path} failed: {exc}") from exc
+            raise
     raise AssertionError("unreachable")
 
 
