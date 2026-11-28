@@ -1,0 +1,44 @@
+# Restrict Trivy Operator metrics (8080) to Prometheus over Istio Ambient mTLS,
+# while leaving kubelet health probes on port 9090 unaffected.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: trivy-operator-metrics
+  namespace: trivy-operator
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: trivy-operator
+      app.kubernetes.io/instance: trivy-operator
+  action: DENY
+  rules:
+    - from:
+        - source:
+            notPrincipals:
+              - cluster.local/ns/kube-prometheus-stack/sa/kube-prometheus-stack-prometheus
+      to:
+        - operation:
+            ports:
+              - '8080'
+---
+# Restrict built-in trivy-server (4954) to callers in the trivy-operator namespace.
+apiVersion: security.istio.io/v1
+kind: AuthorizationPolicy
+metadata:
+  name: trivy-server-api
+  namespace: trivy-operator
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: trivy-server
+      app.kubernetes.io/instance: trivy-server
+  action: DENY
+  rules:
+    - from:
+        - source:
+            notPrincipals:
+              - cluster.local/ns/trivy-operator/sa/trivy-operator
+      to:
+        - operation:
+            ports:
+              - '4954'

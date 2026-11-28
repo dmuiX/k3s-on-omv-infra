@@ -8,7 +8,7 @@ import yaml
 
 class InjectorNetworkPolicyTest(unittest.TestCase):
     def test_injector_api_webhook_and_ambient_probes_are_allowed(self):
-        path = Path(__file__).resolve().parents[1] / '04-openbao/resources/security.yaml'
+        path = Path(__file__).resolve().parents[1] / '04-openbao/resources/network-policy.yaml'
         policies = [doc for doc in yaml.safe_load_all(path.read_text())
                     if doc.get('kind') == 'NetworkPolicy']
         selected = [doc for doc in policies if doc['spec']['podSelector'].get('matchLabels') == {

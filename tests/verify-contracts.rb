@@ -825,7 +825,7 @@ class PlatformContractTest < Minitest::Test
     assert_equal %w[AWS_ACCESS_KEY_ID AWS_REGION AWS_SECRET_ACCESS_KEY S3_ENDPOINT], openbao_destination.dig("spec", "destination", "transformation", "templates").keys.sort
     snapshot = yaml_documents(INFRA / "06-platform/openbao-backups/resources/snapshot.yaml").find { |document| document["kind"] == "CronJob" }
     assert_equal "openbao-snapshot", snapshot.dig("spec", "jobTemplate", "spec", "template", "metadata", "labels", "app.kubernetes.io/name")
-    snapshot_egress = yaml_documents(INFRA / "04-openbao/resources/security.yaml")
+    snapshot_egress = yaml_documents(INFRA / "04-openbao/resources/network-policy.yaml")
       .find { |document| document.dig("metadata", "name") == "allow-openbao-snapshot-egress" }
     assert snapshot_egress
     assert snapshot_egress.dig("spec", "egress").any? { |rule| Array(rule["ports"]).any? { |port| port["port"] == 443 } }

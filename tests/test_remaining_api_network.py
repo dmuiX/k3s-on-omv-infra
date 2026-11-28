@@ -112,7 +112,7 @@ class RemainingAPINetwork(unittest.TestCase):
         for directory, resource, policy_name in (
             ('backup-validation', '08-backup-validation/resources/network-policy.yaml',
              'allow-backup-validation-egress'),
-            ('openbao', '04-openbao/resources/security.yaml', 'allow-openbao-snapshot-egress'),
+            ('openbao', '04-openbao/resources/network-policy.yaml', 'allow-openbao-snapshot-egress'),
         ):
             with self.subTest(directory=directory):
                 infra_docs = list(yaml.safe_load_all((INFRA / resource).read_text()))
@@ -172,7 +172,7 @@ class RemainingAPINetwork(unittest.TestCase):
             'policyTypes': ['Egress'], 'egress': api_rules()})
 
     def test_openbao_injector_api_tuples_are_live_owned(self):
-        docs = list(yaml.safe_load_all((INFRA / '04-openbao/resources/security.yaml').read_text()))
+        docs = list(yaml.safe_load_all((INFRA / '04-openbao/resources/network-policy.yaml').read_text()))
         injector, = [d for d in docs if d['metadata']['name'] == 'allow-openbao-agent-injector']
         policy = load(LIVE / 'infra/openbao/api-network-policy.yaml')
         self.assertEqual(policy['metadata'], {
