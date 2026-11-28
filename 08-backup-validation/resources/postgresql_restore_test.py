@@ -9,7 +9,7 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 API = "https://kubernetes.default.svc"
-RETRYABLE_HTTP_CODES = frozenset({429, 500, 502, 503, 504})
+RETRYABLE_HTTP_CODES = frozenset({408, 429, 500, 502, 503, 504})
 API_MAX_ATTEMPTS = 6
 SOURCE_NS, VALIDATION_NS = "cloudnative-pg", "backup-validation"
 SOURCE = "k3s-postgres"

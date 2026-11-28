@@ -62,7 +62,7 @@ data:
     }
     POD_CONFIG_REF = {"name": "prometheus-k8up-omv"}
     POLL_SECONDS = 15
-    RETRYABLE_HTTP_CODES = frozenset({429, 500, 502, 503, 504})
+    RETRYABLE_HTTP_CODES = frozenset({408, 429, 500, 502, 503, 504})
     API_MAX_ATTEMPTS = 6
 
     CLEANUP_SCRIPT = "\n".join([
