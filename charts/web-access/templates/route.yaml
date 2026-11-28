@@ -1,0 +1,75 @@
+{{- if .Values.route.enabled }}
+{{- $name := default (include "web-access.name" .) .Values.route.name -}}
+{{- $namespace := include "web-access.namespace" . -}}
+{{- if empty .Values.route.hostnames -}}
+{{- fail "route.hostnames must be non-empty when route.enabled is true" -}}
+{{- end -}}
+{{- if empty .Values.route.parentRefs -}}
+{{- fail "route.parentRefs must be non-empty when route.enabled is true" -}}
+{{- end -}}
+{{- $rules := .Values.route.rules -}}
+{{- if empty $rules -}}
+  {{- $backendName := .Values.route.backend.name -}}
+  {{- if empty $backendName -}}
+    {{- if .Values.proxy.enabled -}}
+      {{- $backendName = include "web-access.proxyName" . -}}
+    {{- else -}}
+      {{- fail "route.backend.name is required when route.enabled is true and proxy.enabled is false" -}}
+    {{- end -}}
+  {{- end -}}
+  {{- $rule := dict
+    "backend" (dict
+      "name" $backendName
+      "port" .Values.route.backend.port
+      "weight" .Values.route.backend.weight
+    )
+    "matches" (list (dict "path" (dict "type" "PathPrefix" "value" "/")))
+    "filters" .Values.route.filters
+    "timeouts" .Values.route.timeouts
+  -}}
+  {{- $rules = list $rule -}}
+{{- end -}}
+apiVersion: gateway.networking.k8s.io/v1
+kind: HTTPRoute
+metadata:
+  name: {{ $name | quote }}
+  namespace: {{ $namespace | quote }}
+  {{- with .Values.route.syncWave }}
+  annotations:
+    argocd.argoproj.io/sync-wave: {{ . | quote }}
+  {{- end }}
+spec:
+  parentRefs:
+  {{- range .Values.route.parentRefs }}
+  - group: gateway.networking.k8s.io
+    kind: Gateway
+    name: {{ .name | quote }}
+    namespace: {{ .namespace | quote }}
+    {{- with .sectionName }}
+    sectionName: {{ . | quote }}
+    {{- end }}
+  {{- end }}
+  hostnames:
+    {{- toYaml .Values.route.hostnames | nindent 4 }}
+  rules:
+  {{- range $rules }}
+  - backendRefs:
+    - group: ""
+      kind: Service
+      name: {{ .backend.name | quote }}
+      port: {{ .backend.port }}
+      weight: {{ .backend.weight }}
+    {{- with .matches }}
+    matches:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with .filters }}
+    filters:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+    {{- with .timeouts }}
+    timeouts:
+      {{- toYaml . | nindent 6 }}
+    {{- end }}
+  {{- end }}
+{{- end }}

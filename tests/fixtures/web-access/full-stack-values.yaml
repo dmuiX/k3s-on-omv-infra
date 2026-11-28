@@ -1,0 +1,20 @@
+name: example-app
+namespace: example-ns
+route:
+  hostnames:
+    - example-app.example.invalid
+  filters:
+    - type: RequestHeaderModifier
+      requestHeaderModifier:
+        remove:
+          - Authorization
+oidc:
+  enabled: true
+  issuerURL: https://openbao.example.invalid:9443/v1/identity/oidc/provider/example-app
+  redirectURLs:
+    - https://example-app.example.invalid:9443/oauth2/callback
+proxy:
+  enabled: true
+  upstream: http://example-app.example-ns.svc:8080
+  provisioner:
+    enabled: true

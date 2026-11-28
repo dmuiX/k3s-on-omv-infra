@@ -1,0 +1,5 @@
+apiVersion: v2
+name: web-access
+description: Unified feature-flagged chart for Gateway HTTPRoute, OpenBao OIDC identities, credential-custody, and oauth2-proxy.
+type: application
+version: 0.1.0

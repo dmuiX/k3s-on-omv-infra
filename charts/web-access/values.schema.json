@@ -1,0 +1,369 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["name", "namespace"],
+  "properties": {
+    "name": { "$ref": "#/definitions/dnsLabel" },
+    "namespace": { "$ref": "#/definitions/dnsLabel" },
+    "route": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "name": {
+          "oneOf": [
+            { "const": "" },
+            { "$ref": "#/definitions/dnsLabel" }
+          ]
+        },
+        "syncWave": {
+          "oneOf": [
+            { "const": "" },
+            { "$ref": "#/definitions/syncWave" }
+          ]
+        },
+        "parentRefs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "namespace"],
+            "properties": {
+              "group": { "const": "gateway.networking.k8s.io" },
+              "kind": { "const": "Gateway" },
+              "name": { "$ref": "#/definitions/dnsLabel" },
+              "namespace": { "$ref": "#/definitions/dnsLabel" },
+              "sectionName": { "$ref": "#/definitions/dnsLabel" }
+            }
+          }
+        },
+        "hostnames": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 253,
+            "pattern": "^(\\*\\.)?[a-z0-9]([a-z0-9.-]*[a-z0-9])?$"
+          }
+        },
+        "backend": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "oneOf": [
+                { "const": "" },
+                { "$ref": "#/definitions/dnsLabel" }
+              ]
+            },
+            "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+            "weight": { "type": "integer", "minimum": 0, "maximum": 1000000 }
+          }
+        },
+        "filters": { "$ref": "#/definitions/routeFilters" },
+        "timeouts": { "$ref": "#/definitions/routeTimeouts" },
+        "rules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["backend"],
+            "properties": {
+              "backend": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["name", "port", "weight"],
+                "properties": {
+                  "name": { "$ref": "#/definitions/dnsLabel" },
+                  "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+                  "weight": { "type": "integer", "minimum": 0, "maximum": 1000000 }
+                }
+              },
+              "matches": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["path"],
+                  "properties": {
+                    "path": {
+                      "type": "object",
+                      "additionalProperties": false,
+                      "required": ["type", "value"],
+                      "properties": {
+                        "type": { "enum": ["Exact", "PathPrefix"] },
+                        "value": { "type": "string", "pattern": "^/" }
+                      }
+                    }
+                  }
+                }
+              },
+              "filters": { "$ref": "#/definitions/routeFilters" },
+              "timeouts": { "$ref": "#/definitions/routeTimeouts" }
+            }
+          }
+        }
+      }
+    },
+    "oidc": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "credentialHelper": { "type": "boolean" },
+        "providerConfigName": { "type": "string", "minLength": 1 },
+        "deletionPolicy": { "enum": ["Orphan", "Delete"] },
+        "issuerURL": { "type": "string" },
+        "redirectURLs": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^https://[^/]+/.+"
+          }
+        },
+        "groups": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "externalName"],
+            "properties": {
+              "name": { "type": "string", "minLength": 1 },
+              "syncWave": { "$ref": "#/definitions/syncWave" },
+              "externalName": { "type": "string", "minLength": 1 },
+              "type": { "enum": ["internal"] },
+              "externalMemberEntityIds": { "type": "boolean" }
+            }
+          }
+        },
+        "assignments": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["name"],
+                "properties": {
+                  "name": { "type": "string", "minLength": 1 },
+                  "syncWave": { "$ref": "#/definitions/syncWave" },
+                  "groupRefs": {
+                    "type": "array",
+                    "minItems": 1,
+                    "uniqueItems": true,
+                    "items": { "type": "string", "minLength": 1 }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "key": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": { "type": "string", "minLength": 1 },
+            "syncWave": { "$ref": "#/definitions/syncWave" },
+            "algorithm": { "enum": ["RS256"] },
+            "allowedClientIds": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1 }
+            },
+            "rotationPeriod": { "type": "integer", "minimum": 1 },
+            "verificationTtl": { "type": "integer", "minimum": 1 }
+          }
+        },
+        "scopes": {
+          "oneOf": [
+            { "type": "null" },
+            {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["name"],
+                "properties": {
+                  "name": { "type": "string", "minLength": 1 },
+                  "syncWave": { "$ref": "#/definitions/syncWave" },
+                  "template": { "type": "string", "minLength": 1 }
+                }
+              }
+            }
+          ]
+        },
+        "client": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": { "type": "string", "minLength": 1 },
+            "syncWave": { "$ref": "#/definitions/syncWave" },
+            "key": { "type": "string", "minLength": 1 },
+            "assignments": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1 }
+            },
+            "idTokenTtl": { "type": "integer", "minimum": 1 },
+            "accessTokenTtl": { "type": "integer", "minimum": 1 },
+            "connectionSecret": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name", "namespace"],
+              "properties": {
+                "name": { "type": "string", "minLength": 1 },
+                "namespace": { "type": "string", "minLength": 1 }
+              }
+            }
+          }
+        },
+        "provider": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": { "type": "string", "minLength": 1 },
+            "syncWave": { "$ref": "#/definitions/syncWave" },
+            "clientRefs": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1 }
+            },
+            "scopeRefs": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": { "type": "string", "minLength": 1 }
+            }
+          }
+        }
+      }
+    },
+    "proxy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "name": {
+          "oneOf": [
+            { "const": "" },
+            { "$ref": "#/definitions/dnsLabel" }
+          ]
+        },
+        "upstream": { "type": "string" },
+        "scope": { "type": "string" },
+        "allowedGroup": { "type": "string", "minLength": 1 },
+        "passBasicAuth": { "type": "boolean" },
+        "ambient": { "type": "boolean" },
+        "podSecurityContext": { "type": "object" },
+        "openbaoBackchannelURL": {
+          "type": ["string", "null"]
+        },
+        "issuerURL": { "type": "string" },
+        "redirectURL": { "type": "string" },
+        "provisioner": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "name": {
+              "oneOf": [
+                { "const": "" },
+                { "$ref": "#/definitions/dnsLabel" }
+              ]
+            },
+            "role": { "type": "string" },
+            "client": { "type": "string" },
+            "kvPath": { "type": "string" },
+            "syncWave": { "$ref": "#/definitions/syncWave" },
+            "image": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "dnsLabel": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 63,
+      "pattern": "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$"
+    },
+    "syncWave": {
+      "type": "string",
+      "pattern": "^-?[0-9]+$"
+    },
+    "duration": {
+      "type": "string",
+      "pattern": "^([0-9]{1,5}(h|m|s|ms)){1,4}$"
+    },
+    "headerModifier": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "set": { "$ref": "#/definitions/headers" },
+        "add": { "$ref": "#/definitions/headers" },
+        "remove": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "headers": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "value"],
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "value": { "type": "string" }
+        }
+      }
+    },
+    "routeFilters": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["type"],
+        "properties": {
+          "type": { "enum": ["RequestHeaderModifier", "ResponseHeaderModifier"] },
+          "requestHeaderModifier": { "$ref": "#/definitions/headerModifier" },
+          "responseHeaderModifier": { "$ref": "#/definitions/headerModifier" }
+        },
+        "oneOf": [
+          {
+            "properties": { "type": { "const": "RequestHeaderModifier" } },
+            "required": ["requestHeaderModifier"],
+            "not": { "required": ["responseHeaderModifier"] }
+          },
+          {
+            "properties": { "type": { "const": "ResponseHeaderModifier" } },
+            "required": ["responseHeaderModifier"],
+            "not": { "required": ["requestHeaderModifier"] }
+          }
+        ]
+      }
+    },
+    "routeTimeouts": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "request": { "$ref": "#/definitions/duration" },
+        "backendRequest": { "$ref": "#/definitions/duration" }
+      }
+    }
+  }
+}

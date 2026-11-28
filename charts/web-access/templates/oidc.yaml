@@ -1,0 +1,150 @@
+{{- if .Values.oidc.enabled }}
+{{- $baseName := include "web-access.name" . -}}
+{{- $v := .Values.oidc -}}
+{{- $clientCfg := $v.client | default dict -}}
+{{- $clientName := default $baseName $clientCfg.name -}}
+{{- $key := merge (deepCopy ($v.key | default dict)) (dict "name" $clientName) -}}
+{{- $clientKey := default $key.name $clientCfg.key -}}
+{{- $defaultScopeTemplate := "{\"username\":{{identity.entity.name}},\"groups\":{{identity.entity.groups.names}}}" -}}
+{{- $scopes := $v.scopes -}}
+{{- if kindIs "invalid" $scopes -}}
+{{- $scopes = list (dict "name" $clientName "template" $defaultScopeTemplate) -}}
+{{- end -}}
+{{- $scopeNames := list -}}
+{{- range $scopes -}}
+{{- $scopeNames = append $scopeNames .name -}}
+{{- end -}}
+{{- $assignments := $v.assignments -}}
+{{- if kindIs "invalid" $assignments -}}
+{{- $assignments = list (dict "name" (printf "%s-admin" $clientName)) -}}
+{{- end -}}
+{{- $clientAssignments := $clientCfg.assignments -}}
+{{- if empty $clientAssignments -}}
+  {{- $derivedAssignments := list -}}
+  {{- range $assignments -}}
+    {{- $derivedAssignments = append $derivedAssignments .name -}}
+  {{- end -}}
+  {{- $clientAssignments = $derivedAssignments -}}
+{{- end -}}
+{{- if empty $clientAssignments -}}
+{{- fail "oidc.client.assignments must be non-empty when oidc.enabled is true" -}}
+{{- end -}}
+{{- $provider := merge (deepCopy ($v.provider | default dict)) (dict "name" $clientName "clientRefs" (list $clientName) "scopeRefs" $scopeNames) -}}
+{{- $issuerURL := required "oidc.issuerURL is required when oidc.enabled is true" $v.issuerURL -}}
+{{- $issuer := urlParse $issuerURL -}}
+{{- if or (ne $issuer.scheme "https") (empty $issuer.host) (not (empty $issuer.userinfo)) (not (empty $issuer.query)) (not (empty $issuer.fragment)) (ne $issuer.path (printf "/v1/identity/oidc/provider/%s" $provider.name)) -}}
+{{- fail "oidc.issuerURL must be the dedicated provider HTTPS URL" -}}
+{{- end -}}
+{{- if empty $v.redirectURLs -}}
+{{- fail "oidc.redirectURLs must be non-empty when oidc.enabled is true" -}}
+{{- end -}}
+{{- range $v.redirectURLs -}}
+{{- $uri := urlParse . -}}
+{{- if or (ne $uri.scheme "https") (empty $uri.host) (not (empty $uri.userinfo)) (not (empty $uri.fragment)) (contains "REQUIRED_" .) -}}
+{{- fail "oidc.redirectURLs must be confirmed HTTPS URLs" -}}
+{{- end -}}
+{{- end -}}
+{{- if or (ne $clientKey $key.name) (not (has $clientName $provider.clientRefs)) -}}
+{{- fail "client must reference this key and be explicitly allowed by this provider" -}}
+{{- end -}}
+{{- range $v.groups }}
+{{- $extMembers := true }}
+{{- if hasKey . "externalMemberEntityIds" }}
+{{- $extMembers = .externalMemberEntityIds }}
+{{- end }}
+---
+apiVersion: identity.vault.upbound.io/v1alpha1
+kind: Group
+metadata:
+  {{- include "web-access.oidcMetadata" . | nindent 2 }}
+spec:
+  {{- include "web-access.oidcCommon" $v | nindent 2 }}
+  forProvider:
+    name: {{ .externalName | quote }}
+    type: {{ default "internal" .type | quote }}
+    externalMemberEntityIds: {{ $extMembers }}
+{{- end }}
+{{- range $assignments }}
+---
+apiVersion: identity.vault.upbound.io/v1alpha1
+kind: OidcAssignment
+metadata:
+  {{- include "web-access.oidcMetadata" . | nindent 2 }}
+spec:
+  {{- include "web-access.oidcCommon" $v | nindent 2 }}
+  forProvider:
+    name: {{ .name | quote }}
+    groupIdsRefs:
+      {{- range (default (list "platform-admin") .groupRefs) }}
+      - name: {{ . | quote }}
+      {{- end }}
+{{- end }}
+---
+apiVersion: identity.vault.upbound.io/v1alpha1
+kind: OidcKey
+metadata:
+  {{- include "web-access.oidcMetadata" $key | nindent 2 }}
+spec:
+  {{- include "web-access.oidcCommon" $v | nindent 2 }}
+  forProvider:
+    name: {{ $key.name | quote }}
+    algorithm: {{ $key.algorithm | quote }}
+    allowedClientIds:
+      {{- toYaml $key.allowedClientIds | nindent 6 }}
+    rotationPeriod: {{ $key.rotationPeriod }}
+    verificationTtl: {{ $key.verificationTtl }}
+{{- range $scopes }}
+---
+apiVersion: identity.vault.upbound.io/v1alpha1
+kind: OidcScope
+metadata:
+  {{- include "web-access.oidcMetadata" . | nindent 2 }}
+spec:
+  {{- include "web-access.oidcCommon" $v | nindent 2 }}
+  forProvider:
+    name: {{ .name | quote }}
+    template: {{ default $defaultScopeTemplate .template | quote }}
+{{- end }}
+---
+apiVersion: identity.vault.upbound.io/v1alpha1
+kind: OidcClient
+metadata:
+  {{- $clientMeta := merge (deepCopy $clientCfg) (dict "name" $clientName) -}}
+  {{- include "web-access.oidcMetadata" $clientMeta | nindent 2 }}
+spec:
+  {{- include "web-access.oidcCommon" $v | nindent 2 }}
+  forProvider:
+    name: {{ $clientName | quote }}
+    clientType: confidential
+    key: {{ $clientKey | quote }}
+    assignments:
+      {{- toYaml $clientAssignments | nindent 6 }}
+    redirectUris:
+      {{- toYaml $v.redirectURLs | nindent 6 }}
+    idTokenTtl: {{ $clientCfg.idTokenTtl }}
+    accessTokenTtl: {{ $clientCfg.accessTokenTtl }}
+  {{- with $clientCfg.connectionSecret }}
+  writeConnectionSecretToRef:
+    name: {{ .name | quote }}
+    namespace: {{ .namespace | quote }}
+  {{- end }}
+---
+apiVersion: identity.vault.upbound.io/v1alpha1
+kind: OidcProvider
+metadata:
+  {{- include "web-access.oidcMetadata" $provider | nindent 2 }}
+spec:
+  {{- include "web-access.oidcCommon" $v | nindent 2 }}
+  forProvider:
+    name: {{ $provider.name | quote }}
+    issuerHost: {{ $issuer.host | quote }}
+    httpsEnabled: true
+    allowedClientIdsRefs:
+      {{- range $provider.clientRefs }}
+      - name: {{ . | quote }}
+      {{- end }}
+    scopesSupportedRefs:
+      {{- range $provider.scopeRefs }}
+      - name: {{ . | quote }}
+      {{- end }}
+{{- end }}

@@ -1,0 +1,147 @@
+{{- if .Values.proxy.enabled }}
+{{- $baseName := include "web-access.name" . -}}
+{{- $proxyName := include "web-access.proxyName" . -}}
+{{- $namespace := include "web-access.namespace" . -}}
+{{- $issuerURL := required "proxy.issuerURL (or oidc.issuerURL) is required when proxy.enabled is true" (include "web-access.issuerURL" .) -}}
+{{- $redirectURL := required "proxy.redirectURL (or oidc.redirectURLs[0]) is required when proxy.enabled is true" (include "web-access.redirectURL" .) -}}
+{{- $backchannelURL := include "web-access.backchannelURL" . -}}
+{{- $scope := default (printf "openid %s" $baseName) .Values.proxy.scope -}}
+{{- if $backchannelURL -}}
+{{- $public := urlParse $issuerURL -}}
+{{- $internal := urlParse $backchannelURL -}}
+{{- if or (ne $public.scheme "https") (not (regexMatch "^/v1/identity/oidc/provider/[a-z0-9-]+$" $public.path)) (ne $internal.path $public.path) (not (has $internal.scheme (list "http" "https"))) -}}
+{{- fail "proxy.openbaoBackchannelURL must point to the same OpenBao OIDC provider as the public HTTPS issuer" -}}
+{{- end -}}
+{{- if and (eq $internal.scheme "http") (not .Values.proxy.ambient) -}}
+{{- fail "an HTTP OpenBao backchannel requires Istio Ambient enrollment" -}}
+{{- end -}}
+{{- range list $public $internal -}}
+{{- if or (empty .host) .query .fragment .userinfo -}}
+{{- fail "OpenBao issuer and backchannel URLs must contain a host and no query, fragment, or credentials" -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- include "web-access.proxyInputsConfigMap" . }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $proxyName }}
+  namespace: {{ $namespace }}
+  annotations:
+    argocd.argoproj.io/sync-wave: "20"
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $proxyName }}
+  template:
+    metadata:
+      {{- if $backchannelURL }}
+      annotations:
+        checksum/oidc-inputs: {{ include "web-access.proxyInputsConfigMap" . | sha256sum }}
+      {{- end }}
+      labels:
+        app.kubernetes.io/name: {{ $proxyName }}
+        {{- with .Values.proxy.ambient }}
+        istio.io/dataplane-mode: ambient
+        {{- end }}
+    spec:
+      serviceAccountName: {{ $proxyName }}
+      automountServiceAccountToken: false
+      {{- with .Values.proxy.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: proxy
+          image: quay.io/oauth2-proxy/oauth2-proxy:v7.15.6@sha256:c3415e8660af553f5e18f5d90db050614c02493c0ac6260ac59442f6d9b12048
+          args:
+            - --provider=oidc
+            - {{ printf "--upstream=%s" (required "proxy.upstream is required when proxy.enabled is true" .Values.proxy.upstream) | quote }}
+            - --http-address=0.0.0.0:4180
+            - --email-domain=*
+            - {{ printf "--scope=%s" $scope | quote }}
+            - --oidc-email-claim=username
+            # OpenBao supplies the authenticated entity name, not a verified mailbox.
+            - --insecure-oidc-allow-unverified-email=true
+            - {{ printf "--allowed-group=%s" (required "proxy.allowedGroup is required" .Values.proxy.allowedGroup) | quote }}
+            - --skip-provider-button=true
+            {{- if not .Values.proxy.passBasicAuth }}
+            - --pass-basic-auth=false
+            - --pass-authorization-header=false
+            {{- end }}
+            {{- if $backchannelURL }}
+            - --skip-oidc-discovery=true
+            - {{ printf "--login-url=%s/authorize" (replace "/v1/identity/oidc/provider/" "/ui/vault/identity/oidc/provider/" $issuerURL) | quote }}
+            - {{ printf "--redeem-url=%s/token" $backchannelURL | quote }}
+            - {{ printf "--oidc-jwks-url=%s/.well-known/keys" $backchannelURL | quote }}
+            - --skip-claims-from-profile-url=true
+            {{- end }}
+          env:
+            - name: OAUTH2_PROXY_OIDC_ISSUER_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ $proxyName }}-inputs
+                  key: issuer-url
+            - name: OAUTH2_PROXY_REDIRECT_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ $proxyName }}-inputs
+                  key: redirect-url
+            - name: OAUTH2_PROXY_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $proxyName }}
+                  key: client-id
+            - name: OAUTH2_PROXY_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $proxyName }}
+                  key: client-secret
+            - name: OAUTH2_PROXY_COOKIE_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $proxyName }}
+                  key: cookie-secret
+          ports:
+            - name: http
+              containerPort: 4180
+          readinessProbe:
+            httpGet:
+              path: /ping
+              port: http
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /ping
+              port: http
+            periodSeconds: 20
+          resources:
+            requests:
+              cpu: 25m
+              memory: 32Mi
+            limits:
+              memory: 128Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+            capabilities:
+              drop:
+                - ALL
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $proxyName }}
+  namespace: {{ $namespace }}
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: {{ $proxyName }}
+  ports:
+    - name: http
+      port: 80
+      targetPort: http
+{{- end }}
