@@ -29,8 +29,11 @@ class OpenBaoMetricsTests(unittest.TestCase):
         cls.app = native.load(ROOT / '04-openbao/app.yml')
         cls.values = native.effective_values(cls.app)
         cls.docs = native.render(cls.app)
-        cls.policy, = yaml.safe_load_all(
-            (ROOT / '04-openbao/resources/metrics.yaml').read_text())
+        cls.policy, = [
+            doc for doc in yaml.safe_load_all(
+                (ROOT / '04-openbao/resources/authorization.yaml').read_text())
+            if doc and doc['metadata']['name'] == 'openbao-metrics'
+        ]
 
     def test_separate_native_listeners_and_ha_preserved(self):
         server = self.values['server']

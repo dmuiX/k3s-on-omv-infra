@@ -13,8 +13,14 @@ LIVE = Path(os.environ.get('PLATFORM_LIVE_REPO', INFRA.parent / 'k3s-on-omv-live
 
 class PostgresAPINetwork(unittest.TestCase):
     def test_only_approved_broad_api_rule_changed_from_published_baseline(self):
-        docs = list(yaml.safe_load_all(
-            (INFRA / '07-k3s-postgres/resources/network-policy.yaml').read_text()))
+        docs = [
+            *yaml.safe_load_all(
+                (INFRA / '07-k3s-postgres/resources/peer-authentication.yaml').read_text()
+            ),
+            *yaml.safe_load_all(
+                (INFRA / '07-k3s-postgres/resources/network-policy.yaml').read_text()
+            ),
+        ]
         policy, = [d for d in docs if d['metadata']['name'] == 'allow-postgresql']
         # Reconstruct the published snapshot with the one approved removal undone.
         # This protects every other rule, including the separate ingress peers.

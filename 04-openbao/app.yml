@@ -91,7 +91,7 @@ spec:
               ports:
               - protocol: TCP
                 port: 8200
-            # Direct traffic is constrained too; HBONE authorization is in metrics.yaml.
+            # Direct traffic is constrained too; HBONE authorization is in authorization.yaml.
             - from:
               - namespaceSelector:
                   matchLabels:

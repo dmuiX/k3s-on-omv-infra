@@ -12,9 +12,13 @@ SPIFFE = re.compile(r"^cluster\.local/ns/[a-z0-9-]+/sa/[a-z0-9-]+$")
 
 class OpenBaoAPIAuthorizationTest(unittest.TestCase):
     def test_openbao_api_policy_scopes_port_8200_to_audited_principals(self) -> None:
-        policy = yaml.safe_load(
-            (ROOT / "04-openbao/resources/authorization.yaml").read_text()
-        )
+        (policy,) = [
+            doc
+            for doc in yaml.safe_load_all(
+                (ROOT / "04-openbao/resources/authorization.yaml").read_text()
+            )
+            if doc and doc["metadata"]["name"] == "openbao-api"
+        ]
         self.assertEqual(policy["apiVersion"], "security.istio.io/v1")
         self.assertEqual(policy["kind"], "AuthorizationPolicy")
         self.assertEqual(policy["metadata"]["name"], "openbao-api")
