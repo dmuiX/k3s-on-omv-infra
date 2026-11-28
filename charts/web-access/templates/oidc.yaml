@@ -15,8 +15,8 @@
   {{- end -}}
 
   {{- $scopeNames := list -}}
-  {{- range $scopes -}}
-    {{- $scopeNames = append $scopeNames .name -}}
+  {{- range $scope := $scopes -}}
+    {{- $scopeNames = append $scopeNames $scope.name -}}
   {{- end -}}
 
   {{- $assignments := $oidc.assignments -}}
@@ -27,8 +27,8 @@
   {{- $clientAssignments := $clientConfig.assignments -}}
   {{- if empty $clientAssignments -}}
     {{- $derivedAssignments := list -}}
-    {{- range $assignments -}}
-      {{- $derivedAssignments = append $derivedAssignments .name -}}
+    {{- range $assignment := $assignments -}}
+      {{- $derivedAssignments = append $derivedAssignments $assignment.name -}}
     {{- end -}}
     {{- $clientAssignments = $derivedAssignments -}}
   {{- end -}}
@@ -160,10 +160,10 @@ spec:
       {{- toYaml $oidc.redirectURLs | nindent 6 }}
     idTokenTtl: {{ $clientConfig.idTokenTtl }}
     accessTokenTtl: {{ $clientConfig.accessTokenTtl }}
-  {{- with $clientConfig.connectionSecret }}
+  {{- if $clientConfig.connectionSecret }}
   writeConnectionSecretToRef:
-    name: {{ .name | quote }}
-    namespace: {{ .namespace | quote }}
+    name: {{ $clientConfig.connectionSecret.name | quote }}
+    namespace: {{ $clientConfig.connectionSecret.namespace | quote }}
   {{- end }}
 ---
 apiVersion: identity.vault.upbound.io/v1alpha1

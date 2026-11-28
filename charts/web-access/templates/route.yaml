@@ -42,42 +42,42 @@ kind: HTTPRoute
 metadata:
   name: {{ $name | quote }}
   namespace: {{ $namespace | quote }}
-  {{- with $route.syncWave }}
+  {{- if $route.syncWave }}
   annotations:
-    argocd.argoproj.io/sync-wave: {{ . | quote }}
+    argocd.argoproj.io/sync-wave: {{ $route.syncWave | quote }}
   {{- end }}
 spec:
   parentRefs:
-  {{- range $route.parentRefs }}
+  {{- range $parentRef := $route.parentRefs }}
   - group: gateway.networking.k8s.io
     kind: Gateway
-    name: {{ .name | quote }}
-    namespace: {{ .namespace | quote }}
-    {{- with .sectionName }}
-    sectionName: {{ . | quote }}
+    name: {{ $parentRef.name | quote }}
+    namespace: {{ $parentRef.namespace | quote }}
+    {{- if $parentRef.sectionName }}
+    sectionName: {{ $parentRef.sectionName | quote }}
     {{- end }}
   {{- end }}
   hostnames:
     {{- toYaml $route.hostnames | nindent 4 }}
   rules:
-  {{- range $rules }}
+  {{- range $rule := $rules }}
   - backendRefs:
     - group: ""
       kind: Service
-      name: {{ .backend.name | quote }}
-      port: {{ .backend.port }}
-      weight: {{ .backend.weight }}
-    {{- with .matches }}
+      name: {{ $rule.backend.name | quote }}
+      port: {{ $rule.backend.port }}
+      weight: {{ $rule.backend.weight }}
+    {{- if $rule.matches }}
     matches:
-      {{- toYaml . | nindent 6 }}
+      {{- toYaml $rule.matches | nindent 6 }}
     {{- end }}
-    {{- with .filters }}
+    {{- if $rule.filters }}
     filters:
-      {{- toYaml . | nindent 6 }}
+      {{- toYaml $rule.filters | nindent 6 }}
     {{- end }}
-    {{- with .timeouts }}
+    {{- if $rule.timeouts }}
     timeouts:
-      {{- toYaml . | nindent 6 }}
+      {{- toYaml $rule.timeouts | nindent 6 }}
     {{- end }}
   {{- end }}
 {{- end }}

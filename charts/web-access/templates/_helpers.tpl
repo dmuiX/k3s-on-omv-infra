@@ -74,10 +74,10 @@ providerConfigRef:
   oauth2-proxy inputs ConfigMap (also hashed by Deployment checksum/oidc-inputs).
 */ -}}
 {{- define "web-access.proxyInputsConfigMap" -}}
-{{- $proxyName   := include "web-access.proxyName" . -}}
-{{- $namespace   := include "web-access.namespace" . -}}
-{{- $issuerURL   := required "proxy.issuerURL (or oidc.issuerURL) is required when proxy.enabled is true" (include "web-access.issuerURL" .) -}}
-{{- $redirectURL := required "proxy.redirectURL (or oidc.redirectURLs[0]) is required when proxy.enabled is true" (include "web-access.redirectURL" .) -}}
+  {{- $proxyName   := include "web-access.proxyName" . -}}
+  {{- $namespace   := include "web-access.namespace" . -}}
+  {{- $issuerURL   := required "proxy.issuerURL (or oidc.issuerURL) is required when proxy.enabled is true" (include "web-access.issuerURL" .) -}}
+  {{- $redirectURL := required "proxy.redirectURL (or oidc.redirectURLs[0]) is required when proxy.enabled is true" (include "web-access.redirectURL" .) }}
 apiVersion: v1
 kind: ConfigMap
 metadata:

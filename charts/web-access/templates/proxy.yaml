@@ -32,7 +32,7 @@
   {{- end -}}
 
   {{- /* --- 3. Render inputs ConfigMap, Deployment, and Service --- */ -}}
-{{- include "web-access.proxyInputsConfigMap" . }}
+  {{- include "web-access.proxyInputsConfigMap" . }}
 ---
 apiVersion: apps/v1
 kind: Deployment

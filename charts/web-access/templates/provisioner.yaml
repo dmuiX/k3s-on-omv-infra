@@ -3,12 +3,12 @@
     Derive provisioner identity, OpenBao auth role, and KV path from the app name
     unless explicitly overridden.
   */ -}}
-  {{- $provisioner := .Values.proxy.provisioner }}
-  {{- $namespace   := include "web-access.namespace" . }}
-  {{- $client      := default (include "web-access.name" .) $provisioner.client }}
-  {{- $name        := default (printf "%s-oidc-provisioner" $client) $provisioner.name }}
-  {{- $role        := default $name $provisioner.role }}
-  {{- $kvPath      := default (printf "%s/oidc-proxy" $client) $provisioner.kvPath }}
+  {{- $provisioner := .Values.proxy.provisioner -}}
+  {{- $namespace   := include "web-access.namespace" . -}}
+  {{- $client      := default (include "web-access.name" .) $provisioner.client -}}
+  {{- $name        := default (printf "%s-oidc-provisioner" $client) $provisioner.name -}}
+  {{- $role        := default $name $provisioner.role -}}
+  {{- $kvPath      := default (printf "%s/oidc-proxy" $client) $provisioner.kvPath -}}
   {{- $syncWave    := default "1" $provisioner.syncWave }}
 apiVersion: v1
 kind: ServiceAccount
@@ -90,7 +90,10 @@ spec:
       containers:
         - name: provision
           image: {{ $provisioner.image }}
-          command: [python3, -B, /config/provision.py]
+          command:
+            - python3
+            - -B
+            - /config/provision.py
           resources:
             requests:
               cpu: 50m
@@ -102,11 +105,18 @@ spec:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
             capabilities:
-              drop: [ALL]
+              drop:
+                - ALL
           volumeMounts:
-            - {name: config, mountPath: /config, readOnly: true}
-            - {name: helper, mountPath: /helper, readOnly: true}
-            - {name: openbao-auth, mountPath: /var/run/openbao, readOnly: true}
+            - name: config
+              mountPath: /config
+              readOnly: true
+            - name: helper
+              mountPath: /helper
+              readOnly: true
+            - name: openbao-auth
+              mountPath: /var/run/openbao
+              readOnly: true
       volumes:
         - name: config
           configMap:
